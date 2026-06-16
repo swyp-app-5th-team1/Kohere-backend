@@ -59,14 +59,15 @@
 | 문서 | 설명 |
 | --- | --- |
 | [system-overview](architecture/system-overview.md) | 시스템 전체 구성도/컴포넌트 |
+| [domain-model](architecture/domain-model.md) | 모듈별 **애그리거트 카탈로그**(루트·식별자·불변식·저장소·협력) — 전술적 도메인 정본 |
 | [sequence-diagrams](architecture/sequence-diagrams/README.md) | 유저 스토리별 사용자→앱→백엔드 **모듈** 시퀀스 다이어그램(모듈 분해·이벤트/호출 구분, 29종) |
 
 ### database — 데이터베이스
 
 | 문서 | 설명 |
 | --- | --- |
-| [database-design](database/database-design.md) | 스키마/ERD 설계 |
-| [migration-policy](database/migration-policy.md) | 마이그레이션 정책(도구 확정 후 갱신) |
+| [database-design](database/database-design.md) | 폴리글랏 데이터 모델 — 모듈별 스키마(MySQL ERD·MongoDB 컬렉션·Redis 키스페이스) |
+| [migration-policy](database/migration-policy.md) | 마이그레이션 정책 — MySQL Flyway·MongoDB·Redis([ADR-0008](adr/0008-mysql-migration-flyway.md)) |
 
 ### adr — 아키텍처 결정 기록
 
