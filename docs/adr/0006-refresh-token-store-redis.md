@@ -27,10 +27,12 @@ Accepted
 
 **리프레시 토큰을 Redis(AWS ElastiCache)에 저장한다.** 세부 정책:
 
-1. **저장 형태**: 키 `refresh:{tokenHash}` → 값 `{ userId, jti, expiresAt, revoked? }`, **TTL = refresh 만료 시각**. 만료 시 키가 자동 소멸하므로 **별도 정리 배치가 불필요**하다.
+> **정정(2026-06-16):** 회전·무효화를 *키 삭제* → **`status` 전이(보존)** 로 바로잡았다(아래 1·3·4). 폐기 토큰을 만료까지 보존해야 **재사용 탐지**가 성립하기 때문이며(삭제하면 위조·만료와 구분 불가), 도메인 모델 `RefreshTokenStatus`(`ACTIVE`/`ROTATED`/`REVOKED`)·[database-design §4-1](../database/database-design.md)와 정합한다.
+
+1. **저장 형태**: 키 `refresh:{tokenHash}` → 값 `{ userId, status, issuedAt, expiresAt }`(`status` ∈ `ACTIVE`/`ROTATED`/`REVOKED` — 도메인 `RefreshTokenStatus`), **TTL = refresh 만료 시각**. 만료 시 폐기(`ROTATED`/`REVOKED`) 레코드까지 자동 소멸하므로 **별도 정리 배치가 불필요**하다. (초안의 boolean `revoked`를 3-상태 `status`로 일반화.)
 2. **해시**: ADR-0003대로 **불투명 랜덤 토큰의 SHA-256(+pepper) 해시**로 저장한다(등치 조회가 필요 → BCrypt/Argon2 같은 adaptive hash는 불가).
-3. **회전(rotation)**: reissue 시 기존 키 삭제 + 신규 키 저장. 사용자별 일괄 폐기를 위해 `refresh:user:{userId}` 인덱스(Set)로 보유 토큰을 추적하고, **재사용 탐지 시 해당 사용자의 모든 refresh 키를 삭제**한다(ADR-0003의 재사용 탐지 정책 실현).
-4. **로그아웃/탈퇴**: 해당 refresh 키(들)를 삭제한다.
+3. **회전(rotation)·재사용 탐지**: reissue 시 제출 토큰을 `status=ROTATED`로 **전이(만료까지 보존)** 하고 신규 `ACTIVE` 토큰을 저장한다. **폐기 토큰을 삭제하지 않고 보존하는 이유**는, 이미 `ROTATED`/`REVOKED`인 토큰이 다시 제출되는 것을 **재사용(탈취) 정황으로 탐지**하기 위함이다 — 삭제하면 위조·만료 토큰과 구분할 수 없어 탐지가 불가능하다. 사용자별 일괄 폐기를 위해 `refresh:user:{userId}` 인덱스(Set)로 보유 토큰을 추적하고, **재사용 탐지 시 해당 사용자의 모든 refresh 토큰을 `REVOKED`로 전이(일괄 무효화)** 한다(ADR-0003의 재사용 탐지 정책 실현).
+4. **로그아웃/탈퇴**: 해당 refresh 토큰(들)을 `REVOKED`로 전이한다(이미 폐기여도 멱등). 보존 레코드는 TTL로 자동 정리된다.
 5. **범위 한정**: 본 결정은 **refresh 토큰 저장에 한정**한다. **access 토큰은 무상태 유지**(변경 없음)이고, `auth`의 계정·소셜 연동·`user`·`community`는 **MySQL을 유지**한다([ADR-0005](./0005-polyglot-persistence.md)). 결과적으로 `auth`는 **MySQL(계정) + Redis(refresh)** 혼합이다.
 6. **내구성 설정**: ElastiCache는 **AOF + 복제(replication)** 를 활성화한다(§Consequences의 부활 위험 완화).
 

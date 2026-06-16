@@ -46,7 +46,7 @@ Accepted
 4. **찜·최근 본 매물은 `listing`과 같은 MongoDB에 둔다.**
 5. **cross-store 조인을 금지하고 애플리케이션 레벨로 합친다.** store를 넘는 조회는 공개 쿼리/이벤트로 데이터를 받아 코드에서 합친다(N+1·배치 조회 주의).
 6. **cross-store 분산 트랜잭션(XA)을 쓰지 않는다.** 쓰기 경로는 단일 store 안으로 한정한다. store를 넘는 정합이 필요하면 도메인 이벤트 기반 최종 일관성으로 설계한다.
-7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(Flyway 후보, [migration-policy](../database/migration-policy.md)에서 확정). MongoDB는 애플리케이션 레벨 버전 필드로 관리한다.
+7. **MySQL 스키마 변경은 마이그레이션 도구로 관리한다**(**Flyway 채택 — [ADR-0008](./0008-mysql-migration-flyway.md)**, 세부는 [migration-policy](../database/migration-policy.md)). MongoDB는 애플리케이션 레벨 버전 필드로 관리한다.
 
 ## Alternatives
 
@@ -73,7 +73,7 @@ Accepted
   - [build.gradle](../../build.gradle)에 `spring-boot-starter-data-jpa` + MySQL 드라이버, `spring-boot-starter-data-mongodb` 추가.
   - `@EnableJpaRepositories`/`@EnableMongoRepositories` 패키지 분리 + 데이터소스/트랜잭션 매니저 구성.
   - 추천 공개 쿼리 계약(`RecommendationCriteria`) 정의([ADR-0002](./0002-inter-module-communication-via-events.md), [diagnosis spec](../api/specs/02-diagnosis-recommendation.md)).
-  - MySQL 마이그레이션 도구 확정(Flyway 후보) — [migration-policy](../database/migration-policy.md) 갱신.
+  - MySQL 마이그레이션 도구: **Flyway 확정([ADR-0008](./0008-mysql-migration-flyway.md))** · [migration-policy](../database/migration-policy.md) 작성 완료.
   - 매물 `2dsphere` 인덱스 정의 + 더미 매물 seed.
   - [database-design](../database/database-design.md)을 두 저장소 기준으로 갱신.
 

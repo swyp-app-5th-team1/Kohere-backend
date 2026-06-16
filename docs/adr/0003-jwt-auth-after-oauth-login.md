@@ -66,7 +66,7 @@ Accepted
   - 토큰 탈취 시 위험 → 앱 **보안 저장소(Keychain/Keystore)** 보관, 전 구간 HTTPS, 민감정보(비자번호·전화번호 등)는 **클레임/로그에 비포함**([error-response-guide §6](../api/error-response-guide.md)).
   - 서명 **키 관리·회전** 운영 부담(아래 후속).
 - **후속 작업**
-  - 서명 알고리즘 결정: 대칭 **HS256**(단일 서버, 단순) vs 비대칭 **RS256/ES256**(검증 측 분리·키 회전 유리) → 별도 ADR/메모.
+  - 서명 알고리즘 결정: 대칭 **HS256**(단일 서버, 단순) vs 비대칭 **RS256/ES256**(검증 측 분리·키 회전 유리) → **확정: [ADR-0009](./0009-jwt-signing-algorithm-hs256.md)**(현재 HS256·단일 신뢰 경계, MSA 분해·외부 검증자 도입 시 RS256/ES256+JWKS 전환).
   - access/refresh **만료 시간**, refresh **회전 정책**, refresh **저장소**는 **[ADR-0006](./0006-refresh-token-store-redis.md)에서 Redis로 확정**(스펙의 "확인 필요" 항목).
   - JWT **검증 횡단 필터**(Spring Security 필터 체인) 배치 — 인증 메커니즘 ADR로 분리.
   - 키/시크릿 주입(환경변수/시크릿 매니저), 키 회전 절차.

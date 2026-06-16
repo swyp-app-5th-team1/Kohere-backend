@@ -30,6 +30,9 @@
 | [0004](./0004-api-response-envelope.md) | API 응답을 공통 래퍼(`{ success, data, error }`)로 표준화한다 | Accepted | 2026-06-15 |
 | [0005](./0005-polyglot-persistence.md) | 영속은 폴리글랏으로 — 데이터 특성에 따라 MongoDB와 MySQL로 나눈다 | Accepted | 2026-06-15 |
 | [0006](./0006-refresh-token-store-redis.md) | 리프레시 토큰 저장소는 Redis로 둔다(ADR-0005 보완) | Accepted | 2026-06-15 |
+| [0007](./0007-api-docs-spring-rest-docs.md) | API 문서는 테스트 기반 Spring REST Docs로 생성한다(Swagger 대비) | Accepted | 2026-06-16 |
+| [0008](./0008-mysql-migration-flyway.md) | MySQL 스키마 마이그레이션은 Flyway로 관리한다(폴리글랏 전략) | Accepted | 2026-06-16 |
+| [0009](./0009-jwt-signing-algorithm-hs256.md) | 서버 JWT 서명은 HS256으로 한다(MSA/외부 검증자 시 RS256+JWKS 전환) | Accepted | 2026-06-16 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 
