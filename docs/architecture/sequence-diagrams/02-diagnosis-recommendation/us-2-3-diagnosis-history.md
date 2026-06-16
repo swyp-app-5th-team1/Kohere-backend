@@ -8,7 +8,7 @@ sequenceDiagram
     participant C as 앱(클라이언트)
     participant SEC as 공통 보안 필터
     participant DIAG as diagnosis 모듈
-    participant DB as 저장소
+    participant DB as MongoDB
 
     U->>C: 홈 진입
     C->>SEC: GET /api/v1/diagnoses/latest<br/>Authorization: Bearer accessToken
@@ -46,6 +46,6 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- 홈에서 `GET /api/v1/diagnoses/latest`로 diagnosis 모듈이 저장소에서 최신 1건을 조회해 `completed` 값으로 "진단 시작/재진단" 문구를 분기한다(이력 없음도 `200 OK`). 모든 요청은 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달한다.
-- `GET /api/v1/diagnoses`로 diagnosis 모듈이 저장소에서 진단 이력을 최신순(`submittedAt,desc`) 오프셋 페이지네이션으로 조회한다.
-- `GET /api/v1/diagnoses/{diagnosisId}`로 diagnosis 모듈이 소유권을 검증한 뒤 저장소에서 본인 소유 진단의 입력 전체를 조회해 다시 본다(타인 `403 FORBIDDEN`, 부재 `404 DIAGNOSIS_NOT_FOUND`).
+- 홈에서 `GET /api/v1/diagnoses/latest`로 diagnosis 모듈이 MongoDB에서 최신 1건을 조회해 `completed` 값으로 "진단 시작/재진단" 문구를 분기한다(이력 없음도 `200 OK`). 모든 요청은 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달한다.
+- `GET /api/v1/diagnoses`로 diagnosis 모듈이 MongoDB에서 진단 이력을 최신순(`submittedAt,desc`) 오프셋 페이지네이션으로 조회한다.
+- `GET /api/v1/diagnoses/{diagnosisId}`로 diagnosis 모듈이 소유권을 검증한 뒤 MongoDB에서 본인 소유 진단의 입력 전체를 조회해 다시 본다(타인 `403 FORBIDDEN`, 부재 `404 DIAGNOSIS_NOT_FOUND`).

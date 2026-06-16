@@ -7,7 +7,7 @@ sequenceDiagram
     actor U as 사용자
     participant C as 앱(클라이언트)
     participant LIST as listing 모듈
-    participant DB as 저장소
+    participant DB as MongoDB
 
     U->>C: 키워드 입력 (예 연세대학교)
     C->>LIST: GET /api/v1/listings/search<br/>keyword=연세대학교&sort=DISTANCE<br/>&page=0&size=20<br/>(Authorization 선택)
@@ -26,6 +26,6 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- `GET /api/v1/listings/search?keyword=...`로 `listing` 모듈이 학교/지역/역 키워드를 POI 사전에 매칭해 매칭 위치 기준으로 저장소에서 주변 매물을 조회하고 `data.matchedPlace`와 `data.content[]`(오프셋 페이지)를 반환한다.
-- 키워드 누락/공백/길이(1~50자) 위반은 `listing` 모듈이 `400 INVALID_INPUT`으로 거부한다(검증 실패 분기는 저장소 접근 없음).
+- `GET /api/v1/listings/search?keyword=...`로 `listing` 모듈이 학교/지역/역 키워드를 POI 사전에 매칭해 매칭 위치 기준으로 MongoDB에서 주변 매물을 조회하고 `data.matchedPlace`와 `data.content[]`(오프셋 페이지)를 반환한다.
+- 키워드 누락/공백/길이(1~50자) 위반은 `listing` 모듈이 `400 INVALID_INPUT`으로 거부한다(검증 실패 분기는 MongoDB 접근 없음).
 - POI 매칭이 없으면 에러가 아니라 `200 OK` + `matchedPlace=null`·`content=[]`로 응답한다.

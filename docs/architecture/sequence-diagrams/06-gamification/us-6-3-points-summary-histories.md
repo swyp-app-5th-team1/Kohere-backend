@@ -8,7 +8,7 @@ sequenceDiagram
     participant C as 앱(클라이언트)
     participant SEC as 공통 보안 필터
     participant GAME as gamification 모듈
-    participant DB as 저장소
+    participant DB as 저장소(추후 결정)
 
     U->>C: 내 포인트 화면 진입
     C->>SEC: GET /api/v1/points/summary<br/>Authorization: Bearer accessToken
@@ -33,6 +33,6 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- `GET /api/v1/points/summary`로 gamification 모듈이 저장소에서 인증 주체의 적립 로그를 집계한 현재 포인트 합계(`totalPoint`, 포인트 정수)를 `200 OK`로 응답한다(공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달).
-- `GET /api/v1/points/histories`(오프셋 페이지네이션)로 저장소에서 본인 적립 내역(`historyId`/`amount`/`reason=QUIZ_CORRECT`/`createdAt`)을 최신순으로 조회해 받으며 `page` 메타가 함께 내려온다.
+- `GET /api/v1/points/summary`로 gamification 모듈이 저장소(추후 결정)에서 인증 주체의 적립 로그를 집계한 현재 포인트 합계(`totalPoint`, 포인트 정수)를 `200 OK`로 응답한다(공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달).
+- `GET /api/v1/points/histories`(오프셋 페이지네이션)로 저장소(추후 결정)에서 본인 적립 내역(`historyId`/`amount`/`reason=QUIZ_CORRECT`/`createdAt`)을 최신순으로 조회해 받으며 `page` 메타가 함께 내려온다.
 - 모든 조회는 gamification 모듈 내에서 인증 주체로만 필터링되어 타인의 내역은 반환되지 않는다.
