@@ -39,6 +39,8 @@ dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
   implementation 'org.springframework.boot:spring-boot-starter-data-redis'
   runtimeOnly 'com.mysql:mysql-connector-j'
+  //영속 - listing·diagnosis=MongoDB(지오)
+  implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
   // 메일 — 온보딩 이메일 인증번호 SMTP 발송(VerificationEmailSender). provider/secrets는 환경변수로 주입
   implementation 'org.springframework.boot:spring-boot-starter-mail'
