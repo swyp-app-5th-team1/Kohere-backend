@@ -58,8 +58,8 @@
 - **인증**: 필수
 - **동작**: path `step`(1~6)에 해당하는 질문 1개를 `diagnosisQuestions` 카탈로그에서 골라 반환한다 — `step`, `field`, `question`(사용자 언어 라벨 문자열), `select{ type, max }`, `options[{ code, label }]`. ④(`conditions`)처럼 다중 선택은 `select.type: "MULTI"`·`max: 3`으로 내려간다.
 - **③ 단계 서버 분기**: ③(`step: 3`) 대학·지역 선택은 진행 중(IN_PROGRESS) 진단에 저장된 ② 입국 목적(`purpose`)에 따라 **서버 비즈니스 로직(diagnosis 서비스 코드)** 이 한쪽 질문만 골라 내려준다(클라이언트 분기 아님) — 저장된 `purpose`가 `STUDY`이면 `field: "university"`로 **대학 목록**을, `NON_STUDY`이면 `field: "district"`로 **지역(구) 목록**을 `options`에 담는다(두 목록을 함께 주지 않는다). `diagnosisQuestions` 카탈로그에는 대학 질문·지역 질문이 각각 데이터로 존재하고, 어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정한다(카탈로그에 분기 메타는 두지 않는다 — 데이터만). 선택지 `code`는 확정 검증 enum(`University`/`District`)과 1:1 동일 출처다.
-- **번역(US-2-6)**: 반환 질문의 **표시 라벨만** 사용자의 등록 국가→언어로 번역한다 — 클라이언트가 언어를 지정하지 않으며 `Accept-Language` 헤더에 의존하지 않는다. 선택지 **코드는 언어와 무관하게 동일**(UPPER_SNAKE, 확정은 코드로 검증)하다. 미지원 언어는 **영어로 폴백**한다(에러 아님). 등록 국가는 `user` 모듈의 **공개 query를 동기 호출**해 취득한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기는 사용하지 않음 — `diagnosis → user` 모듈 의존을 추가한다).
-- **카탈로그**: 문항·선택지는 **MongoDB `diagnosisQuestions` 컬렉션**에 데이터로만 둔다(분기 메타 없음 — 분기는 서비스 로직). 번역은 별도 컬렉션 없이 `diagnosisQuestions` 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 서버가 (카탈로그 + 사용자 언어 키, ③은 + 저장된 `purpose`)으로 질문 1개를 선정·조립하며, 사용자 언어 키가 없으면 영어(`en`)로 폴백한다. 국가→언어 매핑도 서버(diagnosis)가 보유한다.
+- **번역(US-2-6)**: 반환 질문의 **표시 라벨만** 사용자 표시 언어로 번역한다 — 클라이언트가 언어를 지정하지 않으며 `Accept-Language` 헤더에 의존하지 않는다. 선택지 **코드는 언어와 무관하게 동일**(UPPER_SNAKE, 확정은 코드로 검증)하다. 미지원 언어는 **영어로 폴백**한다(에러 아님). 표시 언어는 `user` 모듈의 **공개 query(`getLanguage`)를 동기 호출**해 취득하며, `user`가 등록 국가(`countries.lang`)로 도출한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기는 사용하지 않음 — `diagnosis → user` 모듈 의존).
+- **카탈로그**: 문항·선택지는 **MongoDB `diagnosisQuestions` 컬렉션**에 데이터로만 둔다(분기 메타 없음 — 분기는 서비스 로직). 번역은 `diagnosisQuestions` 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 서버가 (카탈로그 + 사용자 언어 키, ③은 + 저장된 `purpose`)으로 질문 1개를 선정·조립하며, 사용자 언어 키가 없으면 영어(`en`)로 폴백한다. 국가→언어 매핑은 `user`의 `countries.lang`이 보유한다.
 
 #### Headers
 
@@ -465,7 +465,7 @@
 
 > `suggestions.actions[].type` 후보: `RELAX_REGION`, `RELAX_CONDITIONS`, `INCREASE_BUDGET`, `ADJUST_KEYWORD`(확인 필요 — 제안 액션 enum 카탈로그는 기획 확정 필요).
 >
-> **번역(US-2-6 일관)**: `reason`·`actions[].type`은 언어 무관 **enum 키**이고, 사람이 보는 `message`·`detail`은 **서버가 사용자 등록 국가 언어로 조립해 전송**한다(클라이언트 매핑 아님). 별도 컬렉션·키 없이, 서버가 각 `reason`/`type`별 **언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에서 사용자 언어 키를 골라(없으면 영어 폴백) `message`/`detail`을 채운다 — 문항 `question`·옵션 `label`과 **동일한 인라인 언어-키 맵 방식**이다. 등록 국가는 `user` 공개 query로 취득(US-2-5·US-2-6과 동일 i18n 경로)하고 미지원 언어는 영어로 폴백한다. 위 예시 `message`/`detail` 문자열은 한국어 표기다.
+> **번역(US-2-6 일관)**: `reason`·`actions[].type`은 언어 무관 **enum 키**이고, 사람이 보는 `message`·`detail`은 **서버가 사용자 표시 언어로 조립해 전송**한다(클라이언트 매핑 아님). 서버가 **MongoDB `diagnosisSuggestions` 컬렉션**(`reason`을 `_id`로)의 `reason`/`type`별 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에서 사용자 언어 키를 골라(없으면 영어 폴백) `message`/`detail`을 채운다 — 문항 `question`·옵션 `label`과 **동일한 인라인 언어-키 맵 방식**이다. 표시 언어는 `user` 공개 query(`getLanguage`)로 취득(US-2-5·US-2-6과 동일 i18n 경로)하고 미지원 언어는 영어로 폴백한다. 위 예시 `message`/`detail` 문자열은 한국어 표기다.
 
 #### 발생 가능한 에러
 

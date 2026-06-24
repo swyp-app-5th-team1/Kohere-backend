@@ -19,6 +19,7 @@ import java.time.Instant;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * user 공개 API 구현. auth가 호출하는 회원 생성·약관 동의·온보딩 완료·계정 조회를 처리한다. 약관 버전은 서버 설정값(app.terms.version)을 약관
@@ -27,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class UserAccountServiceImpl implements UserAccountService {
+
+  private static final String DEFAULT_LANGUAGE = "en";
 
   private final UserRepository userRepository;
   private final CountryRepository countryRepository;
@@ -95,6 +98,21 @@ public class UserAccountServiceImpl implements UserAccountService {
   public UserAccountView getAccount(long userId) {
     User user = userRepository.findById(userId).orElseThrow(UserNotFoundException::new);
     return new UserAccountView(user.getId(), user.getStatus().name());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public String getLanguage(long userId) {
+    String country =
+        userRepository.findById(userId).orElseThrow(UserNotFoundException::new).getCountry();
+    if (!StringUtils.hasText(country)) {
+      return DEFAULT_LANGUAGE;
+    }
+    return countryRepository
+        .findByCode(country)
+        .map(Country::lang)
+        .filter(StringUtils::hasText)
+        .orElse(DEFAULT_LANGUAGE);
   }
 
   private UserProfileView toProfileView(User u) {

@@ -67,7 +67,7 @@ Accepted
   - **MSA 전환 시 주의**(Decision 7): 동기 협력이 원격(REST/gRPC)이 되면 **가용성 결합**·실패/타임아웃 처리가 생기고, Kafka 이벤트는 at-least-once라 구독자의 **멱등 소비**가 필요하다.
 - **후속 작업**
   - 영속/트랜잭션 도입 시 `@EventListener` → `@ApplicationModuleListener` 전환 + Spring Modulith **Event Publication Registry**(미완료 이벤트 영속·재시도) 채택.
-  - 동기 공개 API가 필요한 협력 식별(문의 `chatRoomId`, 추천의 매물 조회, `diagnosis`→`user` 등록 국가 조회(진단 문항 라벨 번역 언어 결정 — 즉시 결과가 필요한 조회라 D5상 동기) 등)과 노출 인터페이스(`@NamedInterface`) 설계. (`diagnosis`→`user` 등록 국가 조회는 user 공개 query 동기 호출로 확정 — 토큰 클레임 미사용.)
+  - 동기 공개 API가 필요한 협력 식별(문의 `chatRoomId`, 추천의 매물 조회, `diagnosis`→`user` 표시 언어 조회(`getLanguage`; 진단 문항 라벨 번역 언어 결정 — 즉시 결과가 필요한 조회라 D5상 동기) 등)과 노출 인터페이스(`@NamedInterface`) 설계. (`diagnosis`→`user` 표시 언어 조회는 user 공개 query 동기 호출로 확정 — user가 `countries.lang`으로 도출, 토큰 클레임 미사용.)
   - 이벤트 카탈로그(발행 모듈·이벤트·구독자) 문서화.
 
 ## Validation

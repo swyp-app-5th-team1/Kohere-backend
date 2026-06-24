@@ -128,7 +128,7 @@
 | `nickname` | String | 시스템이 배정하는 표시용 닉네임(`형용사 + 사물`). 전역 유니크, 사용자 입력 아님 — 온보딩 완료 시 자동 배정. 메인 화면 비노출(프로필·`더보기 탭`에서 확인) |
 | `gender` | enum `Gender` | 성별. 온보딩 필수 |
 | `birthDate` | LocalDate | 생년월일(과거 날짜만). 온보딩 필수 |
-| `country` | String | 국적(ISO 3166-1 alpha-2 코드, 예 `VN`). 온보딩 필수 — 클라이언트는 국가만 전송, 표시명·국기(이미지 URL)는 `countries` 참조로 확보 |
+| `country` | String | 국적(ISO 3166-1 alpha-2 코드, 예 `VN`). 온보딩 필수 — 클라이언트는 국가만 전송, 표시명·국기(이미지 URL)·표시 언어(`lang`)는 `countries` 참조로 확보 |
 | `occupation` | enum `Occupation` | 직업 유형. 온보딩 필수 |
 | `email` | String | 인증 완료된 연락 이메일(온보딩 중 인증번호로 검증) — 민감정보. 소셜 제공자 이메일(`auth.SocialAccount.email`)과 별개 |
 | `visaType` | enum `VisaType` | 비자 유형 — 민감정보. 온보딩 필수 |
@@ -291,7 +291,7 @@
 
 ## 4. `diagnosis` — 6단계 맞춤 진단
 
-> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, user}`(번역용 등록 국가 조회)
+> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`)
 
 6단계 맞춤 진단(지역·입국 목적(유학 여부)·대학/지역(구) 선택·주거 환경 조건·월 예산 상한·ARC 발급 여부)을 본인 소유 레코드로 영속하고, 진단 조건으로 `listing` 공개 쿼리와 협력해 추천 매물을 제공한다. **진행 중 답은 서버가 DB에 저장**한다 — 사용자당 진행 중(`IN_PROGRESS`) 진단 1건을 in-progress draft로 들고 단계별 답을 채워가다가, 제출 시 `COMPLETED`로 확정한다(누적 답 재전송 없음). 재진단은 기존을 수정하지 않고 새 in-progress 진단을 시작해 항상 새 레코드로 이력을 보존한다.
 
@@ -322,12 +322,12 @@
 | | `monthlyBudgetMax` | int(KRW) | 월 예산 상한. 0 이상 |
 | | `arcStatus` | enum `ArcStatus` | ARC 발급 여부. 필수 1택(위반은 `400 INVALID_INPUT`, 필드별 사유) |
 | `RecommendationSuggestions` | `reason` | enum `NoMatchReason` | 매칭 0건 사유 |
-| | `message` | String | 안내 메시지 — `reason`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6 일관) |
+| | `message` | String | 안내 메시지 — `diagnosisSuggestions` 컬렉션의 `reason`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6 일관) |
 | | `actions` | `List<SuggestionAction>` | 완화 제안 목록(1건 이상이면 비어 있음) |
 | `SuggestionAction` | `type` | enum `SuggestionActionType` | 조정 유형 |
-| | `detail` | String | 결과를 늘리기 위한 단일 조정 제안 — `type`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백) |
+| | `detail` | String | 결과를 늘리기 위한 단일 조정 제안 — `diagnosisSuggestions` 컬렉션의 `type`별 인라인 언어-키 맵(`{ "en": .., "ja": .. }`)에서 **사용자 언어 키로 서버가 선택**(해당 언어 키 부재 시 영어(`en`) 폴백) |
 
-> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. 0건 추천 제안의 `message`/`detail`은 분리 컬렉션 없이 서버가 사용자 언어로 제공한다 — `reason`/`type`별 **인라인 언어-키 맵**(`{ "en": .., "ja": .. }`)을 두고, `user` 공개 query로 취득한 등록 국가를 언어로 매핑해 그 언어 키로 message·detail을 고른다(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6과 동일 i18n 경로 — 문항 라벨과 같은 인라인 언어-키 맵 방식 재사용).
+> 진단 결과 화면은 `Diagnosis.criteria`를 입력으로 `listing`의 공개 추천 쿼리를 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 조립한다. 매물은 본 모듈 애그리거트가 아니므로 식별자(`listingId`)로만 참조하며, 추천 결과는 진단에 종속된 읽기 결과로 영속하지 않는다. 0건 추천 제안의 `message`/`detail`은 **MongoDB `diagnosisSuggestions` 컬렉션**(사유 `reason`을 `_id`로)의 `reason`/`type`별 **인라인 언어-키 맵**(`{ "en": .., "ja": .. }`)에서 서버가 사용자 언어 키로 골라 제공한다 — `user` 공개 query(`getLanguage`)로 취득한 표시 언어로 message·detail을 고른다(해당 언어 키 부재 시 영어(`en`) 폴백, US-2-6과 동일 i18n 경로 — 문항 라벨과 같은 인라인 언어-키 맵 방식 재사용).
 
 **상태(enum):**
 
@@ -382,11 +382,11 @@
 >
 > `University`·`District`는 ③ 대학·지역 선택 단계의 입력 enum으로, **enum 값 카탈로그의 정본은 이 문서**다(위 표에 등재). **고정 enum(코드 1:1 검증용)은 MongoDB `diagnosisQuestions` 카탈로그**(`step`·`field`·`options[{code, label}]`·`select{type,max}` — **데이터만**, 분기 메타 없음)로 두고, **표시 문자열(번역)은 같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — `code`(UPPER_SNAKE)는 제출 검증 enum과 단일 출처(1:1)로 고정·언어 무관이고, 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`처럼 **언어 코드를 키로 하는 맵**으로 둔다(서버가 사용자 언어 키로 선택, 부재 시 영어(`en`) 폴백; 닉네임 풀·`countries`와 다른 부류로, reference로 분리하지 않음). 대학 질문(`university`)·지역 질문(`district`)은 각각 별도 step 데이터로 카탈로그에 존재하고, **어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정**한다(데이터에 분기 메타 없음).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 **조건·예산·지역(+대학/지역구)으로 매물 요약을 조회하는 `listing` 공개 추천 쿼리**(예: `recommendByCriteria`)를 동기 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 받아 조립한다(엔티티 비공유, listing 내부 스키마는 변경하지 않고 호출 인터페이스만 참조; ADR-0002 Decision 5). 라벨 번역에 쓸 **등록 국가는 `user` 공개 쿼리로 동기 취득**한다 — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(토큰 클레임 분기 제거; ADR-0002 Decision 5). 이로써 **모듈 의존 `diagnosis → user`를 추가**한다(아래 `allowedDependencies` 항목). 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다 — `userId`(→ `user`), 추천 결과의 `listingId`(→ `listing`). 추천은 `Diagnosis.criteria`로 **조건·예산·지역(+대학/지역구)으로 매물 요약을 조회하는 `listing` 공개 추천 쿼리**(예: `recommendByCriteria`)를 동기 호출해 매물 요약(`ListingSummaryResponse`)·좌표를 받아 조립한다(엔티티 비공유, listing 내부 스키마는 변경하지 않고 호출 인터페이스만 참조; ADR-0002 Decision 5). 라벨 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(토큰 클레임 분기 제거; ADR-0002 Decision 5). 이로써 **모듈 의존 `diagnosis → user`를 추가**한다(아래 `allowedDependencies` 항목). 진단 제출·재진단은 본 모듈 내부에서 완결되며 외부 발행 이벤트는 없다.
 
 - **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 질문(`university`, 목록 `University`)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
-- **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자의 등록 국가 → 언어 매핑**으로 정한 언어 키의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 등록 국가는 **`user` 공개 쿼리로 동기 취득**한다(토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 분리 컬렉션 없이 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션·추천 사유/액션이 모두 같은 인라인 언어-키 맵 방식 재사용). **국가→언어(`country→language`) 매핑은 `diagnosis` 모듈 내부의 작은 reference**로 보유하며, 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 등록 국가(`user` 공개 query) → 언어 → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
-- **`allowedDependencies`** — 라벨 번역이 등록 국가를 `user` 공개 쿼리로 동기 취득하므로 `diagnosis`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다.
+- **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자 표시 언어**의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 표시 언어는 **`user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션은 `diagnosisQuestions`, 추천 사유/액션은 `diagnosisSuggestions` 컬렉션에 같은 인라인 언어-키 맵 방식 재사용). **국가→언어 매핑은 `user`의 `countries.lang`이 보유**하며, 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 표시 언어(`user` `getLanguage`) → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
+- **`allowedDependencies`** — 라벨 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `diagnosis`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다.
 
 ---
 

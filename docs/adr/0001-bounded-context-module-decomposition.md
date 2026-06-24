@@ -67,7 +67,7 @@ Accepted
   - 모듈별 **병렬 개발**과 변경 영향 격리(보안 민감한 `auth`를 독립적으로 다룸).
   - 에러코드 prefix·API 스펙 문서와 모듈이 **1:1 추적**된다.
 - **부정/트레이드오프**
-  - cross-BC 흐름은 모듈 경계를 넘어 **조율 비용**이 든다: 온보딩(`auth`↔`user` 사용자 생성/전이), 신청 시 채팅방·카드 생성(`booking`↔`chat`), 추천(`diagnosis`↔`listing`), 진단 문항 라벨 번역용 등록 국가 조회(`diagnosis`→`user`, 실현 방식은 [ADR-0002](./0002-inter-module-communication-via-events.md)), 신고 대상 검증(`report`↔`community`/`chat`).
+  - cross-BC 흐름은 모듈 경계를 넘어 **조율 비용**이 든다: 온보딩(`auth`↔`user` 사용자 생성/전이), 신청 시 채팅방·카드 생성(`booking`↔`chat`), 추천(`diagnosis`↔`listing`), 진단 문항 라벨 번역용 표시 언어 조회(`diagnosis`→`user` `getLanguage`, 실현 방식은 [ADR-0002](./0002-inter-module-communication-via-events.md)), 신고 대상 검증(`report`↔`community`/`chat`).
   - **엔티티 모듈 간 비공유** 원칙상 동일 데이터(예: 사용자 닉네임)를 여러 모듈이 각자 보유/이벤트 수신해야 해 일부 중복이 생긴다.
 - **후속 작업**
   - 모듈 간 통신 방식(도메인 이벤트 `@ApplicationModuleListener` vs 공개 query API) 결정 → 별도 ADR.

@@ -73,10 +73,11 @@ dependencies {
   // API 문서 — 테스트 기반 REST Docs(HTML, ADR-0007) + OpenAPI3 캡처(Swagger UI, ADR-0016)
   testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
   testImplementation 'com.epages:restdocs-api-spec-mockmvc:0.19.4'
-  // 통합 테스트 — 실제 엔진(MySQL·Redis)으로 검증 (test-strategy §4)
+  // 통합 테스트 — 실제 엔진(MySQL·Redis·MongoDB)으로 검증 (test-strategy §4)
   testImplementation 'org.springframework.boot:spring-boot-testcontainers'
   testImplementation 'org.testcontainers:junit-jupiter'
   testImplementation 'org.testcontainers:mysql'
+  testImplementation 'org.testcontainers:mongodb'
   testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -119,8 +120,8 @@ tasks.named('asciidoctor') {
 // REST Docs 테스트로 캡처한 자원 → OpenAPI3 yaml(Swagger UI가 읽음, ADR-0016)
 openapi3 {
   setServer('/') // 상대경로 — Swagger를 서빙한 origin(local·dev·prod)을 자동으로 가리킨다(배포 도메인 대응)
-  title = 'Kohere API — 인증·온보딩'
-  description = 'REST Docs 테스트로 생성된 OpenAPI 3 명세'
+  title = 'Kohere API'
+  description = 'REST Docs 테스트로 생성된 OpenAPI 3 명세(인증·온보딩·진단·추천 등 — 도메인별 *DocsTest가 캡처한 스니펫 통합)'
   version = project.version.toString()
   format = 'yaml'
 }

@@ -1,32 +1,46 @@
 package com.kohere.diagnosis.application.dto;
 
+import com.kohere.common.response.PageInfo;
 import java.util.List;
 
 /**
- * 진단 결과(추천 매물) 단일 항목 응답 DTO. 추천 매물 요약과 지도 마커를 담는다.
+ * 진단 결과(추천 매물) 응답 DTO. 추천 매물 목록·지도 마커·페이지 메타를 한 객체로 담는다. 매칭이 0건이면 {@code content}/{@code markers}는
+ * 빈 목록이고 {@code suggestions}(조정 제안)를 채운다(에러 아님).
  *
- * <p>스펙상 매물 요약은 매물 탐색(listing) 도메인의 {@code ListingSummary}를 재사용하지만, 스켈레톤에서는 모듈 경계를 지키기 위해 자체 {@link
- * RecommendedListing} record로 둔다. TODO: 매물 탐색 모듈 공개 API·이벤트로 매물 데이터를 연결한다(listing 직접 import 금지).
+ * <p>매물 데이터는 listing 모듈 공개 쿼리({@code recommendByCriteria})로 받아 모듈 경계를 넘어오므로 enum은 원시 문자열로 노출한다. 지도
+ * 마커는 매물 좌표에서 파생한다.
  *
- * <p>docs/api/specs/02-diagnosis-recommendation.md §5.
+ * <p>docs/api/specs/02-diagnosis-recommendation.md §7 · 시퀀스 US-2-2.
  *
  * @param content 추천 매물 요약 목록(현재 페이지)
  * @param markers 현재 페이지 매물의 지도 좌표
+ * @param page 오프셋 페이지 메타
  * @param suggestions 매칭 0건일 때 조건/예산 조정 제안(결과가 있으면 null)
  */
 public record RecommendationResponse(
-    List<RecommendedListing> content, List<MapMarker> markers, Suggestions suggestions) {
+    List<RecommendedListing> content,
+    List<MapMarker> markers,
+    PageInfo page,
+    Suggestions suggestions) {
 
-  /** 추천 매물 요약(자체 정의). TODO: 매물 탐색 도메인 ListingSummary로 동기화한다. */
+  /** 추천 매물 요약(listing 공개 뷰에서 매핑). type·conditions는 원시 문자열. */
   public record RecommendedListing(
-      Long listingId, String title, int monthlyRent, int deposit, double lat, double lng) {}
+      Long listingId,
+      String title,
+      String type,
+      int monthlyRent,
+      int deposit,
+      String thumbnailUrl,
+      double lat,
+      double lng,
+      List<String> conditions) {}
 
   /** 지도 마커 좌표. */
   public record MapMarker(Long listingId, double lat, double lng) {}
 
-  /** 매칭 0건일 때의 조정 제안. {@code reason}/{@code actions[].type}는 클라이언트 다국어 매핑 기준. */
+  /** 매칭 0건일 때의 조정 제안. {@code reason}/{@code actions[].type}은 언어 무관 enum, message/detail은 번역본. */
   public record Suggestions(String reason, String message, List<SuggestionAction> actions) {}
 
-  /** 조정 제안 액션. TODO: type enum 카탈로그 확정(RELAX_REGION/RELAX_CONDITIONS/INCREASE_BUDGET 등). */
+  /** 조정 제안 액션(RELAX_REGION/RELAX_CONDITIONS/INCREASE_BUDGET). */
   public record SuggestionAction(String type, String detail) {}
 }

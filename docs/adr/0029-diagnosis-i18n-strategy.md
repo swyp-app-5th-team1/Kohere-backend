@@ -13,6 +13,8 @@ Accepted
 
 > [ADR-0028](./0028-diagnosis-questions-catalog-store.md)이 진단 문항·선택지 카탈로그를 MongoDB `diagnosisQuestions` 컬렉션에 두기로 정했다(문항·선택지 표시 라벨을 도큐먼트 안 **언어-키 맵**으로 임베드). 본 ADR은 그 위에서 "**진단 문항·선택지·추천 제안의 표시 텍스트를 어떤 기준으로 어떻게 번역해 저장·조립할지**"(US-2-6)를 확정한다. 단계별 조회(`GET /api/v1/diagnoses/questions/{step}`)로 한 단계씩 받는 질문의 표시 라벨·선택지 라벨, 그리고 추천 응답의 제안 메시지(`suggestions.message`)·상세(`suggestions.actions[].detail`)가 번역 대상이다.
 
+> **개정(2026-06-24, #51 구현)**: 본 ADR 구현 중 두 가지를 조정했다. (1) **국가→언어 매핑을 `diagnosis`가 아니라 `user`의 `countries.lang` 컬럼이 보유**한다 — `diagnosis`는 `user` 공개 query `getLanguage(userId)`로 등록 국가 코드가 아니라 **표시 언어(lang)를 직접 취득**한다(`user`가 `countries.lang`으로 도출, 미설정·미매핑이면 `en` 폴백). 아래 Decision 2·5·8의 "`diagnosis`가 보유하는 country→language 매핑"은 이 항목으로 갈음한다(i18n이 범모듈 관심사이므로 언어 결정을 사용자 소유 모듈로 옮긴다). (2) **추천 제안(suggestions) 번역을 MongoDB `diagnosisSuggestions` 전용 컬렉션**(사유 `reason`을 `_id`로)에 인라인 언어-키 맵으로 영속한다 — 추천 제안은 문항 도큐먼트에 임베드할 부모가 없어 전용 컬렉션을 두되, `messageKey` 평탄 컬렉션(대안 A)이 아니라 인라인 언어-키 맵 방식은 유지한다. 아래 "별도 컬렉션 없이"는 추천 제안에 한해 이 항목으로 갈음한다.
+
 ## Context
 
 - 대상 사용자는 한국어가 익숙하지 않은 외국인이다. 진단 문항·선택지·추천 제안 텍스트를 사용자가 이해할 수 있는 언어로 보여야 한다(US-2-6, 핵심 접근성).
@@ -30,13 +32,13 @@ Accepted
 **진단 i18n은 표시 문자열을 `diagnosisQuestions` 도큐먼트 안에 언어 코드를 키로 하는 맵(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 사용자 등록 국가→언어로 그 맵에서 해당 언어 문자열을 골라 조립하는 방식을 채택한다.** 별도 메시지 컬렉션·messageKey를 두지 않는다. 세부 정책은 다음과 같다.
 
 1. **번역 기준은 사용자 등록 국가다.** 클라이언트가 언어를 지정하지 않는다. 서버가 온보딩 때 수집한 등록 국가를 국가→언어로 매핑해 번역 언어를 결정한다. **`Accept-Language` 헤더·토큰 클레임 분기는 사용하지 않는다**(가입 시 확보한 국가가 기기 설정보다 안정적).
-2. **등록 국가는 `user` 모듈 공개 query를 동기 호출해 취득한다.** 진단 응답에 즉시 번역 언어가 필요하므로 [ADR-0002 Decision 5](./0002-inter-module-communication-via-events.md)에 따라 이벤트가 아닌 동기 공개 query/포트(DTO)로 가져온다(`diagnosis → user` 의존 추가, 엔티티 비공유). 토큰 클레임은 쓰지 않는다.
+2. **표시 언어(lang)는 `user` 모듈 공개 query(`getLanguage`)를 동기 호출해 취득한다.** 진단 응답에 즉시 번역 언어가 필요하므로 [ADR-0002 Decision 5](./0002-inter-module-communication-via-events.md)에 따라 이벤트가 아닌 동기 공개 query/포트(DTO)로 가져온다(`diagnosis → user` 의존, 엔티티 비공유). `user`가 등록 국가(`countries.lang`)로 언어를 도출하며, 토큰 클레임은 쓰지 않는다.
 3. **표시 문자열은 `diagnosisQuestions` 도큐먼트 안에 언어-키 맵으로 임베드한다.** 별도 메시지 컬렉션을 만들지 않는다([ADR-0028](./0028-diagnosis-questions-catalog-store.md)). 문항 라벨은 `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, 선택지 라벨은 `options[]: { code, label: { "en": "Seoul", "ja": "ソウル" } }` 형태다 — 언어 코드가 표시 문자열로 사상된다. 응답 조립 시 서버가 사용자 언어 키로 문자열을 고른다.
-4. **번역 단위는 도큐먼트 임베드 언어-키 맵이며, 별도 키 네임스페이스를 두지 않는다.** 문항·선택지 라벨은 해당 스텝 도큐먼트의 `question`·`options[].label` 맵에서 직접 고른다. 추천 제안 텍스트도 동일하게 사유(`reason`)·액션(`type`)별 언어-키 맵으로 둬, 응답 조립 시 사용자 언어 키로 `message`/`detail`을 고른다(메시지 키 변환 없음). 선택지 `code`·제안 `type`·사유 `reason`은 enum 식별 키라 언어 무관 불변이다.
-5. **표시 맵은 언어 코드 키로 두고 국가→언어는 매핑으로 도출한다.** 키는 `en`/`ja`/`ko` 등 언어 코드다. 등록 국가→언어는 `diagnosis`가 보유하는 작은 `country → language` reference 매핑으로 도출한다(국가↔언어 다대일이므로 표시 맵을 국가가 아니라 언어로 둬 중복을 없앤다).
+4. **번역 단위는 도큐먼트 임베드 언어-키 맵이며, 별도 키 네임스페이스를 두지 않는다.** 문항·선택지 라벨은 해당 스텝 도큐먼트의 `question`·`options[].label` 맵에서 직접 고른다. 추천 제안 텍스트도 동일하게 사유(`reason`)·액션(`type`)별 언어-키 맵으로 둬, 응답 조립 시 사용자 언어 키로 `message`/`detail`을 고른다(메시지 키 변환 없음) — 추천 제안은 문항 도큐먼트에 부모가 없어 **`diagnosisSuggestions` 전용 컬렉션**(`reason`을 `_id`로)에 인라인 언어-키 맵으로 둔다. 선택지 `code`·제안 `type`·사유 `reason`은 enum 식별 키라 언어 무관 불변이다.
+5. **표시 맵은 언어 코드 키로 두고 국가→언어는 매핑으로 도출한다.** 키는 `en`/`ja`/`ko` 등 언어 코드다. 등록 국가→언어는 **`user`의 `countries.lang` 컬럼**이 보유·도출하고 `diagnosis`는 `getLanguage`로 lang을 받기만 한다(국가↔언어 다대일이므로 표시 맵을 국가가 아니라 언어로 둬 중복을 없앤다).
 6. **선택지·제안 `code`/`type`·사유 `reason`(enum)은 언어 무관 동일 키다.** `code`는 UPPER_SNAKE 식별 키이며 번역되지 않는다. 어느 언어로 표시되든 같은 `code`로 제출·검증되므로([ADR-0028](./0028-diagnosis-questions-catalog-store.md)) 번역과 제출 검증이 분리된다. 표시 문자열(`label`/`message`)만 언어별이다.
 7. **미지원 언어는 영어(`en`)로 폴백한다(에러 아님).** 등록 국가의 언어 키가 표시 맵에 없으면(또는 국가→언어 매핑 미정의 국가면) `en` 값으로 폴백해 정상 200으로 응답한다. 번역 누락이 장애가 되지 않는다.
-8. **번역 라벨의 정본은 DB(`diagnosisQuestions` 컬렉션 내 언어-키 맵)다.** 콘텐츠(표시 문자열)·신규 언어를 코드 배포 없이 추가·수정하기 위함이며([ADR-0005](./0005-polyglot-persistence.md) 정합), 신규 언어는 도큐먼트의 언어-키 맵에 키를 더하면 된다. 국가→언어 매핑도 서버(`diagnosis`)가 보유한다.
+8. **번역 라벨의 정본은 DB다 — 문항·선택지는 `diagnosisQuestions`, 추천 제안은 `diagnosisSuggestions` 컬렉션 내 언어-키 맵이다.** 콘텐츠(표시 문자열)·신규 언어를 코드 배포 없이 추가·수정하기 위함이며([ADR-0005](./0005-polyglot-persistence.md) 정합), 신규 언어는 도큐먼트의 언어-키 맵에 키를 더하면 된다. 국가→언어 매핑은 `user`의 `countries.lang`이 보유한다.
 9. **번역 시점은 응답 조립 시점이며 API 응답 형태는 그대로다.** `GET /api/v1/diagnoses/questions/{step}`는 (카탈로그 + 서버가 저장한 답)으로 클라이언트가 지정한 단계의 질문을 선정하고(③은 저장된 `purpose`로 대학/지역 질문을 고른다), 결정된 언어로 그 **질문 1개의 `question`·선택지 `options[].label` 언어-키 맵에서 해당 언어 문자열을 골라** 내려간다(`question` 문자열, `options[{ code, label }]`). 그 단계 답은 별도로 `POST /api/v1/diagnoses/answers`로 진행 중 진단에 저장한다. 추천 응답도 같은 언어로 `reason`/`type`별 언어-키 맵에서 `suggestions.message`/`actions[].detail`을 고른다. 응답 스키마(필드 모양)는 바뀌지 않고 서버가 사용자 언어 문자열로 채운다.
 
 ## Alternatives
@@ -57,13 +59,13 @@ Accepted
   - 선택지·제안 `code`/`type`·사유 `reason`이 언어 무관 동일 키라 번역과 **제출 검증이 완전히 분리**된다 — 어느 언어로 표시돼도 같은 code로 검증·저장된다. **API 응답 형태는 그대로**(DTO 무영향)이고 서버가 사용자 언어 문자열로 채운다.
   - 미지원 언어 **영어(`en`) 폴백**으로 번역 누락이 장애가 되지 않는다(에러 아님).
 - **부정/트레이드오프**
-  - `diagnosis → user` **동기 의존**이 생긴다(등록 국가 query). 추후 서비스 분해 시 원격 호출이 되어 가용성 결합·타임아웃 처리가 필요하다([ADR-0002 Decision 7](./0002-inter-module-communication-via-events.md)).
+  - `diagnosis → user` **동기 의존**이 생긴다(표시 언어 query `getLanguage`). 추후 서비스 분해 시 원격 호출이 되어 가용성 결합·타임아웃 처리가 필요하다([ADR-0002 Decision 7](./0002-inter-module-communication-via-events.md)).
   - 번역이 도큐먼트에 임베드돼 **신규 언어 추가 시 해당 도큐먼트들의 언어-키 맵을 손봐야** 한다(언어별 행 추가가 아니라 각 맵에 키 추가). 누락된 언어 키는 `en` 폴백으로 메워지므로 커버리지를 관측해야 한다.
   - 번역 라벨이 DB에 있어 **시드/적재·번역 커버리지 관측**이 필요하고, 미번역 폴백이 조용히 영어로 나가므로 누락을 모니터링해야 한다.
-  - 국가→언어 매핑을 서버가 보유·유지해야 하며(국가↔언어 다대일 등), 매핑 미정의 국가도 영어로 폴백한다.
+  - 국가→언어 매핑을 `user`의 `countries.lang`이 보유·유지하며(국가↔언어 다대일 등), 매핑 미정의 국가도 영어로 폴백한다.
 - **후속 작업**
-  - MongoDB 도입([#34](../requirements/user-stories.md)) 후 `diagnosisQuestions` 도큐먼트에 `question`·`options[].label`을 언어-키 맵으로 시드 + 추천 제안 사유·액션별 언어-키 맵 시드 + `country → language` 매핑 시드([ADR-0028](./0028-diagnosis-questions-catalog-store.md)).
-  - `user` 모듈 등록 국가 조회 공개 query/포트 노출(`@NamedInterface`) + `diagnosis` `allowedDependencies`에 `user` 등록.
+  - MongoDB 도입([#34](../requirements/user-stories.md)) 후 `diagnosisQuestions` 도큐먼트에 `question`·`options[].label`을 언어-키 맵으로 시드 + 추천 제안은 `diagnosisSuggestions` 컬렉션(사유별 인라인 언어-키 맵)에 시드 + `countries.lang` 시드(user)([ADR-0028](./0028-diagnosis-questions-catalog-store.md)).
+  - `user` 모듈 표시 언어 조회 공개 query/포트 노출(`getLanguage`, `@NamedInterface`) + `diagnosis` `allowedDependencies`에 `user` 등록.
   - 문항·옵션·추천 제안의 언어별 표시 문자열을 언어-키 맵에 적재 + 응답 조립부(사용자 언어 키 선택·`en` 폴백) 연동.
   - 번역 커버리지·폴백 발생률·언어 키 누락 관측 지표 추가.
 
@@ -73,6 +75,6 @@ Accepted
 - **언어-키 맵 조립**: 응답의 `question`·`options[].label`·`suggestions.message`·`actions[].detail`이 `diagnosisQuestions` 도큐먼트의 `question`·`options[].label` 언어-키 맵과 추천 제안 사유·액션별 언어-키 맵에서 사용자 언어 키로 골라 채워지는지(별도 메시지 컬렉션·messageKey를 쓰지 않는지) 검증한다.
 - **code 불변**: 표시 언어가 달라도 `options[].code`·제안 `type`·사유 `reason`이 동일하고, 그 code로 `POST /api/v1/diagnoses` 제출이 정상 검증·저장되는지 검증한다(라벨만 언어별, code는 언어 무관 불변).
 - **API 형태 불변**: 언어가 달라도 응답 스키마(`question` 문자열·`options[{code,label}]`·`suggestions{message, actions[{type,detail}]}`)가 동일하고 `message`만 언어별로 채워지는지 검증한다.
-- **언어 결정 출처**: 번역 언어가 `Accept-Language`·토큰 클레임이 아니라 **등록 국가→언어 매핑**으로 결정되는지(헤더를 바꿔도 응답 언어가 불변) 검증한다.
+- **언어 결정 출처**: 번역 언어가 `Accept-Language`·토큰 클레임이 아니라 **등록 국가→언어 매핑**(`user`의 `countries.lang`)으로 결정되는지(헤더를 바꿔도 응답 언어가 불변) 검증한다.
 - **모듈 경계**: `diagnosis → user` 동기 의존이 `allowedDependencies`에 등록돼 `ApplicationModules.verify()`([ModularityTest](../../src/test/java/com/kohere/ModularityTest.java)) green을 유지하는지 검증한다.
 - **재검토 시점**: 번역 변경 빈도가 매우 낮아지면 리소스 번들(대안 B)로 단순화할지, 클라이언트 표시 요구가 커지면 매핑 분담(대안 A)을 재검토한다.

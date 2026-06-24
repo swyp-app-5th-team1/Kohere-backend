@@ -1,0 +1,142 @@
+# Kohere — 맞춤 진단 로컬 수동 테스트 (문항 조회 → 단계별 답 저장 → 확정 → 이력/최근/상세 → 추천)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#              └ local 프로파일이라 diagnosisQuestions 카탈로그(6단계 ko/en)가 자동 시드된다.
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#      └ 로컬은 GOOGLE_CLIENT_ID 미설정이라 audience 검증을 건너뛴다 → 유효한 Google 서명 idToken 이면 통과.
+#   4) "1. 소셜 로그인"을 먼저 보내 accessToken 을 받는다(이후 요청에 자동 전달).
+#      └ 진단 엔드포인트는 인증만 요구하므로(.anyRequest().authenticated()) 온보딩을 끝내지 않은
+#        임시 토큰으로도 호출된다. 단, 등록 국가가 없으면(미온보딩) 라벨은 영어로 내려온다.
+#        한국어 등으로 보려면 auth-onboarding.http 로 온보딩까지 마친 토큰을 쓴다(country=KR → ko).
+#   5) 각 요청 위의 "Send Request" 를 위에서부터 순서대로 클릭한다.
+#
+# 참고:
+#   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
+#   - 문항·선택지·번역은 서버가 내려준다. 답의 code 는 그 문항 options[].code(UPPER_SNAKE)를 쓴다.
+#   - ③(step 3)은 저장된 purpose 로 서버가 university/district 중 하나만 내려준다(클라 분기 아님).
+
+@baseUrl = http://localhost:8080
+@idToken = PASTE_GOOGLE_ID_TOKEN_HERE
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP 면 앱+인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 → accessToken 획득 (공개 엔드포인트)
+# @name login
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+### 2. ① 지역 문항 조회 (step 1)
+GET {{baseUrl}}/api/v1/diagnoses/questions/1
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 3. ① 지역 답 저장 (단일 선택 → code)
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "region",
+  "code": "SEOUL"
+}
+
+### 4. ② 입국 목적 문항 조회 (step 2)
+GET {{baseUrl}}/api/v1/diagnoses/questions/2
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 5. ② 입국 목적 답 저장 (STUDY → step 3에서 university 문항이 내려온다)
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "purpose",
+  "code": "STUDY"
+}
+
+### 6. ③ 대학/지역 문항 조회 (step 3) — purpose=STUDY 라 university 문항이 온다
+#    (purpose=NON_STUDY 였다면 field=district 로 내려온다)
+GET {{baseUrl}}/api/v1/diagnoses/questions/3
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 7. ③ 대학 답 저장 (STUDY 경로)
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "university",
+  "code": "SNU"
+}
+
+### 8. ④ 주거 조건 문항 조회 (step 4) — 다중 선택(최대 3)
+GET {{baseUrl}}/api/v1/diagnoses/questions/4
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 9. ④ 주거 조건 답 저장 (다중 선택 → codes 배열)
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "conditions",
+  "codes": ["FEMALE_ONLY", "PRIVATE_BATH"]
+}
+
+### 10. ⑤ 월 예산 문항 조회 (step 5) — 숫자 입력(NUMBER, 선택지 없음)
+GET {{baseUrl}}/api/v1/diagnoses/questions/5
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 11. ⑤ 월 예산 답 저장 (KRW 정수 문자열 → code)
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "monthlyBudgetMax",
+  "code": "600000"
+}
+
+### 12. ⑥ ARC 발급 상태 문항 조회 (step 6)
+GET {{baseUrl}}/api/v1/diagnoses/questions/6
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 13. ⑥ ARC 발급 상태 답 저장
+POST {{baseUrl}}/api/v1/diagnoses/answers
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "arcStatus",
+  "code": "ARC_ISSUED"
+}
+
+### 14. 진단 확정 (진행 중 → COMPLETED) — 201 Created + Location, 본문 비움
+#     서버가 저장된 6단계 답을 재검증해 diagnosisId·submittedAt 을 발급한다.
+# @name submit
+POST {{baseUrl}}/api/v1/diagnoses
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 15. 진단 이력 조회 (COMPLETED만, 최신순) — sort=submittedAt,(asc|desc)
+GET {{baseUrl}}/api/v1/diagnoses?page=0&size=20&sort=submittedAt,desc
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 16. 최근 진단 단건 (없으면 completed=false)
+GET {{baseUrl}}/api/v1/diagnoses/latest
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 17. 진단 단건 상세 (본인 소유만 — 타인 403, 미존재 404)
+GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### 18. 진단 결과 추천 매물 + 지도 좌표
+#     listing 영속 미구현이라 현재는 매칭 0건 → content/markers 빈 목록 + suggestions(NO_MATCH, 번역) 반환.
+GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
+Authorization: Bearer {{login.response.body.$.data.accessToken}}

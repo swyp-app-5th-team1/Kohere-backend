@@ -87,7 +87,7 @@ flowchart TB
     FILTER --> REST --> Mods
 
     DIAG -. "RecommendationCriteria<br/>(공개 쿼리, 조인 아님)" .-> LIST
-    DIAG -. "등록 국가→언어(번역)<br/>(user 공개 query 동기 호출·ADR-0002 D5)" .-> USER
+    DIAG -. "표시 언어(번역) getLanguage<br/>(user 공개 query 동기 호출·ADR-0002 D5)" .-> USER
     BOOKING -. "BookingCreatedEvent" .-> CHAT
 
     AUTH --> MYSQL
@@ -372,7 +372,7 @@ flowchart TB
 
 | 영역                         | 채택                                                                                | 상태   | 비고                                                                                                                            |
 | ---------------------------- | ----------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 등록 국가/언어**는 `diagnosis`→`user` **공개 query 동기 호출**(ADR-0002 Decision 5; 토큰 클레임 분기 제거) |
+| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                           | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 표시 언어**는 `diagnosis`→`user` **공개 query(`getLanguage`) 동기 호출**(user가 `countries.lang`으로 도출; ADR-0002 Decision 5; 토큰 클레임 분기 제거) |
 | 임대인 연락                  | **F-03 신청하기 → 인앱 채팅방 기록**(booking→chat, `BookingCreatedEvent`) | 도입   | 실시간 WebSocket·푸시는 추후. booking·chat 저장소 추후 결정                                                                   |
 | 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                       | 도입   | 매물 사진 호스팅 — 클라이언트는 `cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖 |
 | 푸시 알림(FCM/APNs)          | —                                                                                  | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                       |
