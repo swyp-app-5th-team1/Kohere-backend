@@ -227,6 +227,8 @@
 ### 4-3. `listing`
 
 > 스토어: **MongoDB** (지오·대량 읽기, `2dsphere`. [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `Listing`·`Favorite`·`RecentListing`(VO `Location`·`Landlord` 임베드).
+>
+> Numbers 첫 번째 임시 데이터를 반영한 필드별 주석·예시·인덱스 검토안은 [Listing MongoDB 상세 스키마 초안](./listing-mongodb-schema.md)을 참고한다.
 
 `listings`
 
