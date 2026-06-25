@@ -3,7 +3,7 @@
 > [api-design-guide](../api-design-guide.md) · [error-response-guide](../error-response-guide.md)를 따른다. 모든 응답은 공통 래퍼.
 > 관련 유저 스토리: [user-stories](../../requirements/user-stories.md)
 
-매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
+매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
 
 공통 enum:
 
@@ -63,12 +63,12 @@ Request Body: 없음
   "data": {
     "content": [
       {
-        "listingId": 1024,
+        "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
         "type": "GOSIWON",
         "monthlyRent": 450000,
         "deposit": 0,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/1024/thumb.jpg",
+        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
         "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
         "distanceMeters": 320,
@@ -88,6 +88,7 @@ Request Body: 없음
 }
 ```
 
+- 목록의 `monthlyRent`·`deposit`은 필터 조건을 만족하는 활성 `roomOffer` 중 대표값(기본: 최저 월세 방 상품)이다. 상세 화면에서는 `roomOffers[]`로 방 상품별 실제 가격·조건을 내려준다.
 - `distanceMeters`는 `centerLat/centerLng`가 제공된 경우(또는 `sort=DISTANCE`)에만 채워지고, 그 외에는 `null`이다.
 - 비로그인 시 `favorited`는 `false`로 고정한다.
 
@@ -131,7 +132,7 @@ Request Body: 없음
   "data": {
     "clusters": [
       { "lat": 37.5512, "lng": 126.9369, "count": 23, "listingId": null },
-      { "lat": 37.5489, "lng": 126.9412, "count": 1, "listingId": 2087 }
+      { "lat": 37.5489, "lng": 126.9412, "count": 1, "listingId": "6858e2000000000000000001" }
     ],
     "total": 24
   },
@@ -209,7 +210,7 @@ Path 파라미터:
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | Long | 필수 | 매물 식별자 |
+| `listingId` | string | 필수 | 매물 식별자(ObjectId hex 문자열) |
 
 Request Body: 없음
 
@@ -219,29 +220,53 @@ Request Body: 없음
 {
   "success": true,
   "data": {
-    "listingId": 1024,
+    "listingId": "6858e2000000000000000001",
     "title": "신촌 도보 5분 1인실 고시원",
     "type": "GOSIWON",
     "imageUrls": [
-      "https://cdn.kohere.app/listings/1024/1.jpg",
-      "https://cdn.kohere.app/listings/1024/2.jpg"
+      "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
+      "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
     ],
-    "monthlyRent": 450000,
-    "deposit": 0,
-    "contractTermOptions": ["ONE_MONTH", "THREE_MONTHS", "SIX_MONTHS"],
     "location": {
       "lat": 37.555134,
       "lng": 126.936893,
       "address": "서울 서대문구 신촌로 ...",
       "addressDetail": "3층 305호"
     },
-    "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION", "PRIVATE_TOILET"],
-    "arcRequired": false,
-    "landlord": {
-      "landlordId": 77,
-      "name": "김임대",
-      "contactChannel": "CHAT"
+    "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
+    "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
+    "featureSummary": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"],
+    "propertyPolicies": {
+      "arcRequired": false,
+      "residentRegistrationAvailable": true,
+      "englishAvailable": false,
+      "mealsProvided": true
     },
+    "roomOffers": [
+      {
+        "roomOfferId": "6858e2000000000000000101",
+        "name": "스탠다드 1인실",
+        "status": "ACTIVE",
+        "pricing": {
+          "monthlyRent": 300000,
+          "deposit": 300000,
+          "maintenanceFee": 0,
+          "currency": "KRW"
+        },
+        "contract": {
+          "minStayMonths": 2,
+          "maxStayMonths": 6
+        },
+        "inventory": {
+          "totalCount": 10,
+          "availableCount": 0,
+          "nextAvailableFrom": null
+        },
+        "genderPolicy": "FEMALE_ONLY",
+        "filterTags": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"]
+      }
+    ],
+    "landlordId": 77,
     "favorited": true,
     "favoriteCount": 12,
     "createdAt": "2026-05-30T02:11:00Z"
@@ -250,7 +275,8 @@ Request Body: 없음
 }
 ```
 
-- `landlord.contactChannel`은 항상 `CHAT`이며, 전화번호 등 직접 연락처는 노출하지 않는다(채팅으로만 연결).
+- 전화번호 등 직접 연락처는 노출하지 않는다(신청·문의는 채팅으로만 연결).
+- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이다. 필터 조건은 같은 `roomOffer`가 가격·재고·옵션을 모두 만족하는지 기준으로 판단한다.
 - 비로그인 시 `favorited=false`, 최근 본 매물 기록은 생성하지 않는다.
 
 발생 가능한 에러:
@@ -268,7 +294,7 @@ Path 파라미터:
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | Long | 필수 | 매물 식별자 |
+| `listingId` | string | 필수 | 매물 식별자(ObjectId hex 문자열) |
 
 Request Body: 없음
 
@@ -349,12 +375,12 @@ Request Body: 없음
   "data": {
     "content": [
       {
-        "listingId": 1024,
+        "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
         "type": "GOSIWON",
         "monthlyRent": 450000,
         "deposit": 0,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/1024/thumb.jpg",
+        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
         "conditions": ["ENGLISH_AVAILABLE"],
         "favorited": true,
@@ -394,12 +420,12 @@ Request Body: 없음
   "data": {
     "content": [
       {
-        "listingId": 2087,
+        "listingId": "6858e2000000000000000001",
         "title": "홍대입구 코리빙 2인실",
         "type": "CO_LIVING",
         "monthlyRent": 600000,
         "deposit": 1000000,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/2087/thumb.jpg",
+        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "location": { "lat": 37.5571, "lng": 126.9245, "address": "서울 마포구 ..." },
         "favorited": false,
         "viewedAt": "2026-06-15T01:30:00Z"

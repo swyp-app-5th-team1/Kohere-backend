@@ -24,6 +24,7 @@
 
 - 날짜만 표기는 `YYYY-MM-DD`(예: `moveInDate`), 시각은 ISO-8601 UTC(예: `2026-06-15T08:30:00Z`).
 - 금액은 KRW 정수(예: `monthlyRent: 500000`).
+- `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. `bookingId`·`chatRoomId`·`messageId`는 각 모듈 저장소의 숫자 식별자를 유지한다.
 - **고정 메시지(pinned)**: 채팅방 상단에 고정되는 카드. `BOOKING_CARD`/`LISTING_CARD`가 `pinned: true`로 내려간다.
 
 ---
@@ -56,7 +57,7 @@
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | Long | 필수 | 신청 대상 매물 ID |
+| `listingId` | string | 필수 | 신청 대상 매물 ID(ObjectId hex 문자열) |
 
 #### Request Body
 
@@ -83,7 +84,7 @@
   "success": true,
   "data": {
     "bookingId": 9001,
-    "listingId": 1234,
+    "listingId": "6858e2000000000000000001",
     "status": "REQUESTED",
     "moveInDate": "2026-07-01",
     "contractPeriod": "SIX_MONTHS",
@@ -127,7 +128,7 @@
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | Long | 필수 | 문의 대상 매물 ID |
+| `listingId` | string | 필수 | 문의 대상 매물 ID(ObjectId hex 문자열) |
 
 #### Request Body
 
@@ -145,9 +146,9 @@
     "category": "LANDLORD",
     "created": true,
     "listing": {
-      "listingId": 1234,
+      "listingId": "6858e2000000000000000001",
       "title": "강남역 도보 5분 원룸",
-      "thumbnailUrl": "https://cdn.kohere.com/listings/1234/thumb.jpg",
+      "thumbnailUrl": "https://cdn.kohere.com/listings/6858e2000000000000000001/thumb.jpg",
       "monthlyRent": 500000
     },
     "counterpart": {
@@ -159,7 +160,7 @@
       "messageId": 80001,
       "type": "LISTING_CARD",
       "pinned": true,
-      "listingId": 1234,
+      "listingId": "6858e2000000000000000001",
       "title": "강남역 도보 5분 원룸",
       "monthlyRent": 500000
     }
@@ -207,9 +208,9 @@
         "chatRoomId": 555,
         "category": "LANDLORD",
         "listing": {
-          "listingId": 1234,
+          "listingId": "6858e2000000000000000001",
           "title": "강남역 도보 5분 원룸",
-          "thumbnailUrl": "https://cdn.kohere.com/listings/1234/thumb.jpg"
+          "thumbnailUrl": "https://cdn.kohere.com/listings/6858e2000000000000000001/thumb.jpg"
         },
         "counterpart": {
           "userId": 42,

@@ -19,8 +19,8 @@ sequenceDiagram
     else 검증 통과
         SEC->>LIST: 인증된 요청 전달 (userId)
         alt 신규 찜 생성
-            Note over LIST: (userId, listingId) 유니크로 멱등 보장<br/>favoriteCount 원자적 증가
-            LIST->>DB: 찜 insert ( (userId, listingId) 유니크 )<br/>favoriteCount 원자적 증가
+            Note over LIST: listingId는 ObjectId 문자열<br/>(userId, listingId) 유니크로 멱등 보장<br/>favoriteCount 원자적 증가
+            LIST->>DB: 찜 insert ( (userId, ObjectId listingId) 유니크 )<br/>favoriteCount 원자적 증가
             DB-->>LIST: 생성 완료, favoriteCount 증가값
             LIST-->>C: 201 Created<br/>data( favorited=true, favoriteCount=증가값 )
             C-->>U: 찜 등록 상태 표시
@@ -50,6 +50,6 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- 찜 등록은 `POST /api/v1/listings/{listingId}/favorite`로 `listing` 모듈이 처리하며, 신규 생성 시 MongoDB에 찜 insert(`(userId, listingId)` 유니크)·`favoriteCount` 원자적 증가 후 `201 Created`(이미 찜이면 멱등하게 `200 OK`) + `data( favorited, favoriteCount )`를 반환한다.
+- 찜 등록은 `POST /api/v1/listings/{listingId}/favorite`로 `listing` 모듈이 처리하며, `listingId`는 ObjectId 문자열이다. 신규 생성 시 MongoDB에 찜 insert(`(userId, listingId)` 유니크)·`favoriteCount` 원자적 증가 후 `201 Created`(이미 찜이면 멱등하게 `200 OK`) + `data( favorited, favoriteCount )`를 반환한다.
 - 찜 해제는 `listing` 모듈의 `DELETE .../favorite`로 MongoDB에서 찜 delete·`favoriteCount` 감소 후 토글 결과 상태를 담아 항상 `200 OK`를 반환하며, 미찜 매물 해제도 멱등 처리한다.
 - 찜·찜 목록은 모두 인증 필수(`me` 스코프)라 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 `listing` 모듈로 전달하며, 토큰 없음/만료/위조는 SEC가 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`로 차단하고(검증 실패 분기는 저장소 접근 없음) 목록은 `GET /api/v1/users/me/favorites`로 MongoDB에서 본인 찜 목록을 조회한다.

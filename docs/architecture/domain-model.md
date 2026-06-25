@@ -23,7 +23,7 @@
 | --- | --- | --- | --- |
 | [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification` | `SocialIdentity`, `TokenHash` | ✅ |
 | [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
-| [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Landlord`, `MatchedPlace` | ✅ |
+| [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
 | [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis` | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | `GreetingMessage` | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | ✅ |
@@ -188,32 +188,58 @@
 
 > [API 스펙](../api/specs/03-listings-favorites.md) · [시퀀스](sequence-diagrams/03-listings-favorites/README.md) · `allowedDependencies = {common}`
 
-외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC.
+외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다.
 
-**`Listing`** — 외국인 대상 주거 매물(임대인이 게시한 단건) 애그리거트 루트. 식별자 `id`. [값 객체: `Location`, `Landlord`]
+**`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`(API에서는 `listingId` 문자열로 노출). [값 객체: `Location`, `Address`, `Building`, `PropertyPolicies`, `Facilities`, `RoomOffer`]
 
 **속성:**
 
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
 | `id` | 식별자 | 애그리거트 식별자 |
+| `schemaVersion` | int | 문서 구조 버전 |
+| `landlordId` | 식별자 | 매물을 등록한 임대인 → `User` 식별자 참조 |
 | `title` | String | 매물 제목 |
 | `type` | enum `ListingType` | 매물 유형 |
-| `monthlyRent` | int | 월세(KRW 정수, ≥0) |
-| `deposit` | int | 보증금(KRW 정수, ≥0) |
-| `location` | VO `Location` | 좌표·주소·상세주소 |
-| `conditions` | `Set<ConditionTag>` | 주거 환경 조건 집합(중복 불가) |
-| `contractTermOptions` | `Set<ContractTerm>` | 선택 가능한 계약기간 옵션 집합 |
-| `imageUrls` | `List<String>` | 매물 이미지 URL 목록(순서 보존, 첫 번째가 썸네일) |
-| `arcRequired` | boolean | 입주에 ARC(외국인등록증)가 필요한지 |
-| `availableFrom` | LocalDate | 입주 가능일 |
-| `landlord` | VO `Landlord` | 임대인 식별자·표시명·연락 채널 |
-| `published` | boolean | 공개 여부(비공개·삭제 매물은 조회 불가) |
+| `status` | enum `ListingStatus` | 공개/임시저장/중지/삭제 상태 |
+| `location` | VO `Location` | 지도 검색용 좌표 |
+| `address` | VO `Address` | 표시 주소·행정구역 |
+| `nearestTransit` | VO `NearestTransit` | 가까운 교통수단과 도보 시간 |
+| `nearbyPlacesDescription` | String | 집주인이 자유 입력한 주변 시설 안내 |
+| `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 학교 코드 |
+| `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터·난방 |
+| `propertyPolicies` | VO `PropertyPolicies` | 건물/전체 방 공통 정책(ARC·전입신고·식사·영어 안내 등) |
+| `facilities` | VO `Facilities` | 공용 편의·보안·공간·제공 물품 |
+| `roomOffers` | `List<RoomOffer>` | 가격·계약·방 특징·재고가 같은 실제 방 묶음 |
+| `featureSummary` | `Set<ConditionTag>` | 활성 방 상품들의 필터 태그 합집합(상세 표시용) |
+| `descriptions` | VO `Descriptions` | 다국어 상세 설명 |
+| `extraNotes` | String | 자유 입력 주의사항 |
+| `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일) |
 | `favoriteCount` | int | 찜 수 집계(≥0) |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 수정 시각(UTC) |
 
-**불변식:** `published=false`(비공개·삭제)는 상세·찜·문의 대상에서 제외, 조회 시 부재(`404 LISTING_NOT_FOUND`); `monthlyRent`·`deposit`은 KRW 정수 ≥0; `conditions`·`contractTermOptions`는 중복 없는 집합(계약기간은 최소 1개); `imageUrls` 첫 항목이 썸네일; `landlord.contactChannel`은 항상 `CHAT`(직접 연락처 미노출); `favoriteCount`는 0 미만 불가이며 찜 등록/해제와 정합(멱등 토글에서 중복 증감 없음); `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점에 요청 주체·파라미터로 산출되는 표현값이며 애그리거트 영속 속성이 아니다.
+**불변식:** `status=PUBLISHED`인 매물만 목록·지도·상세·찜·신청·문의 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); Listing은 최소 1개 이상의 `roomOffers`를 가져야 한다; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; `featureSummary`는 상세 화면 표시용 합집합이며 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·재고·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; 직접 연락처는 매물 애그리거트에 저장하지 않고 신청·문의는 인앱 채팅으로만 연결한다; `favoriteCount`는 0 미만 불가이며 찜 등록/해제와 정합(멱등 토글에서 중복 증감 없음); `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점에 요청 주체·파라미터로 산출되는 표현값이며 애그리거트 영속 속성이 아니다.
+
+**`RoomOffer`** — 동일한 가격·계약조건·성별 정책·방 특징을 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `roomOfferId` | 식별자 | Listing 내부 방 상품 식별자 |
+| `name` | String | 사용자에게 노출되는 방 상품명 |
+| `status` | enum `RoomOfferStatus` | 판매/노출 상태 |
+| `rentalType` | enum `RentalType` | 임대 방식 |
+| `pricing` | VO `Pricing` | 월세·보증금·관리비·통화 |
+| `contract` | VO `Contract` | 최소/최대 계약기간·환불 안내 |
+| `inventory` | VO `Inventory` | 전체 수량·계약 가능 수량·다음 입주 가능일 |
+| `genderPolicy` | enum `GenderPolicy` | 성별 정책 |
+| `features` | `Set<RoomFeature>` | 방 상품 자체 시설·형태 |
+| `filterTags` | `Set<ConditionTag>` | 검색 최적화를 위해 정본 필드에서 파생한 필터 태그 |
+| `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 |
+
+**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; `contract.minStayMonths <= contract.maxStayMonths`; `inventory.availableCount <= inventory.totalCount`이고 둘 다 0 이상; 계약 확정은 `availableCount > 0`인 방 상품에서만 가능하며 확정 시 수량을 원자적으로 1 감소시킨다; 가격·성별 정책·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
 
 **`Favorite`** — 사용자가 매물을 찜한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, listingId)`.
 
@@ -247,11 +273,20 @@
 | --- | --- | --- | --- |
 | `Location` | `lat` | double | 위도(WGS84) |
 | | `lng` | double | 경도(WGS84) |
-| | `address` | String | 주소 |
-| | `addressDetail` | String | 상세주소(WGS84 좌표와 표기 주소를 묶은 불변 값) |
-| `Landlord` | `landlordId` | 식별자 | → `User` 식별자 참조 |
-| | `name` | String | 임대인 표시명 |
-| | `contactChannel` | enum `ContactChannel` | 항상 `CHAT`(직접 연락처 미보유, 채팅 채널만 노출) |
+| `Address` | `city` | String | 도시/광역 단위 코드 |
+| | `district` | String | 구/군 단위 코드 |
+| | `fullAddress` | String | 표시 주소 |
+| | `detail` | String | 상세주소 |
+| `Pricing` | `monthlyRent` | int | 월세(KRW 정수) |
+| | `deposit` | int | 보증금(KRW 정수) |
+| | `maintenanceFee` | int | 관리비(KRW 정수) |
+| | `currency` | enum `Currency` | 통화(현재 `KRW`) |
+| `Contract` | `minStayMonths` | int | 최소 계약 개월 |
+| | `maxStayMonths` | int | 최대 계약 개월 |
+| | `refundPolicy` | VO `RefundPolicy` | 환불 정책 코드·설명 |
+| `Inventory` | `totalCount` | int | 동일 조건 실제 방 전체 수 |
+| | `availableCount` | int | 현재 계약 가능한 수 |
+| | `nextAvailableFrom` | LocalDate | 현재 가능 수량이 없을 때 가장 빠른 예상 입주 가능일 |
 | `MatchedPlace` | `type` | enum `MatchedPlaceType` | 매칭된 POI 유형(학교·지역·역). 키워드 검색 입력어가 매칭된 위치를 표현하는 조회 결과 값(매칭 없으면 부재) |
 | | `name` | String | POI 이름 |
 | | `lat` | double | 위도 |
@@ -265,6 +300,18 @@
 | | `CO_LIVING` | 코리빙 |
 | | `SHARE_HOUSE` | 셰어하우스 |
 | | `OTHER` | 기타 |
+| `ListingStatus` | `DRAFT` | 임시저장 |
+| | `PUBLISHED` | 공개 중 |
+| | `PAUSED` | 임대인/운영자에 의해 노출 중지 |
+| | `DELETED` | 삭제 처리 |
+| `RoomOfferStatus` | `ACTIVE` | 노출·계약 가능 |
+| | `INACTIVE` | 노출 중지 |
+| `RentalType` | `MONTHLY_RENT` | 월세 |
+| `Currency` | `KRW` | 원화 |
+| `GenderPolicy` | `ANY` | 성별 무관 |
+| | `FEMALE_ONLY` | 여성 전용 |
+| | `MALE_ONLY` | 남성 전용 |
+| | `GENDER_SEPARATED` | 층/공간 분리 |
 | `ConditionTag` | `IMMEDIATE_MOVE_IN` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `PRIVATE_TOILET` | 개인 화장실 |
@@ -274,18 +321,17 @@
 | | `NO_MAINTENANCE_FEE` | 관리비 없음 |
 | | `MEALS_PROVIDED` | 식사 제공 |
 | | `DOUBLE_ROOM` | 2인실 |
-| `ContractTerm` | `ONE_MONTH` | 1개월 |
-| | `THREE_MONTHS` | 3개월 |
-| | `SIX_MONTHS` | 6개월 |
-| | `TWELVE_MONTHS` | 12개월 |
-| `ContactChannel` | `CHAT` | 인앱 채팅으로만 연결(직접 연락처 미노출) |
+| `RoomFeature` | `SINGLE_ROOM` | 1인실 |
+| | `PRIVATE_REFRIGERATOR` | 개인 냉장고 |
+| | `MICROWAVE` | 전자레인지 |
+| | `ELECTRIC_KETTLE` | 전기포트 |
 | `MatchedPlaceType` | `UNIVERSITY` | 학교 |
 | | `REGION` | 지역 |
 | | `SUBWAY_STATION` | 지하철역 |
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox/반경 모드·클러스터 단위·결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 기준 좌표 필요, 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
-**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlord.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·예산·지역으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다. 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자가 필요할 때 공개 쿼리로 검증한다.
+**협력 / 이벤트:** 타 애그리거트는 식별자로만 참조한다(ADR-0002). `Favorite`·`RecentListing`·`Listing.landlordId`는 `user`를 식별자로만 보유하고 표시정보는 `user` 공개 쿼리로 협력한다. 진단 기반 추천은 `diagnosis`가 본 모듈의 **공개 추천 쿼리**(조건·예산·지역으로 매물 조회)를 호출해 충족하며 매물 엔티티를 공유하지 않고 식별자·요약만 넘긴다. 신청·문의(`booking`·`chat`)는 매물 존재·공개·임대인 식별자·대표 가격·썸네일이 필요할 때 공개 쿼리로 검증한다.
 
 ---
 

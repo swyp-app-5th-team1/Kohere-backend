@@ -45,7 +45,7 @@
 | 식별자 | MySQL `id BIGINT PK AUTO_INCREMENT` · Mongo `_id ObjectId` · Redis 키 자체 | 외부 노출 식별자는 store별 네이티브 타입을 따른다 |
 | 생성시각 | 전 애그리거트 `created_at`/`createdAt`(또는 의미상 `submitted_at` 등) (UTC) | MySQL `DATETIME(6)` / Mongo ISODate |
 | 수정시각 | **가변** 애그리거트 `updated_at`/`updatedAt` | `user`·`listings`·`posts` 등 |
-| 소프트삭제 | **`community`만** `deleted`+`deleted_at` | 그 외는 상태 enum으로 표현(`user.status=WITHDRAWN`, `listing.published=false`, `booking.status=CANCELED`) |
+| 소프트삭제 | **`community`만** `deleted`+`deleted_at` | 그 외는 상태 enum으로 표현(`user.status=WITHDRAWN`, `listing.status=DELETED/PAUSED`, `booking.status=CANCELED`) |
 
 ### 2-3. 데이터 타입 가이드
 
@@ -228,30 +228,47 @@
 
 ### 4-3. `listing`
 
-> 스토어: **MongoDB** (지오·대량 읽기, `2dsphere`. [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `Listing`·`Favorite`·`RecentListing`(VO `Location`·`Landlord` 임베드).
+> 스토어: **MongoDB** (지오·대량 읽기, `2dsphere`. [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `Listing`·`RoomOffer`·`Favorite`·`RecentListing`.
 >
-> Numbers 첫 번째 임시 데이터를 반영한 필드별 주석·예시·인덱스 검토안은 [Listing MongoDB 상세 스키마 초안](./listing-mongodb-schema.md)을 참고한다.
+> 매물 문서는 **건물/주소 단위 Listing 1건**이고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 `roomOffers[]`의 **방 상품**으로 임베드한다. API의 `listingId`는 MongoDB `_id ObjectId`의 24자리 hex 문자열이다. Numbers 첫 번째 임시 데이터를 반영한 필드별 주석·예시·인덱스 검토안은 [Listing MongoDB 상세 스키마](./listing-mongodb-schema.md)을 참고한다.
 
 `listings`
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `_id` | ObjectId | PK |
-| `type` | string (enum `ListingType`) | NOT NULL |
+| `schemaVersion` | int | NOT NULL · 문서 구조 버전 |
+| `landlordId` | long | NOT NULL · → user `users.id` 값 참조(FK 없음) |
 | `title` | string | NOT NULL |
-| `location` | object(VO `Location`) | `lat`/`lng`(GeoJSON Point `[lng,lat]`, 2dsphere)·`address`·`addressDetail` |
-| `monthlyRent` | int | NOT NULL, ≥0 |
-| `deposit` | int | NOT NULL, ≥0 |
-| `conditions` | string[] (enum `ConditionTag`) | 중복 불가(집합) · AND 필터 |
-| `contractTermOptions` | string[] (enum `ContractTerm`) | 최소 1, 중복 불가(집합) |
+| `type` | string (enum `ListingType`) | NOT NULL |
+| `status` | string (enum `ListingStatus`) | NOT NULL · `DRAFT`/`PUBLISHED`/`PAUSED`/`DELETED` |
+| `location` | GeoJSON `Point` | NOT NULL · `[lng,lat]`, `2dsphere` |
+| `address` | object | `city`·`district`·`fullAddress`·`detail` |
+| `nearestTransit` | object | `type`·`name`·`walkMinutes` |
+| `nearbyPlacesDescription` | string | 집주인 자유 입력 주변 시설 안내(검색 인덱스 대상 아님) |
+| `nearbyUniversityCodes` | string[] | 학교 검색·진단 추천용 코드 |
+| `building` | object | 건물 유형·층수·주차·엘리베이터·난방 |
+| `propertyPolicies` | object | 건물/전체 방 공통 정책(`arcRequired`·전입신고·식사·영어 안내 등) |
+| `facilities` | object | 공용 편의·보안·공간·제공 물품 |
+| `roomOffers` | object[] | 동일 가격·계약·방 특징을 가진 실제 방 묶음. 최소 1개 |
+| `roomOffers[].roomOfferId` | ObjectId | 문서 내부 방 상품 식별자(API에서는 문자열) |
+| `roomOffers[].status` | string (enum `RoomOfferStatus`) | `ACTIVE`/`INACTIVE` |
+| `roomOffers[].pricing` | object | `monthlyRent`·`deposit`·`maintenanceFee`·`currency`(KRW 정수, 단일값) |
+| `roomOffers[].contract` | object | `minStayMonths`·`maxStayMonths`·`refundPolicy` |
+| `roomOffers[].inventory` | object | `totalCount`·`availableCount`·`nextAvailableFrom` |
+| `roomOffers[].genderPolicy` | string (enum `GenderPolicy`) | 방 상품별 성별 정책 |
+| `roomOffers[].features` | string[] | 방 상품 자체 특징 |
+| `roomOffers[].filterTags` | string[] | 필터 검색용 태그(정본 필드에서 서버가 파생) |
+| `roomOffers[].roomImageUrls` | string[] | 방 상품 전용 이미지 |
+| `featureSummary` | string[] | 활성 `roomOffers` 태그 합집합. 상세 표시용 요약 |
+| `descriptions` | object | 다국어 상세 설명(`ko`·`en` 등) |
+| `extraNotes` | string | 자유 입력 주의사항 |
 | `imageUrls` | string[] | `[0]`=썸네일 |
-| `arcRequired` | bool | NOT NULL |
-| `availableFrom` | date | 입주 가능일 |
-| `landlord` | object(VO `Landlord`) | `landlordId`(→ user 값 참조)·`name`·`contactChannel`(enum `ContactChannel`, 항상 `CHAT`) |
-| `published` | bool | NOT NULL, default true |
 | `favoriteCount` | int | default 0, ≥0 · 비정규화 캐시 |
 | `createdAt` | ISODate | NOT NULL |
 | `updatedAt` | ISODate | NOT NULL |
+
+> `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 화면 표시용 합집합이며, 필터는 반드시 같은 `roomOffers[]` 원소가 가격·재고·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다.
 
 `favorites`
 
@@ -259,7 +276,7 @@
 | --- | --- | --- |
 | `_id` | ObjectId | PK |
 | `userId` | long | NOT NULL · UNIQUE(userId,listingId) · → user(값 참조) |
-| `listingId` | long | NOT NULL · UNIQUE(userId,listingId) · → listings(값 참조) |
+| `listingId` | ObjectId | NOT NULL · UNIQUE(userId,listingId) · → listings.\_id 값 참조 |
 | `favoritedAt` | ISODate | NOT NULL · 목록 정렬키(desc) |
 
 `recentListings`
@@ -268,7 +285,7 @@
 | --- | --- | --- |
 | `_id` | ObjectId | PK |
 | `userId` | long | NOT NULL · UNIQUE(userId,listingId) · → user(값 참조) |
-| `listingId` | long | NOT NULL · UNIQUE(userId,listingId) · → listings(값 참조). 재조회 upsert |
+| `listingId` | ObjectId | NOT NULL · UNIQUE(userId,listingId) · → listings.\_id 값 참조. 재조회 upsert |
 | `viewedAt` | ISODate | NOT NULL · TTL(7일) |
 
 **인덱스:**
@@ -276,18 +293,22 @@
 | 인덱스 | 대상 | 종류 | 목적 |
 | --- | --- | --- | --- |
 | `listings.location` | `location` | **2dsphere** | bbox/반경·거리순(`$near`/`$geoWithin`, [ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
-| `listings_filter` | `published, type, monthlyRent` | 복합 | 공개·유형·월세 필터 |
-| `listings_conditions` | `conditions` | multikey | `ConditionTag` AND 필터 |
+| `listings_status_type_rent` | `status, type, roomOffers.pricing.monthlyRent` | 복합/multikey | 공개 매물·유형·방 상품 월세 필터 |
+| `listings_landlord_status_updated` | `landlordId, status, updatedAt desc` | 복합 | 임대인의 매물 관리 목록 |
+| `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |
+| `listings_status_room_available_count` | `status, roomOffers.inventory.availableCount` | 복합/multikey | 현재 계약 가능한 방 상품이 있는 매물 검색 |
+| `listings_status_arc_required` | `status, propertyPolicies.arcRequired` | 복합 | ARC 미보유 사용자 추천/필터 |
 | `favorites_user_listing` | `userId, listingId` | UNIQUE | 중복 찜 불가·토글 멱등 |
 | `favorites_user_favoritedAt` | `userId, favoritedAt` | 복합(desc) | 내 찜 목록 |
 | `recentListings_user_listing` | `userId, listingId` | UNIQUE | 재조회 upsert |
 | `recentListings_viewedAt_ttl` | `viewedAt` | TTL(604800s) | 7일 자동 만료 |
 
-- **교차 스토어/모듈 no-FK**: `favorites`/`recentListings`→user(다른 store)·listing(같은 store)이라도 FK 없이 값 참조 + 애플리케이션 조인.
+- **교차 스토어/모듈 no-FK**: `landlordId`·`favorites.userId`·`recentListings.userId`는 user(MySQL)를 값으로만 참조한다. `listingId`는 Mongo `_id ObjectId` 값 참조이며 API에서는 문자열로 노출한다.
 - **유니크/멱등**: 찜 토글 멱등(신규 201/기존 200, 해제 항상 200). 최근본 재조회는 upsert.
 - **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시 — 토글 시 동일 store 갱신 + 배치 재계산([§6](#6-결정-필요-open-questions)).
 - **최근 본**: "7일·최대 5건" — 7일은 TTL, 5건은 조회 `viewedAt desc limit 5`(표시 상한).
-- **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환. `landlord.contactChannel`은 상수 `CHAT`(직접 연락처 미보유).
+- **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환.
+- **방 재고**: 예약/계약 확정 시 `roomOffers.inventory.availableCount > 0` 조건에서 해당 방 상품 수량을 원자적으로 감소시킨다. 실제 방 번호별 관리가 필요해지면 별도 `roomUnits` 컬렉션을 추가한다.
 - `favorited`·`distanceMeters`는 조회 시점 산출 표현값으로 영속하지 않는다(domain-model).
 
 ### 4-4. `diagnosis`
@@ -368,7 +389,7 @@
 | --- | --- | --- |
 | `id` | long | PK |
 | `tenant_id` | long | NOT NULL · → user(값 참조) |
-| `listing_id` | long | NOT NULL · → listing(값 참조) |
+| `listing_id` | string | NOT NULL · Mongo `listings._id` ObjectId hex 문자열 값 참조 |
 | `landlord_id` | long | NOT NULL · → user(값 참조) |
 | `move_in_date` | date | NOT NULL |
 | `contract_period` | enum `ContractPeriod` | NOT NULL |
@@ -379,7 +400,7 @@
 **인덱스**: PK `id` / **부분 UNIQUE** `(tenant_id, listing_id) WHERE status IN ('REQUESTED','ACCEPTED')`(활성 예약 1건·중복 신청 방지, `BOOKING_ALREADY_EXISTS` 409) / INDEX `(tenant_id, created_at)`·`(listing_id, status)`.
 
 - **활성 유니크**: REJECTED/CANCELED 후 재신청 허용을 위해 **부분(조건부) 유니크**. 미지원 스토어면 앱 레벨 검증(조회+락/멱등키).
-- **교차 모듈 no-FK**: `tenant_id`·`listing_id`·`landlord_id` 값 참조. 본인 매물 금지(`tenant_id==landlord_id`, `422`)·입주일 검증은 listing 공개 쿼리로.
+- **교차 모듈 no-FK**: `tenant_id`·`listing_id`·`landlord_id` 값 참조. `listing_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 본인 매물 금지(`tenant_id==landlord_id`, `422`)·입주일/방 상품 재고 검증은 listing 공개 쿼리로.
 - **chatRoomId 비영속**: 신청 응답의 `chatRoomId`는 `BookingCreatedEvent` 후 `chat`이 보장한 방을 이벤트/공개 쿼리로 받아 구성하며 `bookings`에 저장하지 않는다.
 - **소프트삭제 불요**: 취소는 `status=CANCELED`. 상태 전이(수락/거절/취소)는 현 스펙 범위 밖 — 도입 시 `updated_at` 추가.
 
@@ -393,10 +414,10 @@
 | --- | --- | --- |
 | `id` | long | PK |
 | `category` | enum `ChatCategory` | NOT NULL |
-| `listing_id` | long | NULL · → listing(값 참조). NEIGHBOR이면 null |
+| `listing_id` | string | NULL · Mongo `listings._id` ObjectId hex 문자열 값 참조. NEIGHBOR이면 null |
 | `tenant_id` | long | NOT NULL · → user(값 참조) |
 | `landlord_id` | long | NOT NULL · → user(값 참조) |
-| `listing_snapshot` | object(VO `ListingSnapshot`) | NULL · `listingId`·`title`·`thumbnailUrl`·`monthlyRent`(비정규화) |
+| `listing_snapshot` | object(VO `ListingSnapshot`) | NULL · `listingId`(ObjectId 문자열)·`title`·`thumbnailUrl`·`monthlyRent`(비정규화) |
 | `active` | bool | NOT NULL, default true |
 | `last_message_at` | datetime | NULL · 목록 정렬키(desc) |
 | `created_at` | datetime | NOT NULL |
@@ -427,7 +448,7 @@
 
 **인덱스**: PK 각 / UNIQUE `chat_rooms(listing_id,tenant_id,landlord_id)`(방 유일·문의 멱등) / INDEX `chat_rooms(tenant_id,last_message_at desc)`·`(landlord_id,last_message_at desc)`(참여자별 목록) / INDEX `messages(chat_room_id, id desc)`(커서 페이지) / UNIQUE `chat_room_members(chat_room_id,user_id)`.
 
-- **교차 모듈 no-FK**: `listing_id`·`tenant_id`·`landlord_id`·`sender_id`·`user_id` 값 참조. 같은 모듈 `messages.chat_room_id`·`chat_room_members.*`만 FK.
+- **교차 모듈 no-FK**: `listing_id`(Mongo ObjectId 문자열)·`tenant_id`·`landlord_id`·`sender_id`·`user_id` 값 참조. 같은 모듈 `messages.chat_room_id`·`chat_room_members.*`만 FK.
 - **읽음 커서**: `unreadCount`는 저장하지 않고 `messages` 중 `id > last_read_message_id`인 본인 미발신 수로 계산. 읽음은 전진만·멱등.
 - **카드/스냅샷 비정규화**: `booking_card`/`listing_card`/`listing_snapshot`은 생성 시점 정보를 굳힌 임베드 VO(매물 변경과 독립). `content`는 `TEXT`에만·카드는 카드 타입에만(앱 레벨 배타; DB CHECK는 store 확정 후).
 - **NEIGHBOR 유니크**: `listing_id=null`의 유니크 시맨틱이 스토어별 상이(MySQL NULL 비충돌 vs Mongo partial index) → store 확정 시 결정([§6](#6-결정-필요-open-questions)).
@@ -512,15 +533,14 @@
 영속 물리화 전 닫아야 할 **저장소·인프라 결정**(도메인 설계는 [domain-model](../architecture/domain-model.md)에서 확정됨).
 
 1. **저장소 ADR 4건**: `booking`·`chat`·`gamification`·`report`의 스토어(MySQL vs MongoDB) 미결정 → 식별자(BIGINT vs ObjectId)·임베드 VO(`booking_card`/`listing_snapshot`/`choices`) 표현·단일 트랜잭션 보장이 이에 종속.
-2. **store별 물리 식별자**: Mongo 모듈(`listing`·`diagnosis`)은 `_id ObjectId`, 추후결정 모듈은 store 확정 시. 외부 노출 식별자(API path)를 ObjectId(string)로 노출할지 별도 숫자키를 둘지 결정.
-3. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
-4. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
-5. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
-6. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
-7. **이메일 인증 정책**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋, 메일 발송 인프라(SES/SMTP 등) 미확정(§4-1 A-2).
-8. **직업(`Occupation`) 분류값**: 요구사항 정의서 드롭다운 항목 잘림 → 현재 임시값(`STUDENT`/`EMPLOYEE`/`SELF_EMPLOYED`/`JOB_SEEKER`/`ETC`), 실제 선택지 확정 필요.
-9. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
-10. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)
+2. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
+3. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
+4. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
+5. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
+6. **이메일 인증 정책**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋, 메일 발송 인프라(SES/SMTP 등) 미확정(§4-1 A-2).
+7. **직업(`Occupation`) 분류값**: 요구사항 정의서 드롭다운 항목 잘림 → 현재 임시값(`STUDENT`/`EMPLOYEE`/`SELF_EMPLOYED`/`JOB_SEEKER`/`ETC`), 실제 선택지 확정 필요.
+8. **닉네임 풀**: `nickname_adjectives`·`nickname_nouns` 단어 시딩·로케일(언어)·조합 포맷(연결/구분자), 재조합 재시도 상한·fallback 규칙, 무작위 선택 전략(앱 로드 vs `RAND()`) 미확정.
+9. **국가(`countries`)**: 표시명 다국어(단일 vs `name_en`/`name_ko`), 시드 출처(ISO 3166-1·전체 국가 확장), `users.country`→`countries.code` FK 적용 여부. (`flag`는 국기 이미지 URL(flagcdn.com SVG)로 확정 — 외부 CDN 의존, 자체 호스팅 전환은 후속 검토.)
 
 > refresh 토큰 저장(Redis)·회전·재사용 탐지·TTL(=만료)은 [ADR-0006](../adr/0006-refresh-token-store-redis.md)으로 **확정**돼 결정 필요 항목이 아니다(§4-1 참조).
 

@@ -16,7 +16,7 @@
 - 목록은 **오프셋 기반 페이지네이션**(api-design-guide §4-1: `page` 0-base, `size` 기본 20·최대 100, `sort=field,(asc|desc)`).
 - 모든 엔드포인트는 본인 진단만 접근(소유권 검증). 인증은 `Authorization: Bearer <accessToken>`.
 - 입력 검증 실패(필수값 누락·enum 불일치·조건 개수 초과·예산 음수·페이지 파라미터 범위·잘못된 `sort` 키)는 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인은 별도 검증 코드를 만들지 않는다.
-- 매물 요약(`ListingSummaryResponse`)·지도 마커 DTO는 매물 탐색(01) 스펙과 동일 구조를 재사용한다(확인 필요 — 01 스펙 확정 시 동기화).
+- 매물 요약(`ListingSummaryResponse`)·지도 마커 DTO는 매물 탐색 스펙과 동일 구조를 재사용한다. 추천 응답의 `listingId`는 MongoDB ObjectId hex 문자열이다.
 
 ## 진단 입력 enum 정의
 
@@ -405,7 +405,7 @@
   "data": {
     "content": [
       {
-        "listingId": 5001,
+        "listingId": "6858e2000000000000000001",
         "title": "Sinchon Co-living House A",
         "housingType": "CO_LIVING",
         "monthlyRent": 550000,
@@ -413,11 +413,11 @@
         "lat": 37.555134,
         "lng": 126.936893,
         "conditions": ["FEMALE_ONLY", "PRIVATE_BATH"],
-        "thumbnailUrl": "https://cdn.kohere.app/listings/5001/thumb.jpg"
+        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
       }
     ],
     "markers": [
-      { "listingId": 5001, "lat": 37.555134, "lng": 126.936893 }
+      { "listingId": "6858e2000000000000000001", "lat": 37.555134, "lng": 126.936893 }
     ],
     "page": {
       "number": 0,

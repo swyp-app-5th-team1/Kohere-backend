@@ -1,8 +1,8 @@
-# Listing MongoDB 상세 스키마 초안
+# Listing MongoDB 상세 스키마
 
 > 기준 데이터: `임시) 매물 상세 수집 가정 데이터.numbers`의 첫 번째 데이터 행(`고시원001`)
 >
-> 상태: **Draft** — 실제 MongoDB validator·Document 클래스 구현 전 검토용. 한 문서는 건물/매물 전체를 나타내고, 동일한 가격·조건의 방은 `roomOffers[]`에서 수량으로 묶어 관리한다.
+> 상태: **Accepted for MVP implementation** — 한 문서는 건물/매물 전체를 나타내고, 동일한 가격·조건의 방은 `roomOffers[]`에서 수량으로 묶어 관리한다. API의 `listingId`는 `_id ObjectId`의 24자리 hex 문자열이다.
 
 ## 1. 저장 경계
 
