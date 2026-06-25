@@ -10,7 +10,7 @@ import java.util.List;
  * <p>docs/api/specs/03-listings-favorites.md 리스트 항목 스키마.
  */
 public record ListingSummaryResponse(
-    Long listingId,
+    String listingId,
     String title,
     ListingType type,
     int monthlyRent,

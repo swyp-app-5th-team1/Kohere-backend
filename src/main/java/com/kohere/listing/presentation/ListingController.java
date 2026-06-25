@@ -3,6 +3,7 @@ package com.kohere.listing.presentation;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
+import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ListingSort;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class ListingController {
 
   private final ListingService listingService;
 
+  /** 매물 목록 화면에서 사용할 공개 매물 요약 페이지를 반환한다. */
   @GetMapping
   public PageResponse<ListingSummaryResponse> getListings(
       @RequestParam(required = false) Integer minBudget,
@@ -40,19 +42,22 @@ public class ListingController {
     return listingService.getListings(page, size);
   }
 
+  /** 매물 상세 화면에서 사용할 객체별 상세 정보를 반환한다. */
   @GetMapping("/{listingId}")
-  public ListingSummaryResponse getListing(@PathVariable Long listingId) {
+  public ListingDetailResponse getListing(@PathVariable String listingId) {
     return listingService.getListing(listingId);
   }
 
+  /** 매물 찜 등록 API 예정 지점이다. */
   @PostMapping("/{listingId}/favorite")
   @ResponseStatus(HttpStatus.CREATED)
-  public FavoriteToggleResponse addFavorite(@PathVariable Long listingId) {
+  public FavoriteToggleResponse addFavorite(@PathVariable String listingId) {
     return listingService.addFavorite(listingId);
   }
 
+  /** 매물 찜 해제 API 예정 지점이다. */
   @DeleteMapping("/{listingId}/favorite")
-  public FavoriteToggleResponse removeFavorite(@PathVariable Long listingId) {
+  public FavoriteToggleResponse removeFavorite(@PathVariable String listingId) {
     return listingService.removeFavorite(listingId);
   }
 }

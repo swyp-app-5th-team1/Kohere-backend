@@ -1,27 +1,53 @@
 package com.kohere.listing.application;
 
-import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.listing.api.RecommendedListingView;
-import java.util.List;
+import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingRepository;
+import java.util.Collections;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
  * 매물 추천 공개 쿼리 구현. diagnosis가 진단 조건을 {@link RecommendationCriteria}로 묶어 동기 호출한다(ADR-0002 Decision
  * 5).
  *
- * <p>매칭·정렬·페이징을 수행할 listing 영속 계층이 아직 없으므로 현재는 빈 결과(매칭 0건)를 반환한다 — 이는 스펙상 유효한 흐름이며 호출 측(diagnosis)이
- * 0건 분기로 조정 제안(suggestions)을 구성한다. TODO: listing 영속(매물 컬렉션) 도입 시 criteria 기반 실제 매칭으로 교체한다.
+ * <p>listing 모듈의 MongoDB 컬렉션만 조회하고, diagnosis 엔티티나 컬렉션에는 접근하지 않는다.
  */
 @Service
+@RequiredArgsConstructor
 public class ListingRecommendationServiceImpl implements ListingRecommendationService {
 
+  private final ListingRepository listingRepository;
+
+  /** 진단 조건을 매물 저장소 조회 조건으로 변환하고 추천 응답 view로 매핑한다. */
   @Override
   public PageResponse<RecommendedListingView> recommendByCriteria(RecommendationCriteria criteria) {
-    List<RecommendedListingView> content = List.of();
-    PageInfo page = new PageInfo(criteria.page(), criteria.size(), 0L, 0, false);
-    return PageResponse.of(content, page);
+    PageResponse<Listing> listings =
+        listingRepository.recommend(
+            criteria.region(),
+            criteria.monthlyBudgetMax(),
+            parseConditionTags(criteria.conditions()),
+            criteria.university(),
+            criteria.district(),
+            criteria.page(),
+            criteria.size(),
+            criteria.sort());
+    return PageResponse.of(
+        listings.content().stream().map(ListingResponseMapper::toRecommendedView).toList(),
+        listings.page());
+  }
+
+  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다. */
+  private static Set<ConditionTag> parseConditionTags(Set<String> conditions) {
+    if (conditions == null || conditions.isEmpty()) {
+      return Collections.emptySet();
+    }
+    return conditions.stream().map(ConditionTag::valueOf).collect(Collectors.toUnmodifiableSet());
   }
 }

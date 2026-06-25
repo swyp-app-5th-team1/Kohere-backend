@@ -20,7 +20,7 @@ import java.util.List;
  * @param conditions 주거 조건 태그 이름 목록(예: {@code "PRIVATE_TOILET"})
  */
 public record RecommendedListingView(
-    Long listingId,
+    String listingId,
     String title,
     String type,
     int monthlyRent,
