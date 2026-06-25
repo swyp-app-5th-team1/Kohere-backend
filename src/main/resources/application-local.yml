@@ -29,6 +29,8 @@ spring:
             enable: ${SPRING_MAIL_SMTP_STARTTLS:false}
 
 app:
+  seed:
+    listings-enabled: ${LISTING_SEED_ENABLED:true}
   jwt:
     # HS256 시크릿: 최소 256bit(32byte). 운영은 prod 프로파일이 폴백 없이 JWT_SECRET을 강제한다.
     secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
@@ -40,4 +42,3 @@ app:
       audience: ${GOOGLE_CLIENT_ID:}
     apple:
       audience: ${APPLE_CLIENT_ID:}
-
