@@ -4,13 +4,14 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
  * 통합 테스트용 실제 엔진 컨테이너(test-strategy §4). MySQL(auth·user, ADR-0005)·Redis(refresh, ADR-0006)를
  * Testcontainers로 띄우고 {@code @ServiceConnection}으로 datasource·redis 설정을 자동 주입한다(application.yml의
- * localhost 기본값을 덮어씀). MongoDB는 auth-onboarding 범위 밖이라 두지 않는다.
+ * localhost 기본값을 덮어씀).
  *
  * <p>실행에 Docker 데몬이 필요하다(로컬·CI 공통).
  */
@@ -27,5 +28,11 @@ public class TestcontainersConfiguration {
   @ServiceConnection(name = "redis")
   GenericContainer<?> redisContainer() {
     return new GenericContainer<>(DockerImageName.parse("redis:7")).withExposedPorts(6379);
+  }
+
+  @Bean
+  @ServiceConnection
+  MongoDBContainer mongoDBContainer() {
+    return new MongoDBContainer(DockerImageName.parse("mongo:7"));
   }
 }

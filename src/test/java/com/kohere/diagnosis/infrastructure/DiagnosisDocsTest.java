@@ -274,7 +274,7 @@ class DiagnosisDocsTest {
         .willReturn(
             pageOf(
                 new RecommendedListingView(
-                    5001L,
+                    "6858e2000000000000000001",
                     "Sinchon Co-living House A",
                     "CO_LIVING",
                     550000,
@@ -291,7 +291,7 @@ class DiagnosisDocsTest {
                 .param("size", "20")
                 .param("sort", "recommended,desc"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.content[0].listingId").value(5001))
+        .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"))
         .andDo(
             document(
                 "diagnosis-recommendations",
@@ -742,7 +742,7 @@ class DiagnosisDocsTest {
   private static List<FieldDescriptor> recommendationWithContentFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.content[].listingId", JsonFieldType.NUMBER, "매물 식별자"),
+        field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
         field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
         field("data.content[].type", JsonFieldType.STRING, "주거 유형(원시 문자열)"),
         field("data.content[].monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
@@ -751,7 +751,7 @@ class DiagnosisDocsTest {
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
         field("data.content[].conditions", JsonFieldType.ARRAY, "매물 조건 코드 목록(원시 문자열)"),
-        field("data.markers[].listingId", JsonFieldType.NUMBER, "마커 매물 식별자"),
+        field("data.markers[].listingId", JsonFieldType.STRING, "마커 매물 식별자(ObjectId hex 문자열)"),
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커 위도"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커 경도"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호(0-base)"),

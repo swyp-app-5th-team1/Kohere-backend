@@ -263,7 +263,7 @@ class DiagnosisMongoIntegrationTest {
         .willReturn(
             pageOf(
                 new RecommendedListingView(
-                    5001L,
+                    "6858e2000000000000000001",
                     "Cozy",
                     "CO_LIVING",
                     550000,
@@ -277,7 +277,7 @@ class DiagnosisMongoIntegrationTest {
         diagnosisService.getRecommendations(
             userId, created.diagnosisId(), 0, 20, "recommended,desc");
     assertThat(rec.content()).hasSize(1);
-    assertThat(rec.content().get(0).listingId()).isEqualTo(5001L);
+    assertThat(rec.content().get(0).listingId()).isEqualTo("6858e2000000000000000001");
     assertThat(rec.content().get(0).type()).isEqualTo("CO_LIVING");
     assertThat(rec.markers()).hasSize(1);
     assertThat(rec.markers().get(0).lat()).isEqualTo(37.5);

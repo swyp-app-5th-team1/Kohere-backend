@@ -1,0 +1,240 @@
+package com.kohere.listing.infrastructure;
+
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
+import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
+import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
+import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
+import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
+import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
+import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtTokenService;
+import java.util.List;
+import org.bson.Document;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.restdocs.RestDocumentationContextProvider;
+import org.springframework.restdocs.RestDocumentationExtension;
+import org.springframework.restdocs.payload.FieldDescriptor;
+import org.springframework.restdocs.payload.JsonFieldType;
+import org.springframework.restdocs.request.ParameterDescriptor;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+
+/**
+ * listing 모듈의 구현 완료 API를 Swagger UI(OpenAPI)에 노출하기 위한 REST Docs 테스트다. 이 프로젝트는 컨트롤러 자동 스캔이 아니라
+ * DocsTest 스니펫으로 Swagger를 생성한다.
+ */
+@SpringBootTest
+@ExtendWith(RestDocumentationExtension.class)
+@ActiveProfiles("test")
+@Import(TestcontainersConfiguration.class)
+class ListingDocsTest {
+
+  private static final String LISTING_ID = "6858e2000000000000000001";
+
+  @Autowired private WebApplicationContext context;
+  @Autowired private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
+  @Autowired private ObjectMapper objectMapper;
+  @Autowired private JwtTokenService jwtTokenService;
+
+  private MockMvc mockMvc;
+
+  /** REST Docs용 MockMvc를 만들고, 문서 예시에 사용할 매물 seed 데이터를 매번 초기화한다. */
+  @BeforeEach
+  void setUp(RestDocumentationContextProvider restDocumentation) throws Exception {
+    mockMvc =
+        MockMvcBuilders.webAppContextSetup(context)
+            .apply(springSecurity())
+            .apply(documentationConfiguration(restDocumentation))
+            .build();
+    mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
+    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+  }
+
+  /** 매물 목록/상세 API를 호출해 Swagger 생성에 필요한 REST Docs 스니펫을 만든다. */
+  @Test
+  void generatesListingSnippets() throws Exception {
+    String token = jwtTokenService.issueAccessToken(1L);
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andDo(
+            document(
+                "listings-list",
+                resourceDetails().summary("매물 목록 조회 — 공개 매물 오버뷰 페이지"),
+                queryParameters(listQueryParameters()),
+                responseFields(listResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/{listingId}", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
+        .andDo(
+            document(
+                "listing-detail",
+                resourceDetails().summary("매물 상세 조회 — 객체별 섹션 응답"),
+                pathParameters(
+                    parameterWithName("listingId").description("매물 식별자(ObjectId hex 문자열)")),
+                responseFields(detailResponseFields())));
+  }
+
+  /** 목록 API의 query parameter 문서 정의다. */
+  private static ParameterDescriptor[] listQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
+    };
+  }
+
+  /** 목록 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> listResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
+        field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
+        field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
+        field("data.content[].monthlyRent", JsonFieldType.NUMBER, "대표 방 상품 월세(KRW)"),
+        field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품 보증금(KRW)"),
+        field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
+        field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
+        field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품 조건 태그 목록"),
+        field("data.content[].favorited", JsonFieldType.BOOLEAN, "현재 사용자 찜 여부(비로그인/미연동은 false)"),
+        field("data.content[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
+        field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+        field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** 상세 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> detailResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
+        field("data.basicInfo.title", JsonFieldType.STRING, "매물 제목"),
+        field("data.basicInfo.type", JsonFieldType.STRING, "매물 유형"),
+        field("data.basicInfo.status", JsonFieldType.STRING, "매물 공개 상태"),
+        field("data.locationInfo.location.lat", JsonFieldType.NUMBER, "위도(WGS84)"),
+        field("data.locationInfo.location.lng", JsonFieldType.NUMBER, "경도(WGS84)"),
+        field("data.locationInfo.address.city", JsonFieldType.STRING, "도시 코드"),
+        field("data.locationInfo.address.district", JsonFieldType.STRING, "지역구 코드"),
+        field("data.locationInfo.address.fullAddress", JsonFieldType.STRING, "표시 주소"),
+        field("data.locationInfo.address.detail", JsonFieldType.NULL, "상세주소(없으면 null)"),
+        field("data.locationInfo.nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
+        field("data.locationInfo.nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
+        field("data.locationInfo.nearestTransit.walkMinutes", JsonFieldType.NUMBER, "도보 시간(분)"),
+        field("data.locationInfo.nearbyPlacesDescription", JsonFieldType.STRING, "집주인 입력 주변 시설 안내"),
+        field("data.locationInfo.nearbyUniversityCodes", JsonFieldType.ARRAY, "주변 학교 코드 목록"),
+        field("data.propertyInfo.building.type", JsonFieldType.STRING, "건물 유형"),
+        field("data.propertyInfo.building.usedFloorMin", JsonFieldType.NUMBER, "사용 층 최소값"),
+        field("data.propertyInfo.building.usedFloorMax", JsonFieldType.NUMBER, "사용 층 최대값"),
+        field("data.propertyInfo.building.totalFloors", JsonFieldType.NUMBER, "전체 층수"),
+        field("data.propertyInfo.building.parkingAvailable", JsonFieldType.BOOLEAN, "주차 가능 여부"),
+        field("data.propertyInfo.building.elevatorAvailable", JsonFieldType.BOOLEAN, "엘리베이터 여부"),
+        field("data.propertyInfo.building.heatingSystem", JsonFieldType.STRING, "난방 방식"),
+        field("data.propertyInfo.propertyPolicies.arcRequired", JsonFieldType.BOOLEAN, "ARC 필요 여부"),
+        field(
+            "data.propertyInfo.propertyPolicies.residentRegistrationAvailable",
+            JsonFieldType.BOOLEAN,
+            "전입신고 가능 여부"),
+        field(
+            "data.propertyInfo.propertyPolicies.studySuitable",
+            JsonFieldType.BOOLEAN,
+            "학업 목적 거주 적합 여부"),
+        field(
+            "data.propertyInfo.propertyPolicies.mealsProvided", JsonFieldType.BOOLEAN, "식사 제공 여부"),
+        field(
+            "data.propertyInfo.propertyPolicies.englishAvailable",
+            JsonFieldType.BOOLEAN,
+            "영어 소통 가능 여부"),
+        field("data.propertyInfo.facilities.laundry", JsonFieldType.ARRAY, "세탁 시설"),
+        field("data.propertyInfo.facilities.livingAmenities", JsonFieldType.ARRAY, "생활 편의시설"),
+        field("data.propertyInfo.facilities.securityFeatures", JsonFieldType.ARRAY, "보안 시설"),
+        field("data.propertyInfo.facilities.commonSpaces[].type", JsonFieldType.STRING, "공용공간 유형"),
+        fieldWithPath("data.propertyInfo.facilities.commonSpaces[].count")
+            .type(JsonFieldType.VARIES)
+            .optional()
+            .description("공용공간 수량(없으면 생략)"),
+        field("data.propertyInfo.facilities.providedSupplies", JsonFieldType.ARRAY, "제공 물품"),
+        field("data.propertyInfo.featureSummary", JsonFieldType.ARRAY, "활성 방 상품들의 조건 태그 합집합"),
+        field("data.roomOffers[].roomOfferId", JsonFieldType.STRING, "방 상품 식별자(ObjectId hex 문자열)"),
+        field("data.roomOffers[].name", JsonFieldType.STRING, "방 상품명"),
+        field("data.roomOffers[].status", JsonFieldType.STRING, "방 상품 상태"),
+        field("data.roomOffers[].rentalType", JsonFieldType.STRING, "임대 방식"),
+        field("data.roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
+        field("data.roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
+        field("data.roomOffers[].pricing.maintenanceFee", JsonFieldType.NUMBER, "관리비(KRW)"),
+        field("data.roomOffers[].pricing.currency", JsonFieldType.STRING, "통화"),
+        field("data.roomOffers[].contract.minStayMonths", JsonFieldType.NUMBER, "최소 계약 개월"),
+        field("data.roomOffers[].contract.maxStayMonths", JsonFieldType.NUMBER, "최대 계약 개월"),
+        field("data.roomOffers[].contract.refundPolicy.code", JsonFieldType.STRING, "환불 정책 코드"),
+        field(
+            "data.roomOffers[].contract.refundPolicy.description",
+            JsonFieldType.STRING,
+            "환불 정책 설명"),
+        field("data.roomOffers[].inventory.totalCount", JsonFieldType.NUMBER, "동일 조건 실제 방 전체 수"),
+        field("data.roomOffers[].inventory.availableCount", JsonFieldType.NUMBER, "현재 계약 가능한 방 수"),
+        field(
+            "data.roomOffers[].inventory.nextAvailableFrom",
+            JsonFieldType.NULL,
+            "다음 입주 가능일(없으면 null)"),
+        field("data.roomOffers[].genderPolicy", JsonFieldType.STRING, "성별 정책"),
+        field("data.roomOffers[].features", JsonFieldType.ARRAY, "방 상품 자체 시설·형태"),
+        field("data.roomOffers[].filterTags", JsonFieldType.ARRAY, "필터 태그"),
+        field("data.roomOffers[].roomImageUrls", JsonFieldType.ARRAY, "방 상품 이미지 URL 목록"),
+        field("data.content.descriptions.ko", JsonFieldType.STRING, "한국어 상세 설명"),
+        field("data.content.descriptions.en", JsonFieldType.STRING, "영어 상세 설명"),
+        field("data.content.extraNotes", JsonFieldType.STRING, "자유 입력 주의사항"),
+        field("data.content.imageUrls", JsonFieldType.ARRAY, "건물 공용 이미지 URL 목록"),
+        field("data.content.thumbnailUrl", JsonFieldType.NULL, "대표 썸네일 URL(없으면 null)"),
+        field("data.interaction.favorited", JsonFieldType.BOOLEAN, "현재 사용자 찜 여부(비로그인/미연동은 false)"),
+        field("data.interaction.favoriteCount", JsonFieldType.NUMBER, "찜 수"),
+        field("data.createdAt", JsonFieldType.STRING, "생성 시각(ISO-8601 UTC)"),
+        field("data.updatedAt", JsonFieldType.STRING, "수정 시각(ISO-8601 UTC)"),
+        errorNull());
+  }
+
+  /** REST Docs 필드 설명을 짧게 만들기 위한 헬퍼다. */
+  private static FieldDescriptor field(String path, JsonFieldType type, String description) {
+    return fieldWithPath(path).type(type).description(description);
+  }
+
+  /** 공통 성공 응답의 error=null 필드를 문서화한다. */
+  private static FieldDescriptor errorNull() {
+    return fieldWithPath("error")
+        .type(JsonFieldType.NULL)
+        .optional()
+        .description("성공 응답의 error는 항상 null");
+  }
+
+  /** 테스트용 JWT를 Authorization 헤더 값으로 바꾼다. */
+  private static String bearer(String token) {
+    return "Bearer " + token;
+  }
+}
