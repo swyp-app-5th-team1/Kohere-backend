@@ -9,4 +9,4 @@ import java.time.LocalDate;
  * booking.domain.ContractPeriod} enum)을 노출하지 않는다 — 그래서 {@code contractPeriod}는 enum이 아닌 문자열로 전달한다.
  */
 public record BookingCreatedEvent(
-    Long bookingId, Long listingId, Long tenantId, LocalDate moveInDate, String contractPeriod) {}
+    Long bookingId, String listingId, Long tenantId, LocalDate moveInDate, String contractPeriod) {}

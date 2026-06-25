@@ -20,7 +20,7 @@ public class Booking {
 
   private final Long id;
   private final Long tenantId;
-  private final Long listingId;
+  private final String listingId;
   private final LocalDate moveInDate;
   private final ContractPeriod contractPeriod;
   private final BookingStatus status;

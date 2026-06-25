@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 public class FavoriteRepositoryImpl implements FavoriteRepository {
 
   @Override
-  public Optional<Favorite> findByUserIdAndListingId(Long userId, Long listingId) {
+  public Optional<Favorite> findByUserIdAndListingId(Long userId, String listingId) {
     throw new UnsupportedOperationException("TODO: JPA 구현으로 교체");
   }
 }

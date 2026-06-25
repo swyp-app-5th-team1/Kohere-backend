@@ -29,7 +29,7 @@ public class ChatService {
   private final ChatRoomRepository chatRoomRepository;
   private final MessageRepository messageRepository;
 
-  public InquiryResponse createInquiry(Long listingId) {
+  public InquiryResponse createInquiry(String listingId) {
     throw new UnsupportedOperationException("TODO: 매물 문의(임대인 채팅방 생성/조회 + 매물 카드 고정)");
   }
 

@@ -13,7 +13,7 @@ import java.time.LocalDate;
  */
 public record BookingResponse(
     Long bookingId,
-    Long listingId,
+    String listingId,
     BookingStatus status,
     LocalDate moveInDate,
     ContractPeriod contractPeriod,

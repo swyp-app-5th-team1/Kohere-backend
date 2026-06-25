@@ -25,7 +25,7 @@ public record RecommendationResponse(
 
   /** 추천 매물 요약(listing 공개 뷰에서 매핑). type·conditions는 원시 문자열. */
   public record RecommendedListing(
-      Long listingId,
+      String listingId,
       String title,
       String type,
       int monthlyRent,
@@ -36,7 +36,7 @@ public record RecommendationResponse(
       List<String> conditions) {}
 
   /** 지도 마커 좌표. */
-  public record MapMarker(Long listingId, double lat, double lng) {}
+  public record MapMarker(String listingId, double lat, double lng) {}
 
   /** 매칭 0건일 때의 조정 제안. {@code reason}/{@code actions[].type}은 언어 무관 enum, message/detail은 번역본. */
   public record Suggestions(String reason, String message, List<SuggestionAction> actions) {}

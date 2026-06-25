@@ -15,7 +15,7 @@ import lombok.Getter;
 public class ChatRoom {
 
   private final Long id;
-  private final Long listingId;
+  private final String listingId;
   private final Long tenantId;
   private final Long landlordId;
   private final ChatCategory category;

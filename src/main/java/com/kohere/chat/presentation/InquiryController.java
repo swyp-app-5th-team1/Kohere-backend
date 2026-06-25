@@ -29,7 +29,7 @@ public class InquiryController {
 
   @PostMapping("/inquiries")
   @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<InquiryResponse> createInquiry(@PathVariable Long listingId) {
+  public ApiResponse<InquiryResponse> createInquiry(@PathVariable String listingId) {
     return ApiResponse.success(chatService.createInquiry(listingId));
   }
 }

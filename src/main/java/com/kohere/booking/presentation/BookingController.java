@@ -31,7 +31,7 @@ public class BookingController {
   @PostMapping("/bookings")
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<BookingResponse> createBooking(
-      @PathVariable Long listingId, @Valid @RequestBody BookingRequest request) {
+      @PathVariable String listingId, @Valid @RequestBody BookingRequest request) {
     return ApiResponse.success(bookingService.createBooking(listingId, request));
   }
 }

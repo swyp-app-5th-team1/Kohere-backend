@@ -26,7 +26,7 @@ public class BookingService {
   private final BookingRepository bookingRepository;
   private final ApplicationEventPublisher eventPublisher;
 
-  public BookingResponse createBooking(Long listingId, BookingRequest request) {
+  public BookingResponse createBooking(String listingId, BookingRequest request) {
     // TODO: 본인 매물·중복 신청·입주 희망일 검증 후 예약 저장.
     // 저장 성공 후 BookingCreatedEvent를 발행하면 chat 모듈이 채팅방·예약 카드·푸시 알림을 처리한다(ADR-0002).
     // 예: eventPublisher.publishEvent(

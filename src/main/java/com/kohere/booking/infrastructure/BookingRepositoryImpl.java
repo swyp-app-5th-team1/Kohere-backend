@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 public class BookingRepositoryImpl implements BookingRepository {
 
   @Override
-  public Optional<Booking> findByTenantIdAndListingId(Long tenantId, Long listingId) {
+  public Optional<Booking> findByTenantIdAndListingId(Long tenantId, String listingId) {
     throw new UnsupportedOperationException("TODO: JPA 구현으로 교체");
   }
 }

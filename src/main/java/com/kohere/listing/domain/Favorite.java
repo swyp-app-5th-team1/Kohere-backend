@@ -11,6 +11,6 @@ public class Favorite {
 
   private final Long id;
   private final Long userId;
-  private final Long listingId;
+  private final String listingId;
   private final Instant favoritedAt;
 }

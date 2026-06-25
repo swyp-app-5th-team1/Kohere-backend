@@ -10,5 +10,5 @@ import java.util.Optional;
  */
 public interface BookingRepository {
 
-  Optional<Booking> findByTenantIdAndListingId(Long tenantId, Long listingId);
+  Optional<Booking> findByTenantIdAndListingId(Long tenantId, String listingId);
 }
