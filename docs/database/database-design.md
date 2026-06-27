@@ -230,7 +230,7 @@
 
 > 스토어: **MongoDB** (지오·대량 읽기, `2dsphere`. [ADR-0005](../adr/0005-polyglot-persistence.md)). domain-model `Listing`·`RoomOffer`·`Favorite`·`RecentListing`.
 >
-> 매물 문서는 **건물/주소 단위 Listing 1건**이고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 `roomOffers[]`의 **방 상품**으로 임베드한다. API의 `listingId`는 MongoDB `_id ObjectId`의 24자리 hex 문자열이다. Numbers 첫 번째 임시 데이터를 반영한 필드별 주석·예시·인덱스 검토안은 [Listing MongoDB 상세 스키마](./listing-mongodb-schema.md)을 참고한다.
+> 매물 문서는 **건물/주소 단위 Listing 1건**이고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 `roomOffers[]`의 **방 상품**으로 임베드한다. API의 `listingId`는 MongoDB `_id ObjectId`의 24자리 hex 문자열이다. 이 절을 `listings` 컬렉션의 정본 스키마로 둔다.
 
 `listings`
 
@@ -269,6 +269,13 @@
 | `updatedAt` | ISODate | NOT NULL |
 
 > `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 화면 표시용 합집합이며, 필터는 반드시 같은 `roomOffers[]` 원소가 가격·재고·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다.
+
+**MVP 구현 메모**
+
+- `nearbyPlacesDescription`은 집주인이 입력한 주변 시설 자유 텍스트다. 주변 시설을 별도 객체 배열로 정규화하지 않는다.
+- 동일 가격·계약·성별·옵션을 가진 실제 방이 여러 개면 `roomOffers[]` 원소 1개로 묶고 `inventory.totalCount`·`availableCount`로 수량을 관리한다.
+- `availableCount=0`이어도 매물/방 상품은 유지하며, 다음 입주 가능일을 알 수 있으면 `nextAvailableFrom`에 저장한다.
+- 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 참고용으로 둔다.
 
 `favorites`
 

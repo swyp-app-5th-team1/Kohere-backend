@@ -3,7 +3,6 @@ package com.kohere.listing.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
@@ -38,7 +37,6 @@ class ListingMongoIntegrationTest {
   @Autowired private ListingRepository listingRepository;
   @Autowired private ListingRecommendationService listingRecommendationService;
   @Autowired private MongoTemplate mongoTemplate;
-  @Autowired private ObjectMapper objectMapper;
 
   /** 각 테스트가 독립적으로 실행되도록 listings 컬렉션을 비운다. */
   @BeforeEach
@@ -92,10 +90,10 @@ class ListingMongoIntegrationTest {
         .isInstanceOf(MongoWriteException.class);
   }
 
-  /** seed 적재가 upsert 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
+  /** seed 적재가 고정 ObjectId 저장 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
   @Test
-  void seed_두번_실행해도_같은_매물이_중복되지_않는다() throws Exception {
-    ListingSeedRunner seedRunner = new ListingSeedRunner(mongoTemplate, objectMapper);
+  void seed_두번_실행해도_같은_매물이_중복되지_않는다() {
+    ListingSeedRunner seedRunner = new ListingSeedRunner(listingRepository);
 
     seedRunner.run(null);
     seedRunner.run(null);
@@ -109,8 +107,8 @@ class ListingMongoIntegrationTest {
 
   /** 가격과 태그 조건이 같은 roomOffer 안에서 함께 만족될 때만 매칭되는지 확인한다. */
   @Test
-  void query_같은_방상품의_가격과_태그를_elemMatch로_조회한다() throws Exception {
-    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+  void query_같은_방상품의_가격과_태그를_elemMatch로_조회한다() {
+    new ListingSeedRunner(listingRepository).run(null);
     Document roomOfferCondition =
         new Document("status", "ACTIVE")
             .append("pricing.monthlyRent", new Document("$lte", 500000))
@@ -127,8 +125,8 @@ class ListingMongoIntegrationTest {
 
   /** 2dsphere 인덱스로 기준 좌표 반경 내 매물을 찾을 수 있는지 확인한다. */
   @Test
-  void query_2dsphere로_반경내_매물을_조회한다() throws Exception {
-    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+  void query_2dsphere로_반경내_매물을_조회한다() {
+    new ListingSeedRunner(listingRepository).run(null);
     Document geometry =
         new Document("type", "Point").append("coordinates", List.of(126.951422, 37.459471));
     Document near = new Document("$geometry", geometry).append("$maxDistance", 1000);
@@ -142,8 +140,8 @@ class ListingMongoIntegrationTest {
 
   /** diagnosis 추천 조건이 listing 추천 서비스와 Mongo 조회로 연결되는지 확인한다. */
   @Test
-  void recommendByCriteria_진단조건으로_매물요약을_반환한다() throws Exception {
-    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+  void recommendByCriteria_진단조건으로_매물요약을_반환한다() {
+    new ListingSeedRunner(listingRepository).run(null);
 
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(
@@ -159,7 +157,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     RecommendedListingView listing = result.content().getFirst();
-    assertThat(listing.listingId()).isEqualTo("6858e2000000000000000001");
+    assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
     assertThat(listing.monthlyRent()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
@@ -168,8 +166,8 @@ class ListingMongoIntegrationTest {
 
   /** 즉시입주 조건은 active 방 상품의 availableCount가 있을 때만 매칭되는지 확인한다. */
   @Test
-  void recommendByCriteria_즉시입주조건은_availableCount가_있어야_매칭된다() throws Exception {
-    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+  void recommendByCriteria_즉시입주조건은_availableCount가_있어야_매칭된다() {
+    new ListingSeedRunner(listingRepository).run(null);
 
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(

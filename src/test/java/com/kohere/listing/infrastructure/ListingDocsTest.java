@@ -13,9 +13,9 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtTokenService;
+import com.kohere.listing.domain.ListingRepository;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,12 +45,12 @@ import org.springframework.web.context.WebApplicationContext;
 @Import(TestcontainersConfiguration.class)
 class ListingDocsTest {
 
-  private static final String LISTING_ID = "6858e2000000000000000001";
+  private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
 
   @Autowired private WebApplicationContext context;
   @Autowired private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
-  @Autowired private ObjectMapper objectMapper;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private ListingRepository listingRepository;
 
   private MockMvc mockMvc;
 
@@ -63,7 +63,7 @@ class ListingDocsTest {
             .apply(documentationConfiguration(restDocumentation))
             .build();
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
-    new ListingSeedRunner(mongoTemplate, objectMapper).run(null);
+    new ListingSeedRunner(listingRepository).run(null);
   }
 
   /** 매물 목록/상세 API를 호출해 Swagger 생성에 필요한 REST Docs 스니펫을 만든다. */

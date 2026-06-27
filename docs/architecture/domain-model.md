@@ -190,7 +190,7 @@
 
 외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다.
 
-**`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`(API에서는 `listingId` 문자열로 노출). [값 객체: `Location`, `Address`, `Building`, `PropertyPolicies`, `Facilities`, `RoomOffer`]
+**`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`는 MongoDB ObjectId의 24자리 hex 문자열이며 API에서는 `listingId`로 노출한다. [값 객체: `Location`, `Address`, `NearestTransit`, `Building`, `PropertyPolicies`, `Facilities`, `RoomOffer`]
 
 **속성:**
 
@@ -277,6 +277,28 @@
 | | `district` | String | 구/군 단위 코드 |
 | | `fullAddress` | String | 표시 주소 |
 | | `detail` | String | 상세주소 |
+| `NearestTransit` | `type` | enum `TransitType` | 가까운 교통수단 유형 |
+| | `name` | String | 역/정류장 이름 |
+| | `walkMinutes` | int | 도보 시간(분) |
+| `Building` | `type` | enum `BuildingType` | 건물 형태 |
+| | `usedFloorMin` | int | 사용 층 최소값 |
+| | `usedFloorMax` | int | 사용 층 최대값 |
+| | `totalFloors` | int | 건물 전체 층수 |
+| | `parkingAvailable` | boolean | 주차 가능 여부 |
+| | `elevatorAvailable` | boolean | 엘리베이터 여부 |
+| | `heatingSystem` | enum `HeatingSystem` | 난방 방식 |
+| `PropertyPolicies` | `arcRequired` | boolean | ARC 필요 여부 |
+| | `residentRegistrationAvailable` | boolean | 전입신고 가능 여부 |
+| | `studySuitable` | boolean | 학업 목적 거주 적합 여부 |
+| | `mealsProvided` | boolean | 식사 제공 여부 |
+| | `englishAvailable` | boolean | 영어 소통 가능 여부 |
+| `Facilities` | `laundry` | Set<String> | 세탁 시설 |
+| | `livingAmenities` | Set<String> | 생활 편의시설 |
+| | `securityFeatures` | Set<String> | 보안 시설 |
+| | `commonSpaces` | List<CommonSpace> | 공용 공간 |
+| | `providedSupplies` | Set<String> | 제공 물품 |
+| `CommonSpace` | `type` | enum `CommonSpaceType` | 공용 공간 유형 |
+| | `count` | Integer | 수량. 미확정이면 null |
 | `Pricing` | `monthlyRent` | int | 월세(KRW 정수) |
 | | `deposit` | int | 보증금(KRW 정수) |
 | | `maintenanceFee` | int | 관리비(KRW 정수) |
@@ -284,9 +306,13 @@
 | `Contract` | `minStayMonths` | int | 최소 계약 개월 |
 | | `maxStayMonths` | int | 최대 계약 개월 |
 | | `refundPolicy` | VO `RefundPolicy` | 환불 정책 코드·설명 |
+| `RefundPolicy` | `code` | enum `RefundPolicyCode` | 환불 정책 코드 |
+| | `description` | String | 환불 정책 설명 |
 | `Inventory` | `totalCount` | int | 동일 조건 실제 방 전체 수 |
 | | `availableCount` | int | 현재 계약 가능한 수 |
 | | `nextAvailableFrom` | LocalDate | 현재 가능 수량이 없을 때 가장 빠른 예상 입주 가능일 |
+| `Descriptions` | `ko` | String | 한국어 상세 설명 |
+| | `en` | String | 영어 상세 설명 |
 | `MatchedPlace` | `type` | enum `MatchedPlaceType` | 매칭된 POI 유형(학교·지역·역). 키워드 검색 입력어가 매칭된 위치를 표현하는 조회 결과 값(매칭 없으면 부재) |
 | | `name` | String | POI 이름 |
 | | `lat` | double | 위도 |
@@ -308,6 +334,17 @@
 | | `INACTIVE` | 노출 중지 |
 | `RentalType` | `MONTHLY_RENT` | 월세 |
 | `Currency` | `KRW` | 원화 |
+| `TransitType` | `SUBWAY` | 지하철 |
+| | `BUS` | 버스 |
+| `BuildingType` | `GOSIWON` | 고시원 |
+| | `VILLA` | 빌라 |
+| | `APARTMENT` | 아파트 |
+| | `OFFICETEL` | 오피스텔 |
+| | `OTHER` | 기타 |
+| `HeatingSystem` | `CENTRAL` | 중앙난방 |
+| | `INDIVIDUAL` | 개별난방 |
+| | `DISTRICT` | 지역난방 |
+| | `OTHER` | 기타 |
 | `GenderPolicy` | `ANY` | 성별 무관 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
@@ -322,9 +359,21 @@
 | | `MEALS_PROVIDED` | 식사 제공 |
 | | `DOUBLE_ROOM` | 2인실 |
 | `RoomFeature` | `SINGLE_ROOM` | 1인실 |
+| | `DOUBLE_ROOM` | 2인실 |
+| | `PRIVATE_TOILET` | 개인 화장실 |
+| | `PRIVATE_BATH` | 개인 욕실 |
 | | `PRIVATE_REFRIGERATOR` | 개인 냉장고 |
 | | `MICROWAVE` | 전자레인지 |
 | | `ELECTRIC_KETTLE` | 전기포트 |
+| `CommonSpaceType` | `SHARED_KITCHEN` | 공용 주방 |
+| | `SHARED_TOILET` | 공용 화장실 |
+| | `SHARED_BATH` | 공용 욕실 |
+| | `LOUNGE` | 라운지 |
+| | `STUDY_ROOM` | 스터디룸 |
+| `RefundPolicyCode` | `FULL_REFUND_BEFORE_7_DAYS` | 입주 7일 전 전액 환불 |
+| | `PARTIAL_REFUND` | 부분 환불 |
+| | `NON_REFUNDABLE` | 환불 불가 |
+| | `CUSTOM` | 직접 입력 |
 | `MatchedPlaceType` | `UNIVERSITY` | 학교 |
 | | `REGION` | 지역 |
 | | `SUBWAY_STATION` | 지하철역 |
