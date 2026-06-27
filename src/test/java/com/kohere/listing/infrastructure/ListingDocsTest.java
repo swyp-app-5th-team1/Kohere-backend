@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.restdocs.RestDocumentationContextProvider;
@@ -34,6 +35,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * listing 모듈의 구현 완료 API를 Swagger UI(OpenAPI)에 노출하기 위한 REST Docs 테스트다. 이 프로젝트는 컨트롤러 자동 스캔이 아니라
@@ -42,10 +46,13 @@ import org.springframework.web.context.WebApplicationContext;
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
 @ActiveProfiles("test")
+@Testcontainers
 @Import(TestcontainersConfiguration.class)
 class ListingDocsTest {
 
   private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
+
+  @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   @Autowired private WebApplicationContext context;
   @Autowired private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;

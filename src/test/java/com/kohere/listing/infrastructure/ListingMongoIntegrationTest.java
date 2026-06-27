@@ -21,18 +21,25 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.containers.MongoDBContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** listings 컬렉션의 저장·검증·인덱스·추천 조회가 실제 MongoDB에서 동작하는지 확인한다. */
 @SpringBootTest
 @ActiveProfiles("test")
+@Testcontainers
 @Import(TestcontainersConfiguration.class)
 class ListingMongoIntegrationTest {
 
   private static final String LISTING_ID = "6858e2000000000000000002";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000102";
+
+  @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   @Autowired private ListingRepository listingRepository;
   @Autowired private ListingRecommendationService listingRecommendationService;
