@@ -2,6 +2,7 @@ package com.kohere.listing.infrastructure;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
@@ -13,10 +14,18 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.epages.restdocs.apispec.ResourceSnippetParameters;
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.listing.domain.ListingRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Date;
 import java.util.List;
+import javax.crypto.SecretKey;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,11 +37,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
+import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.MongoDBContainer;
@@ -51,11 +63,25 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class ListingDocsTest {
 
   private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
+  private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
+
+  // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
+  private static final String FORGED_TOKEN =
+      Jwts.builder()
+          .issuer("kohere")
+          .subject("1")
+          .claim("onboardingCompleted", true)
+          .signWith(
+              Keys.hmacShaKeyFor(
+                  "forged-doc-only-wrong-secret-please-override-32bytes-min!!"
+                      .getBytes(StandardCharsets.UTF_8)))
+          .compact();
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   @Autowired private WebApplicationContext context;
   @Autowired private org.springframework.data.mongodb.core.MongoTemplate mongoTemplate;
+  @Autowired private JwtProperties jwtProperties;
   @Autowired private JwtTokenService jwtTokenService;
   @Autowired private ListingRepository listingRepository;
 
@@ -106,6 +132,90 @@ class ListingDocsTest {
                 pathParameters(
                     parameterWithName("listingId").description("매물 식별자(ObjectId hex 문자열)")),
                 responseFields(detailResponseFields())));
+  }
+
+  /** 스펙의 "발생 가능한 에러"를 실제로 트리거해 status·error.code와 실패 응답 스니펫을 함께 만든다. */
+  @Test
+  void generatesListingErrorSnippets() throws Exception {
+    String token = jwtTokenService.issueAccessToken(1L);
+    String expiredToken = expiredAccessToken();
+
+    // ===== GET /listings =====
+    perform(
+        get("/api/v1/listings").header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "listings-list-unauthenticated",
+        "매물 목록 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+
+    perform(
+        get("/api/v1/listings").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "listings-list-token-expired",
+        "매물 목록 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+
+    perform(
+        get("/api/v1/listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("sort", "UNKNOWN"),
+        status().isBadRequest(),
+        "MALFORMED_REQUEST",
+        "listings-list-malformed-sort",
+        "매물 목록 조회 — sort enum 변환 실패 (400 MALFORMED_REQUEST)");
+
+    // ===== GET /listings/{listingId} =====
+    perform(
+        get("/api/v1/listings/{listingId}", MISSING_LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        "listing-detail-not-found",
+        "매물 상세 조회 — 매물이 없거나 공개 상태가 아님 (404 LISTING_NOT_FOUND)");
+
+    perform(
+        get("/api/v1/listings/{listingId}", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN)),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "listing-detail-unauthenticated",
+        "매물 상세 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+
+    perform(
+        get("/api/v1/listings/{listingId}", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "listing-detail-token-expired",
+        "매물 상세 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+  }
+
+  private void perform(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String summary)
+      throws Exception {
+    mockMvc
+        .perform(request)
+        .andExpect(expectedStatus)
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value(expectedCode))
+        .andDo(errorSnippet(identifier, summary));
+  }
+
+  private static RestDocumentationResultHandler errorSnippet(String identifier, String summary) {
+    return document(
+        identifier,
+        resource(
+            ResourceSnippetParameters.builder()
+                .summary(summary)
+                .description(
+                    "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
+                        + "(error-response-guide §1·§4).")
+                .responseFields(errorFields())
+                .build()));
   }
 
   /** 목록 API의 query parameter 문서 정의다. */
@@ -232,12 +342,52 @@ class ListingDocsTest {
     return fieldWithPath(path).type(type).description(description);
   }
 
+  /** 공통 실패 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> errorFields() {
+    return List.of(
+        fieldWithPath("success").type(JsonFieldType.BOOLEAN).description("성공 여부 — 에러 응답은 항상 false"),
+        fieldWithPath("data")
+            .type(JsonFieldType.NULL)
+            .optional()
+            .description("에러 응답의 data는 항상 null"),
+        fieldWithPath("error.code")
+            .type(JsonFieldType.STRING)
+            .description("에러 식별 코드(UPPER_SNAKE_CASE) — 클라이언트 분기 기준"),
+        fieldWithPath("error.message")
+            .type(JsonFieldType.STRING)
+            .description("사람이 읽는 설명(민감정보 미포함, message로 분기 금지)"),
+        fieldWithPath("error.errors")
+            .type(JsonFieldType.ARRAY)
+            .description("입력 검증 실패 시 필드별 상세 목록. 그 외 에러는 빈 배열"),
+        fieldWithPath("error.errors[].field")
+            .type(JsonFieldType.STRING)
+            .optional()
+            .description("검증에 실패한 요청 필드 경로(INVALID_INPUT에서만)"),
+        fieldWithPath("error.errors[].reason")
+            .type(JsonFieldType.STRING)
+            .optional()
+            .description("해당 필드의 실패 사유(INVALID_INPUT에서만)"));
+  }
+
   /** 공통 성공 응답의 error=null 필드를 문서화한다. */
   private static FieldDescriptor errorNull() {
     return fieldWithPath("error")
         .type(JsonFieldType.NULL)
         .optional()
         .description("성공 응답의 error는 항상 null");
+  }
+
+  private String expiredAccessToken() {
+    SecretKey key = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+    Instant now = Instant.now();
+    return Jwts.builder()
+        .issuer(jwtProperties.getIssuer())
+        .subject("1")
+        .claim("onboardingCompleted", true)
+        .issuedAt(Date.from(now.minusSeconds(7200)))
+        .expiration(Date.from(now.minusSeconds(3600)))
+        .signWith(key)
+        .compact();
   }
 
   /** 테스트용 JWT를 Authorization 헤더 값으로 바꾼다. */
