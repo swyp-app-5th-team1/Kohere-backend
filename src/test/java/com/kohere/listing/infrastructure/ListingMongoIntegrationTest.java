@@ -25,6 +25,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Import;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -32,6 +33,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 /** listings 컬렉션의 저장·인덱스·추천 조회가 실제 MongoDB에서 동작하는지 확인한다. */
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = "app.mongo.indexes-enabled=true")
 @Testcontainers
 @Import(TestcontainersConfiguration.class)
 class ListingMongoIntegrationTest {

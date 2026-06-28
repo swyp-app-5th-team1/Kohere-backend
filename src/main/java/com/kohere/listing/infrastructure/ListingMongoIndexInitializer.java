@@ -5,6 +5,7 @@ import static org.springframework.data.domain.Sort.Direction.DESC;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.GeoSpatialIndexType;
 import org.springframework.data.mongodb.core.index.GeospatialIndex;
@@ -13,6 +14,10 @@ import org.springframework.stereotype.Component;
 
 /** {@code listings} 조회 인덱스를 기동 시 멱등 적용한다. 매물 값 검증은 애플리케이션·도메인 계층이 담당한다. */
 @Component
+@ConditionalOnProperty(
+    name = "app.mongo.indexes-enabled",
+    havingValue = "true",
+    matchIfMissing = true)
 @RequiredArgsConstructor
 class ListingMongoIndexInitializer implements InitializingBean {
 

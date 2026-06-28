@@ -9,6 +9,8 @@ spring:
     host: localhost
     port: 3025
 app:
+  mongo:
+    indexes-enabled: false
   jwt:
     secret: test-only-hs256-secret-please-override-32bytes-minimum!!
   auth:

@@ -42,6 +42,7 @@ import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -58,6 +59,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @SpringBootTest
 @ExtendWith(RestDocumentationExtension.class)
 @ActiveProfiles("test")
+@TestPropertySource(properties = "app.mongo.indexes-enabled=true")
 @Testcontainers
 @Import(TestcontainersConfiguration.class)
 class ListingDocsTest {
