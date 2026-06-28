@@ -66,6 +66,20 @@ class ListingDocsTest {
 
   private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
+  private static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
+  private static final String LISTINGS_LIST_DESCRIPTION =
+      "현재 지도 화면의 남서/북동 좌표를 기준으로 공개 매물 리스트를 조회한다. "
+          + "지도 범위 좌표가 전달되면 서버가 전체 범위를 20% 확장해 조회하며, "
+          + "필터가 없으면 해당 범위의 공개 매물을, 필터가 있으면 같은 범위 안에서 조건을 만족하는 매물만 반환한다. "
+          + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터를 지원한다. "
+          + "이 API는 지도 바텀시트 리스트 카드용이며, 지도 핀/클러스터 데이터는 별도 지도 API에서 제공한다.";
+  private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
+  private static final String LISTING_DETAIL_DESCRIPTION =
+      "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
+          + "상세 화면의 이미지, 각 방 정보, 가격 정보, 매물 정보, 건물 정보, 공용시설, 위치 및 주변 정보 섹션을 구성하는 데이터를 반환한다. "
+          + "고시원 매물의 propertyInfo.featureSummary는 활성 방 상품들이 가진 조건 태그의 합집합이다. "
+          + "상세 화면의 작은 지도는 응답의 locationInfo.location 좌표를 사용해 프론트에서 렌더링한다. "
+          + "공개 상태가 아닌 매물이나 존재하지 않는 매물은 LISTING_NOT_FOUND를 반환한다.";
 
   // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
   private static final String FORGED_TOKEN =
@@ -130,7 +144,9 @@ class ListingDocsTest {
         .andDo(
             document(
                 "listings-list",
-                resourceDetails().summary("매물 목록 조회 — 공개 매물 오버뷰 페이지"),
+                resourceDetails()
+                    .summary(LISTINGS_LIST_SUMMARY)
+                    .description(LISTINGS_LIST_DESCRIPTION),
                 queryParameters(listQueryParameters()),
                 responseFields(listResponseFields())));
 
@@ -143,9 +159,12 @@ class ListingDocsTest {
         .andDo(
             document(
                 "listing-detail",
-                resourceDetails().summary("매물 상세 조회 — 객체별 섹션 응답"),
+                resourceDetails()
+                    .summary(LISTING_DETAIL_SUMMARY)
+                    .description(LISTING_DETAIL_DESCRIPTION),
                 pathParameters(
-                    parameterWithName("listingId").description("매물 식별자(ObjectId hex 문자열)")),
+                    parameterWithName("listingId")
+                        .description("상세 조회할 매물 식별자(ObjectId 24자리 hex 문자열)")),
                 responseFields(detailResponseFields())));
   }
 
@@ -161,14 +180,16 @@ class ListingDocsTest {
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "listings-list-unauthenticated",
-        "매물 목록 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings").header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "listings-list-token-expired",
-        "매물 목록 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings")
@@ -177,7 +198,8 @@ class ListingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-sort",
-        "매물 목록 조회 — 허용되지 않은 sort 값 (400 INVALID_INPUT)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings")
@@ -187,7 +209,8 @@ class ListingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-budget-range",
-        "매물 목록 조회 — 월세 최소값이 최대값보다 큼 (400 INVALID_INPUT)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings")
@@ -196,7 +219,8 @@ class ListingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-page-size",
-        "매물 목록 조회 — size 최대값 초과 (400 INVALID_INPUT)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings")
@@ -205,7 +229,8 @@ class ListingDocsTest {
         status().isBadRequest(),
         "LISTING_INVALID_BBOX",
         "listings-list-invalid-bbox",
-        "매물 목록 조회 — bbox 좌표 일부 누락 (400 LISTING_INVALID_BBOX)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     perform(
         get("/api/v1/listings")
@@ -214,7 +239,8 @@ class ListingDocsTest {
         status().isBadRequest(),
         "LISTING_INVALID_SORT_PARAM",
         "listings-list-invalid-distance-sort",
-        "매물 목록 조회 — 거리순 정렬 기준 좌표 누락 (400 LISTING_INVALID_SORT_PARAM)");
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
 
     // ===== GET /listings/{listingId} =====
     perform(
@@ -223,7 +249,8 @@ class ListingDocsTest {
         status().isNotFound(),
         "LISTING_NOT_FOUND",
         "listing-detail-not-found",
-        "매물 상세 조회 — 매물이 없거나 공개 상태가 아님 (404 LISTING_NOT_FOUND)");
+        LISTING_DETAIL_SUMMARY,
+        LISTING_DETAIL_DESCRIPTION);
 
     perform(
         get("/api/v1/listings/{listingId}", LISTING_ID)
@@ -231,7 +258,8 @@ class ListingDocsTest {
         status().isUnauthorized(),
         "UNAUTHENTICATED",
         "listing-detail-unauthenticated",
-        "매물 상세 조회 — 인증 누락/위조 (401 UNAUTHENTICATED)");
+        LISTING_DETAIL_SUMMARY,
+        LISTING_DETAIL_DESCRIPTION);
 
     perform(
         get("/api/v1/listings/{listingId}", LISTING_ID)
@@ -239,7 +267,8 @@ class ListingDocsTest {
         status().isUnauthorized(),
         "TOKEN_EXPIRED",
         "listing-detail-token-expired",
-        "매물 상세 조회 — 액세스 토큰 만료 (401 TOKEN_EXPIRED)");
+        LISTING_DETAIL_SUMMARY,
+        LISTING_DETAIL_DESCRIPTION);
   }
 
   private void perform(
@@ -249,25 +278,40 @@ class ListingDocsTest {
       String identifier,
       String summary)
       throws Exception {
+    perform(request, expectedStatus, expectedCode, identifier, summary, errorDescription());
+  }
+
+  private void perform(
+      MockHttpServletRequestBuilder request,
+      ResultMatcher expectedStatus,
+      String expectedCode,
+      String identifier,
+      String summary,
+      String description)
+      throws Exception {
     mockMvc
         .perform(request)
         .andExpect(expectedStatus)
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
-        .andDo(errorSnippet(identifier, summary));
+        .andDo(errorSnippet(identifier, summary, description));
   }
 
-  private static RestDocumentationResultHandler errorSnippet(String identifier, String summary) {
+  private static RestDocumentationResultHandler errorSnippet(
+      String identifier, String summary, String description) {
     return document(
         identifier,
         resource(
             ResourceSnippetParameters.builder()
                 .summary(summary)
-                .description(
-                    "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
-                        + "(error-response-guide §1·§4).")
+                .description(description)
                 .responseFields(errorFields())
                 .build()));
+  }
+
+  private static String errorDescription() {
+    return "실패 응답 — 공통 래퍼(success=false·data=null·error). 클라이언트는 error.code로 분기한다"
+        + "(error-response-guide §1·§4).";
   }
 
   /** 목록 API의 query parameter 문서 정의다. */
@@ -275,23 +319,35 @@ class ListingDocsTest {
     return new ParameterDescriptor[] {
       parameterWithName("swLat")
           .optional()
-          .description("지도 화면 남서쪽 위도. 있으면 swLng/neLat/neLng도 함께 필요"),
-      parameterWithName("swLng").optional().description("지도 화면 남서쪽 경도. 서버가 전체 범위를 20% 확장해 조회"),
-      parameterWithName("neLat").optional().description("지도 화면 북동쪽 위도. swLat보다 커야 함"),
-      parameterWithName("neLng").optional().description("지도 화면 북동쪽 경도. swLng보다 커야 함"),
-      parameterWithName("minBudget").optional().description("월세 하한(KRW)"),
-      parameterWithName("maxBudget").optional().description("월세 상한(KRW)"),
-      parameterWithName("minDeposit").optional().description("보증금 하한(KRW)"),
-      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW)"),
-      parameterWithName("type").optional().description("매물 종류 필터. 예: GOSIWON"),
-      parameterWithName("conditions").optional().description("매물 옵션 태그. 콤마 구분 또는 반복 파라미터"),
+          .description("현재 지도 화면의 남서쪽 위도. bbox 조회 시 swLat/swLng/neLat/neLng 네 값을 모두 보내야 함"),
+      parameterWithName("swLng")
+          .optional()
+          .description("현재 지도 화면의 남서쪽 경도. bbox 네 값이 모두 오면 서버가 전체 범위를 20% 확장해 조회"),
+      parameterWithName("neLat").optional().description("현재 지도 화면의 북동쪽 위도. swLat보다 커야 함"),
+      parameterWithName("neLng").optional().description("현재 지도 화면의 북동쪽 경도. swLng보다 커야 함"),
+      parameterWithName("minBudget").optional().description("월세 하한(KRW). maxBudget보다 클 수 없음"),
+      parameterWithName("maxBudget").optional().description("월세 상한(KRW). minBudget보다 작을 수 없음"),
+      parameterWithName("minDeposit").optional().description("보증금 하한(KRW). maxDeposit보다 클 수 없음"),
+      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW). minDeposit보다 작을 수 없음"),
+      parameterWithName("type")
+          .optional()
+          .description("매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+      parameterWithName("conditions")
+          .optional()
+          .description("매물 옵션 태그. 여러 값을 보내면 모두 만족하는 방 상품만 조회"),
       parameterWithName("arcRequired").optional().description("false면 ARC 없이 계약 가능한 매물만 조회"),
       parameterWithName("residentRegistration")
           .optional()
-          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회"),
-      parameterWithName("sort").optional().description("정렬 프리셋: RECOMMENDED, PRICE_ASC, DISTANCE"),
-      parameterWithName("centerLat").optional().description("거리 계산·거리순 정렬 기준 위도"),
-      parameterWithName("centerLng").optional().description("거리 계산·거리순 정렬 기준 경도"),
+          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회. conditions=RESIDENT_REGISTRATION과 같은 의미"),
+      parameterWithName("sort")
+          .optional()
+          .description("정렬 프리셋. RECOMMENDED, PRICE_ASC, DISTANCE 중 하나. 기본값은 RECOMMENDED"),
+      parameterWithName("centerLat")
+          .optional()
+          .description("거리 계산 또는 DISTANCE 정렬 기준 위도. sort=DISTANCE이면 centerLat/centerLng 모두 필수"),
+      parameterWithName("centerLng")
+          .optional()
+          .description("거리 계산 또는 DISTANCE 정렬 기준 경도. sort=DISTANCE이면 centerLat/centerLng 모두 필수"),
       parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
       parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
     };
@@ -304,19 +360,25 @@ class ListingDocsTest {
         field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
         field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
         field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
-        field("data.content[].monthlyRent", JsonFieldType.NUMBER, "대표 방 상품 월세(KRW)"),
-        field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품 보증금(KRW)"),
-        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "대표 방 상품 관리비(KRW)"),
+        field(
+            "data.content[].monthlyRent",
+            JsonFieldType.NUMBER,
+            "필터 조건을 만족하는 대표 방 상품의 월세(KRW). 대표 방 상품은 조건에 맞는 활성 방 중 월세가 가장 낮은 방"),
+        field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품의 보증금(KRW)"),
+        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "대표 방 상품의 관리비(KRW)"),
         field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
         field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
-        field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품 조건 태그 목록"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품의 옵션 태그 목록"),
         field(
             "data.content[].distanceMeters",
             JsonFieldType.NUMBER,
-            "centerLat/centerLng 기준 직선 거리(미터)"),
-        field("data.content[].favorited", JsonFieldType.BOOLEAN, "현재 사용자 찜 여부(비로그인/미연동은 false)"),
+            "centerLat/centerLng를 보냈을 때 계산되는 직선 거리(미터). 기준 좌표가 없으면 null"),
+        field(
+            "data.content[].favorited",
+            JsonFieldType.BOOLEAN,
+            "현재 사용자 찜 여부. 현재는 사용자별 찜 연동 전이라 false로 반환하며, 찜 API 연동 후 사용자별 상태로 변경 예정"),
         field("data.content[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
         field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
@@ -331,19 +393,22 @@ class ListingDocsTest {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
-        field("data.basicInfo.title", JsonFieldType.STRING, "매물 제목"),
-        field("data.basicInfo.type", JsonFieldType.STRING, "매물 유형"),
-        field("data.basicInfo.status", JsonFieldType.STRING, "매물 공개 상태"),
-        field("data.locationInfo.location.lat", JsonFieldType.NUMBER, "위도(WGS84)"),
-        field("data.locationInfo.location.lng", JsonFieldType.NUMBER, "경도(WGS84)"),
+        field("data.basicInfo.title", JsonFieldType.STRING, "상세 화면 상단에 표시할 매물 제목"),
+        field(
+            "data.basicInfo.type",
+            JsonFieldType.STRING,
+            "매물 유형. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+        field("data.basicInfo.status", JsonFieldType.STRING, "매물 공개 상태. 상세 조회는 PUBLISHED 매물만 반환"),
+        field("data.locationInfo.location.lat", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 위도(WGS84)"),
+        field("data.locationInfo.location.lng", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 경도(WGS84)"),
         field("data.locationInfo.address.city", JsonFieldType.STRING, "도시 코드"),
         field("data.locationInfo.address.district", JsonFieldType.STRING, "지역구 코드"),
-        field("data.locationInfo.address.fullAddress", JsonFieldType.STRING, "표시 주소"),
+        field("data.locationInfo.address.fullAddress", JsonFieldType.STRING, "상세 화면에 표시할 주소"),
         field("data.locationInfo.address.detail", JsonFieldType.NULL, "상세주소(없으면 null)"),
         field("data.locationInfo.nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
         field("data.locationInfo.nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
         field("data.locationInfo.nearestTransit.walkMinutes", JsonFieldType.NUMBER, "도보 시간(분)"),
-        field("data.locationInfo.nearbyPlacesDescription", JsonFieldType.STRING, "집주인 입력 주변 시설 안내"),
+        field("data.locationInfo.nearbyPlacesDescription", JsonFieldType.STRING, "주변 편의시설 안내 문구"),
         field("data.locationInfo.nearbyUniversityCodes", JsonFieldType.ARRAY, "주변 학교 코드 목록"),
         field("data.propertyInfo.building.type", JsonFieldType.STRING, "건물 유형"),
         field("data.propertyInfo.building.usedFloorMin", JsonFieldType.NUMBER, "사용 층 최소값"),
@@ -376,10 +441,13 @@ class ListingDocsTest {
             .optional()
             .description("공용공간 수량(없으면 생략)"),
         field("data.propertyInfo.facilities.providedSupplies", JsonFieldType.ARRAY, "제공 물품"),
-        field("data.propertyInfo.featureSummary", JsonFieldType.ARRAY, "활성 방 상품들의 조건 태그 합집합"),
+        field(
+            "data.propertyInfo.featureSummary",
+            JsonFieldType.ARRAY,
+            "매물 전체에서 가능한 조건 태그 목록. 고시원은 활성 방 상품들의 filterTags 합집합"),
         field("data.roomOffers[].roomOfferId", JsonFieldType.STRING, "방 상품 식별자(ObjectId hex 문자열)"),
-        field("data.roomOffers[].name", JsonFieldType.STRING, "방 상품명"),
-        field("data.roomOffers[].status", JsonFieldType.STRING, "방 상품 상태"),
+        field("data.roomOffers[].name", JsonFieldType.STRING, "방 상품명. 예: 스탠다드 1인실"),
+        field("data.roomOffers[].status", JsonFieldType.STRING, "방 상품 상태. ACTIVE인 방이 실제 노출/계약 대상"),
         field("data.roomOffers[].rentalType", JsonFieldType.STRING, "임대 방식"),
         field("data.roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
         field("data.roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
@@ -392,7 +460,10 @@ class ListingDocsTest {
             "data.roomOffers[].contract.refundPolicy.description",
             JsonFieldType.STRING,
             "환불 정책 설명"),
-        field("data.roomOffers[].inventory.totalCount", JsonFieldType.NUMBER, "동일 조건 실제 방 전체 수"),
+        field(
+            "data.roomOffers[].inventory.totalCount",
+            JsonFieldType.NUMBER,
+            "같은 가격·조건을 가진 실제 방 전체 수"),
         field("data.roomOffers[].inventory.availableCount", JsonFieldType.NUMBER, "현재 계약 가능한 방 수"),
         field(
             "data.roomOffers[].inventory.nextAvailableFrom",
@@ -400,14 +471,17 @@ class ListingDocsTest {
             "다음 입주 가능일(없으면 null)"),
         field("data.roomOffers[].genderPolicy", JsonFieldType.STRING, "성별 정책"),
         field("data.roomOffers[].features", JsonFieldType.ARRAY, "방 상품 자체 시설·형태"),
-        field("data.roomOffers[].filterTags", JsonFieldType.ARRAY, "필터 태그"),
+        field("data.roomOffers[].filterTags", JsonFieldType.ARRAY, "방 상품이 만족하는 매물 옵션 태그"),
         field("data.roomOffers[].roomImageUrls", JsonFieldType.ARRAY, "방 상품 이미지 URL 목록"),
         field("data.content.descriptions.ko", JsonFieldType.STRING, "한국어 상세 설명"),
         field("data.content.descriptions.en", JsonFieldType.STRING, "영어 상세 설명"),
         field("data.content.extraNotes", JsonFieldType.STRING, "자유 입력 주의사항"),
         field("data.content.imageUrls", JsonFieldType.ARRAY, "건물 공용 이미지 URL 목록"),
         field("data.content.thumbnailUrl", JsonFieldType.NULL, "대표 썸네일 URL(없으면 null)"),
-        field("data.interaction.favorited", JsonFieldType.BOOLEAN, "현재 사용자 찜 여부(비로그인/미연동은 false)"),
+        field(
+            "data.interaction.favorited",
+            JsonFieldType.BOOLEAN,
+            "현재 사용자 찜 여부. 현재는 사용자별 찜 연동 전이라 false로 반환하며, 찜 API 연동 후 사용자별 상태로 변경 예정"),
         field("data.interaction.favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.createdAt", JsonFieldType.STRING, "생성 시각(ISO-8601 UTC)"),
         field("data.updatedAt", JsonFieldType.STRING, "수정 시각(ISO-8601 UTC)"),
