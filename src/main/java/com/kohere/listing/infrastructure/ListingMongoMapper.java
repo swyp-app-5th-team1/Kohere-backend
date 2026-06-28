@@ -1,5 +1,6 @@
 package com.kohere.listing.infrastructure;
 
+import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.domain.Listing;
 import java.util.List;
 import org.bson.types.ObjectId;
@@ -40,7 +41,7 @@ final class ListingMongoMapper {
 
   /** 도메인 모델을 MongoDB 저장 전용 문서 구조로 변환한다. */
   static ListingDocument toDocument(Listing listing) {
-    ObjectId id = listing.getId() == null ? new ObjectId() : new ObjectId(listing.getId());
+    ObjectId id = objectIdOrNew(listing.getId(), "listingId");
     return ListingDocument.builder()
         .id(id)
         .schemaVersion(listing.getSchemaVersion())
@@ -205,7 +206,7 @@ final class ListingMongoMapper {
   /** 도메인 RoomOffer를 저장 문서의 방 상품 구조로 변환한다. */
   private static ListingDocument.RoomOfferDocument toDocument(Listing.RoomOffer roomOffer) {
     return new ListingDocument.RoomOfferDocument(
-        new ObjectId(roomOffer.roomOfferId()),
+        objectIdOrNew(roomOffer.roomOfferId(), "roomOfferId"),
         roomOffer.name(),
         roomOffer.status(),
         roomOffer.rentalType(),
@@ -239,5 +240,15 @@ final class ListingMongoMapper {
   private static ListingDocument.DescriptionsDocument toDocument(
       Listing.Descriptions descriptions) {
     return new ListingDocument.DescriptionsDocument(descriptions.ko(), descriptions.en());
+  }
+
+  private static ObjectId objectIdOrNew(String value, String field) {
+    if (value == null) {
+      return new ObjectId();
+    }
+    if (!ObjectId.isValid(value)) {
+      throw new InvalidInputException(field + "는 24자리 ObjectId hex 문자열이어야 합니다.");
+    }
+    return new ObjectId(value);
   }
 }

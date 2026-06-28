@@ -1,5 +1,6 @@
 package com.kohere.listing.domain;
 
+import com.kohere.common.exception.InvalidInputException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -116,7 +117,7 @@ public class Listing {
   public record GeoPoint(double longitude, double latitude) {
     public GeoPoint {
       if (longitude < -180 || longitude > 180 || latitude < -90 || latitude > 90) {
-        throw new IllegalArgumentException("유효하지 않은 WGS84 좌표입니다.");
+        throw new InvalidInputException("유효하지 않은 WGS84 좌표입니다.");
       }
     }
   }
@@ -128,7 +129,7 @@ public class Listing {
   public record NearestTransit(TransitType type, String name, int walkMinutes) {
     public NearestTransit {
       if (walkMinutes < 0) {
-        throw new IllegalArgumentException("도보 시간은 0 이상이어야 합니다.");
+        throw new InvalidInputException("도보 시간은 0 이상이어야 합니다.");
       }
     }
   }
@@ -174,7 +175,7 @@ public class Listing {
   public record Pricing(int monthlyRent, int deposit, int maintenanceFee, Currency currency) {
     public Pricing {
       if (monthlyRent < 0 || deposit < 0 || maintenanceFee < 0) {
-        throw new IllegalArgumentException("가격은 0 이상이어야 합니다.");
+        throw new InvalidInputException("가격은 0 이상이어야 합니다.");
       }
     }
   }
@@ -186,7 +187,7 @@ public class Listing {
   public record Contract(int minStayMonths, int maxStayMonths, RefundPolicy refundPolicy) {
     public Contract {
       if (minStayMonths < 1 || maxStayMonths < minStayMonths) {
-        throw new IllegalArgumentException("계약기간 범위가 올바르지 않습니다.");
+        throw new InvalidInputException("계약기간 범위가 올바르지 않습니다.");
       }
     }
   }
@@ -195,7 +196,7 @@ public class Listing {
   public record Inventory(int totalCount, int availableCount, LocalDate nextAvailableFrom) {
     public Inventory {
       if (totalCount < 0 || availableCount < 0 || availableCount > totalCount) {
-        throw new IllegalArgumentException("방 재고 수량이 올바르지 않습니다.");
+        throw new InvalidInputException("방 재고 수량이 올바르지 않습니다.");
       }
     }
   }

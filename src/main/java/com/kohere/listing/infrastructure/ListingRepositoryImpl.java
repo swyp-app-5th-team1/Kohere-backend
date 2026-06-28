@@ -5,6 +5,7 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingValidator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -91,6 +92,7 @@ public class ListingRepositoryImpl implements ListingRepository {
   /** 도메인 모델을 Mongo Document로 변환해 저장한 뒤 다시 도메인 모델로 반환한다. */
   @Override
   public Listing save(Listing listing) {
+    ListingValidator.validateForSave(listing);
     ListingDocument saved = mongoRepository.save(ListingMongoMapper.toDocument(listing));
     return ListingMongoMapper.toDomain(saved);
   }

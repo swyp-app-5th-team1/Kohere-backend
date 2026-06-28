@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
@@ -12,7 +13,6 @@ import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingType;
-import com.mongodb.MongoWriteException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -29,7 +29,7 @@ import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** listings 컬렉션의 저장·검증·인덱스·추천 조회가 실제 MongoDB에서 동작하는지 확인한다. */
+/** listings 컬렉션의 저장·인덱스·추천 조회가 실제 MongoDB에서 동작하는지 확인한다. */
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
@@ -65,6 +65,28 @@ class ListingMongoIntegrationTest {
     assertThat(found.getRoomOffers().getFirst().inventory().availableCount()).isEqualTo(1);
   }
 
+  /** 저장 경로는 MongoDB validator에 도달하기 전에 도메인 필수 구조를 검증한다. */
+  @Test
+  void save_도메인검증으로_방상품없는_매물을_거부한다() {
+    Listing invalid = sampleListingBuilder().roomOffers(List.of()).build();
+
+    assertThatThrownBy(() -> listingRepository.save(invalid))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("roomOffers");
+  }
+
+  /** 매물·방상품 id가 없으면 저장 어댑터가 Mongo ObjectId를 발급한다. */
+  @Test
+  void save_아이디가_없으면_ObjectId를_발급한다() {
+    Listing listing =
+        sampleListingBuilder().id(null).roomOffers(List.of(sampleRoomOffer(null))).build();
+
+    Listing saved = listingRepository.save(listing);
+
+    assertThat(saved.getId()).hasSize(24);
+    assertThat(saved.getRoomOffers().getFirst().roomOfferId()).hasSize(24);
+  }
+
   /** 앱 시작 시 지도·필터 조회용 MongoDB 인덱스가 생성되는지 확인한다. */
   @Test
   void initialize_지도와_필터_인덱스를_모두_생성한다() {
@@ -81,20 +103,6 @@ class ListingMongoIntegrationTest {
             "listings_status_room_filter_tags",
             "listings_status_room_available_count",
             "listings_status_arc_required");
-  }
-
-  /** validator가 필수 필드 누락 문서 저장을 막는지 확인한다. */
-  @Test
-  void validator_필수필드가_없는_문서를_거부한다() {
-    Document invalidListing =
-        new Document("_id", new org.bson.types.ObjectId()).append("title", "필수 필드가 없는 매물");
-
-    assertThatThrownBy(
-            () ->
-                mongoTemplate
-                    .getCollection(ListingDocument.COLLECTION_NAME)
-                    .insertOne(invalidListing))
-        .isInstanceOf(MongoWriteException.class);
   }
 
   /** seed 적재가 고정 ObjectId 저장 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
@@ -186,24 +194,11 @@ class ListingMongoIntegrationTest {
 
   /** 저장·조회 테스트에서 사용할 대표 매물 도메인 객체를 만든다. */
   private static Listing sampleListing() {
-    Listing.RoomOffer roomOffer =
-        new Listing.RoomOffer(
-            ROOM_OFFER_ID,
-            "스탠다드 1인실",
-            Listing.RoomOfferStatus.ACTIVE,
-            Listing.RentalType.MONTHLY_RENT,
-            new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
-            new Listing.Contract(
-                2,
-                6,
-                new Listing.RefundPolicy(
-                    Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불")),
-            new Listing.Inventory(10, 1, null),
-            Listing.GenderPolicy.FEMALE_ONLY,
-            Set.of(Listing.RoomFeature.SINGLE_ROOM),
-            Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION),
-            List.of());
+    return sampleListingBuilder().build();
+  }
 
+  /** 저장·조회 테스트에서 일부 필드만 바꿔 쓸 대표 매물 빌더를 만든다. */
+  private static Listing.ListingBuilder sampleListingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
         .schemaVersion(1)
@@ -227,14 +222,33 @@ class ListingMongoIntegrationTest {
                 Set.of("CCTV"),
                 List.of(new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2)),
                 Set.of("BEDDING")))
-        .roomOffers(List.of(roomOffer))
+        .roomOffers(List.of(sampleRoomOffer(ROOM_OFFER_ID)))
         .featureSummary(Set.of(ConditionTag.FEMALE_ONLY))
         .descriptions(new Listing.Descriptions("테스트 설명", "Test description"))
         .extraNotes("테스트")
         .imageUrls(List.of())
         .favoriteCount(0)
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"))
-        .build();
+        .updatedAt(Instant.parse("2026-06-24T00:00:00Z"));
+  }
+
+  /** 저장·조회 테스트에서 사용할 대표 방 상품을 만든다. */
+  private static Listing.RoomOffer sampleRoomOffer(String roomOfferId) {
+    return new Listing.RoomOffer(
+        roomOfferId,
+        "스탠다드 1인실",
+        Listing.RoomOfferStatus.ACTIVE,
+        Listing.RentalType.MONTHLY_RENT,
+        new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
+        new Listing.Contract(
+            2,
+            6,
+            new Listing.RefundPolicy(
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불")),
+        new Listing.Inventory(10, 1, null),
+        Listing.GenderPolicy.FEMALE_ONLY,
+        Set.of(Listing.RoomFeature.SINGLE_ROOM),
+        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION),
+        List.of());
   }
 }
