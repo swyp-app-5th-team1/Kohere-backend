@@ -8,7 +8,7 @@ import java.util.Set;
  * 매물 영속 포트. 구현은 infrastructure 계층에 두어 의존성을 역전한다(docs/convention/code-style.md §3-3). 도메인은 영속 기술을
  * 모른다.
  *
- * <p>TODO: 필터·정렬, 지도(bbox/반경), 키워드 검색 쿼리 메서드를 추가한다.
+ * <p>목록 조회는 {@link ListingSearchCondition}으로 지도 범위·가격·옵션 조건을 한 번에 전달한다.
  */
 public interface ListingRepository {
 
@@ -17,6 +17,9 @@ public interface ListingRepository {
 
   /** 공개 중이고 활성 방 상품이 있는 매물만 페이지로 조회한다. */
   PageResponse<Listing> findPublished(int page, int size);
+
+  /** 지도 범위와 필터 조건을 적용해 공개 매물 목록을 조회한다. */
+  PageResponse<Listing> search(ListingSearchCondition condition);
 
   /** 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다. */
   PageResponse<Listing> recommend(

@@ -110,6 +110,19 @@ class ListingDocsTest {
         .perform(
             get("/api/v1/listings")
                 .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("swLat", "37.45920")
+                .param("swLng", "126.95120")
+                .param("neLat", "37.45946")
+                .param("neLng", "126.95141")
+                .param("maxBudget", "500000")
+                .param("maxDeposit", "500000")
+                .param("type", "GOSIWON")
+                .param("conditions", "FEMALE_ONLY")
+                .param("arcRequired", "false")
+                .param("residentRegistration", "true")
+                .param("sort", "PRICE_ASC")
+                .param("centerLat", "37.459471")
+                .param("centerLng", "126.951422")
                 .param("page", "0")
                 .param("size", "20"))
         .andExpect(status().isOk())
@@ -162,9 +175,46 @@ class ListingDocsTest {
             .header(HttpHeaders.AUTHORIZATION, bearer(token))
             .param("sort", "UNKNOWN"),
         status().isBadRequest(),
-        "MALFORMED_REQUEST",
-        "listings-list-malformed-sort",
-        "매물 목록 조회 — sort enum 변환 실패 (400 MALFORMED_REQUEST)");
+        "INVALID_INPUT",
+        "listings-list-invalid-sort",
+        "매물 목록 조회 — 허용되지 않은 sort 값 (400 INVALID_INPUT)");
+
+    perform(
+        get("/api/v1/listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("minBudget", "700000")
+            .param("maxBudget", "300000"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-list-invalid-budget-range",
+        "매물 목록 조회 — 월세 최소값이 최대값보다 큼 (400 INVALID_INPUT)");
+
+    perform(
+        get("/api/v1/listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-list-invalid-page-size",
+        "매물 목록 조회 — size 최대값 초과 (400 INVALID_INPUT)");
+
+    perform(
+        get("/api/v1/listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("swLat", "37.45"),
+        status().isBadRequest(),
+        "LISTING_INVALID_BBOX",
+        "listings-list-invalid-bbox",
+        "매물 목록 조회 — bbox 좌표 일부 누락 (400 LISTING_INVALID_BBOX)");
+
+    perform(
+        get("/api/v1/listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("sort", "DISTANCE"),
+        status().isBadRequest(),
+        "LISTING_INVALID_SORT_PARAM",
+        "listings-list-invalid-distance-sort",
+        "매물 목록 조회 — 거리순 정렬 기준 좌표 누락 (400 LISTING_INVALID_SORT_PARAM)");
 
     // ===== GET /listings/{listingId} =====
     perform(
@@ -223,6 +273,25 @@ class ListingDocsTest {
   /** 목록 API의 query parameter 문서 정의다. */
   private static ParameterDescriptor[] listQueryParameters() {
     return new ParameterDescriptor[] {
+      parameterWithName("swLat")
+          .optional()
+          .description("지도 화면 남서쪽 위도. 있으면 swLng/neLat/neLng도 함께 필요"),
+      parameterWithName("swLng").optional().description("지도 화면 남서쪽 경도. 서버가 전체 범위를 20% 확장해 조회"),
+      parameterWithName("neLat").optional().description("지도 화면 북동쪽 위도. swLat보다 커야 함"),
+      parameterWithName("neLng").optional().description("지도 화면 북동쪽 경도. swLng보다 커야 함"),
+      parameterWithName("minBudget").optional().description("월세 하한(KRW)"),
+      parameterWithName("maxBudget").optional().description("월세 상한(KRW)"),
+      parameterWithName("minDeposit").optional().description("보증금 하한(KRW)"),
+      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW)"),
+      parameterWithName("type").optional().description("매물 종류 필터. 예: GOSIWON"),
+      parameterWithName("conditions").optional().description("매물 옵션 태그. 콤마 구분 또는 반복 파라미터"),
+      parameterWithName("arcRequired").optional().description("false면 ARC 없이 계약 가능한 매물만 조회"),
+      parameterWithName("residentRegistration")
+          .optional()
+          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회"),
+      parameterWithName("sort").optional().description("정렬 프리셋: RECOMMENDED, PRICE_ASC, DISTANCE"),
+      parameterWithName("centerLat").optional().description("거리 계산·거리순 정렬 기준 위도"),
+      parameterWithName("centerLng").optional().description("거리 계산·거리순 정렬 기준 경도"),
       parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
       parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
     };
@@ -237,10 +306,16 @@ class ListingDocsTest {
         field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
         field("data.content[].monthlyRent", JsonFieldType.NUMBER, "대표 방 상품 월세(KRW)"),
         field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품 보증금(KRW)"),
+        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "대표 방 상품 관리비(KRW)"),
         field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
+        field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
         field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품 조건 태그 목록"),
+        field(
+            "data.content[].distanceMeters",
+            JsonFieldType.NUMBER,
+            "centerLat/centerLng 기준 직선 거리(미터)"),
         field("data.content[].favorited", JsonFieldType.BOOLEAN, "현재 사용자 찜 여부(비로그인/미연동은 false)"),
         field("data.content[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),

@@ -12,6 +12,8 @@ import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
 import java.time.Instant;
 import java.util.List;
@@ -153,6 +155,59 @@ class ListingMongoIntegrationTest {
         mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).find(query).first();
     assertThat(found).isNotNull();
     assertThat(found.getString("title")).isEqualTo("고시원001");
+  }
+
+  /** 목록 검색은 지도 범위와 필터를 모두 만족하는 공개 매물만 반환한다. */
+  @Test
+  void search_지도범위와_필터로_매물을_조회한다() {
+    new ListingSeedRunner(listingRepository).run(null);
+
+    PageResponse<Listing> result =
+        listingRepository.search(
+            new ListingSearchCondition(
+                new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
+                500000,
+                null,
+                500000,
+                Set.of(ListingType.GOSIWON),
+                Set.of(ConditionTag.FEMALE_ONLY),
+                false,
+                true,
+                ListingSort.PRICE_ASC,
+                null,
+                null,
+                0,
+                20));
+
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+  }
+
+  /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */
+  @Test
+  void search_조건을_모두_만족하지_않으면_빈_목록을_반환한다() {
+    new ListingSeedRunner(listingRepository).run(null);
+
+    PageResponse<Listing> result =
+        listingRepository.search(
+            new ListingSearchCondition(
+                new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
+                200000,
+                null,
+                null,
+                Set.of(ListingType.GOSIWON),
+                Set.of(ConditionTag.FEMALE_ONLY),
+                false,
+                null,
+                ListingSort.RECOMMENDED,
+                null,
+                null,
+                0,
+                20));
+
+    assertThat(result.content()).isEmpty();
   }
 
   /** diagnosis 추천 조건이 listing 추천 서비스와 Mongo 조회로 연결되는지 확인한다. */

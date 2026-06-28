@@ -5,8 +5,11 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingValidator;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -14,7 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.geo.Point;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.geo.GeoJsonPolygon;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
@@ -47,6 +52,16 @@ public class ListingRepositoryImpl implements ListingRepository {
             .and("roomOffers")
             .elemMatch(Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name()));
     return findPage(criteria, page, size, defaultSort());
+  }
+
+  /** 지도 범위·가격·보증금·매물종류·옵션 조건을 MongoDB 쿼리로 바꿔 매물을 조회한다. */
+  @Override
+  public PageResponse<Listing> search(ListingSearchCondition condition) {
+    Criteria criteria = searchCriteria(condition);
+    if (condition.sort() == ListingSort.DISTANCE) {
+      return findDistanceSortedPage(criteria, condition);
+    }
+    return findPage(criteria, condition.page(), condition.size(), sortBy(condition.sort()));
   }
 
   /** 진단 조건을 지역·학교·예산·방 태그 조건으로 조합해 추천 매물을 조회한다. */
@@ -117,7 +132,106 @@ public class ListingRepositoryImpl implements ListingRepository {
         content, new PageInfo(safePage, safeSize, totalElements, totalPages, hasNext));
   }
 
+  /** 검색 조건 객체를 MongoDB Criteria로 변환한다. */
+  private static Criteria searchCriteria(ListingSearchCondition condition) {
+    List<Criteria> rootCriteria = new ArrayList<>();
+    rootCriteria.add(Criteria.where("status").is(Listing.ListingStatus.PUBLISHED.name()));
+
+    if (condition.bounds() != null) {
+      rootCriteria.add(Criteria.where("location").intersects(toPolygon(condition.bounds())));
+    }
+    if (!condition.types().isEmpty()) {
+      rootCriteria.add(
+          Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
+    }
+    if (condition.arcRequired() != null) {
+      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(condition.arcRequired()));
+    }
+
+    rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
+    return new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
+  }
+
+  /** 방 상품 배열 안에서 같은 방 상품이 가격·보증금·옵션을 모두 만족하게 만드는 조건이다. */
+  private static Criteria roomOfferCriteria(ListingSearchCondition condition) {
+    List<Criteria> criteria = new ArrayList<>();
+    criteria.add(Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name()));
+    if (condition.minBudget() != null) {
+      criteria.add(Criteria.where("pricing.monthlyRent").gte(condition.minBudget()));
+    }
+    if (condition.maxBudget() != null) {
+      criteria.add(Criteria.where("pricing.monthlyRent").lte(condition.maxBudget()));
+    }
+    if (condition.minDeposit() != null) {
+      criteria.add(Criteria.where("pricing.deposit").gte(condition.minDeposit()));
+    }
+    if (condition.maxDeposit() != null) {
+      criteria.add(Criteria.where("pricing.deposit").lte(condition.maxDeposit()));
+    }
+
+    Set<ConditionTag> effectiveConditions = condition.effectiveConditions();
+    if (!effectiveConditions.isEmpty()) {
+      criteria.add(
+          Criteria.where("filterTags").all(effectiveConditions.stream().map(Enum::name).toList()));
+      if (effectiveConditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)) {
+        criteria.add(Criteria.where("inventory.availableCount").gt(0));
+      }
+    }
+    return new Criteria().andOperator(criteria.toArray(Criteria[]::new));
+  }
+
+  /** 남서·북동 좌표로 만든 네모를 MongoDB GeoJSON Polygon으로 바꾼다. */
+  private static GeoJsonPolygon toPolygon(ListingSearchCondition.BoundingBox bounds) {
+    return new GeoJsonPolygon(
+        List.of(
+            new Point(bounds.swLng(), bounds.swLat()),
+            new Point(bounds.swLng(), bounds.neLat()),
+            new Point(bounds.neLng(), bounds.neLat()),
+            new Point(bounds.neLng(), bounds.swLat()),
+            new Point(bounds.swLng(), bounds.swLat())));
+  }
+
+  /** 거리순은 MongoDB 조회 후 기준 좌표와 가까운 순서로 정렬해서 페이지를 만든다. */
+  private PageResponse<Listing> findDistanceSortedPage(
+      Criteria criteria, ListingSearchCondition condition) {
+    List<Listing> sorted =
+        mongoTemplate.find(new Query(criteria), ListingDocument.class).stream()
+            .map(ListingMongoMapper::toDomain)
+            .sorted(Comparator.comparingDouble(listing -> distanceSquared(listing, condition)))
+            .toList();
+    return pageFrom(sorted, condition.page(), condition.size());
+  }
+
+  /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
+  private static double distanceSquared(Listing listing, ListingSearchCondition condition) {
+    double lat = listing.getLocation().latitude() - condition.centerLat();
+    double lng = listing.getLocation().longitude() - condition.centerLng();
+    return lat * lat + lng * lng;
+  }
+
+  /** 이미 메모리에 있는 목록을 공통 PageResponse 형태로 자른다. */
+  private static PageResponse<Listing> pageFrom(List<Listing> content, int page, int size) {
+    int from = Math.min(page * size, content.size());
+    int to = Math.min(from + size, content.size());
+    long totalElements = content.size();
+    int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / size);
+    boolean hasNext = page + 1 < totalPages;
+    return PageResponse.of(
+        content.subList(from, to), new PageInfo(page, size, totalElements, totalPages, hasNext));
+  }
+
   /** 요청 정렬값을 Mongo Sort로 변환한다. 현재는 가격 오름차순과 기본 추천순을 지원한다. */
+  private static Sort sortBy(ListingSort sort) {
+    if (sort == null) {
+      return defaultSort();
+    }
+    if (sort == ListingSort.PRICE_ASC) {
+      return Sort.by(Sort.Direction.ASC, "roomOffers.pricing.monthlyRent");
+    }
+    return defaultSort();
+  }
+
+  /** 문자열 정렬값을 받는 진단 추천 조회와 호환되도록 남겨 둔 정렬 변환이다. */
   private static Sort sortBy(String sort) {
     if (sort == null || sort.isBlank()) {
       return defaultSort();

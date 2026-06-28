@@ -15,9 +15,12 @@ public record ListingSummaryResponse(
     ListingType type,
     int monthlyRent,
     int deposit,
+    int maintenanceFee,
     String thumbnailUrl,
     double lat,
     double lng,
+    String address,
     List<ConditionTag> conditions,
+    Integer distanceMeters,
     boolean favorited,
     int favoriteCount) {}
