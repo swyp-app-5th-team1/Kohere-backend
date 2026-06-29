@@ -4,15 +4,19 @@ import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingAreaTooLargeException;
 import com.kohere.listing.domain.ListingInvalidBboxException;
 import com.kohere.listing.domain.ListingInvalidSortParamException;
+import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
+import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +36,10 @@ import org.springframework.stereotype.Service;
 public class ListingService {
 
   private static final double BOUNDS_EXPANSION_RATIO = 0.2;
+
+  /** 지도 SDK에 한 번에 넘기는 마커가 너무 많아지지 않도록 둔 서버 방어 상한이다. */
+  private static final int MAX_MAP_MARKERS = 500;
+
   private static final int MAX_PAGE_SIZE = 100;
   private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
@@ -51,6 +59,18 @@ public class ListingService {
                         listing, condition, distanceMeters(listing, condition)))
             .toList(),
         listings.page());
+  }
+
+  /** 지도 SDK 클러스터링에 사용할 개별 매물 마커 좌표를 반환한다. */
+  public ListingMapResponse getListingMap(ListingMapRequest request) {
+    ListingSearchCondition condition = buildMapSearchCondition(request);
+    ListingMapSearchResult result = listingRepository.searchForMap(condition, MAX_MAP_MARKERS);
+    if (result.total() > MAX_MAP_MARKERS) {
+      throw new ListingAreaTooLargeException();
+    }
+    return new ListingMapResponse(
+        result.listings().stream().map(ListingResponseMapper::toMapMarker).toList(),
+        result.total());
   }
 
   /** 단일 매물 상세 정보를 조회하고 상세 화면 섹션별 응답으로 변환한다. */
@@ -107,6 +127,34 @@ public class ListingService {
         request.getCenterLng(),
         request.getPage(),
         request.getSize());
+  }
+
+  /** 지도 마커 조회는 bbox가 필수이며, 목록과 같은 필터를 적용한다. */
+  private static ListingSearchCondition buildMapSearchCondition(ListingMapRequest request) {
+    validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
+    validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
+
+    ListingSearchCondition.BoundingBox bounds =
+        buildExpandedBounds(
+            request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    if (bounds == null) {
+      throw new ListingInvalidBboxException();
+    }
+    return new ListingSearchCondition(
+        bounds,
+        request.getMinBudget(),
+        request.getMaxBudget(),
+        request.getMinDeposit(),
+        request.getMaxDeposit(),
+        request.getType(),
+        request.getConditions(),
+        request.getArcRequired(),
+        request.getResidentRegistration(),
+        ListingSort.RECOMMENDED,
+        null,
+        null,
+        0,
+        MAX_MAP_MARKERS);
   }
 
   /** 지도 좌표가 모두 있으면 유효성을 검사한 뒤 전체 범위를 20% 넓힌다. */

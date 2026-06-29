@@ -20,7 +20,7 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
-| GET | `/api/v1/listings/map` | 지도 검색(bbox 또는 center+radius, 클러스터 집계) | 선택 | 200 |
+| GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
 | GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
 | GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(로그인 시 최근 본 매물 기록) | 선택 | 200 |
 | POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
@@ -100,9 +100,9 @@ Request Body: 없음
 | 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 `centerLat`/`centerLng` 누락 |
 | 400 | `MALFORMED_REQUEST` | 타입 불일치(숫자 파라미터에 비숫자 등) |
 
-### GET /api/v1/listings/map — 지도 검색
+### GET /api/v1/listings/map — 지도 마커 조회
 
-- 설명: bbox 또는 center+radius 영역 내 매물을 줌 레벨에 따라 클러스터로 집계해 반환한다.
+- 설명: bbox 영역 내 매물의 개별 마커 좌표를 반환한다. 클러스터링은 프론트 지도 SDK가 화면 기준으로 처리한다.
 - 인증: 선택
 
 Query 파라미터:
@@ -113,43 +113,38 @@ Query 파라미터:
 | `swLng` | number | bbox 모드 필수 | 남서 경도 |
 | `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
 | `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
-| `centerLat` | number | 반경 모드 필수 | 중심 위도 |
-| `centerLng` | number | 반경 모드 필수 | 중심 경도 |
-| `radius` | integer(m) | 반경 모드 필수 | 반경(미터) |
-| `zoom` | integer | 선택 | 지도 줌 레벨(클러스터 격자 크기 산정용) |
-| `cluster` | boolean | 선택(기본 `true`) | `true`면 서버 집계, `false`면 개별 마커(상한 초과 시 에러) |
 | `minBudget`/`maxBudget`/`type`/`conditions`/`arcRequired`/`residentRegistration` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용 |
 
-> bbox 모드와 반경 모드는 **상호 배타**다. 둘 다 제공하거나 어느 쪽도 완전하지 않으면 `LISTING_INVALID_BBOX`.
+> 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 서버는 `/listings` 목록 조회와 동일하게 요청 bbox를 20% 확장해 조회한다.
 
 Request Body: 없음
 
-성공 Response (200, `cluster=true`):
+성공 Response (200):
 
 ```jsonc
 {
   "success": true,
   "data": {
-    "clusters": [
-      { "lat": 37.5512, "lng": 126.9369, "count": 23, "listingId": null },
-      { "lat": 37.5489, "lng": 126.9412, "count": 1, "listingId": "6858e2000000000000000001" }
+    "markers": [
+      { "listingId": "6858e2000000000000000001", "lat": 37.5489, "lng": 126.9412 }
     ],
-    "total": 24
+    "total": 1
   },
   "error": null
 }
 ```
 
-- `count == 1`인 클러스터는 `listingId`로 단건을 가리킨다. `count > 1`이면 `listingId`는 `null`이다.
-- `cluster=false`이고 결과 수가 상한(서버 설정값, 예: 500) 이하이면 `data.content[]`(리스트 항목과 동일 스키마)로 반환한다. 비클러스터 항목의 `favorited`는 비로그인 시 `false`다.
+- `markers[]`는 프론트 지도 SDK가 마커와 클러스터를 만들 때 사용하는 최소 데이터다.
+- `title`, 가격, 썸네일 등 카드 정보는 포함하지 않는다. 마커 선택 후 카드 목록이나 상세 정보가 필요하면 `/api/v1/listings` 또는 `/api/v1/listings/{listingId}`를 호출한다.
+- 결과 수가 서버 상한(예: 500건)을 초과하면 `LISTING_AREA_TOO_LARGE`를 반환한다. 클라이언트는 지도를 더 확대하거나 bbox를 좁혀 다시 호출한다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/모순(`swLat>neLat` 등) 또는 bbox·반경 모드 혼용 |
-| 400 | `LISTING_AREA_TOO_LARGE` | `cluster=false`인데 결과 수가 상한 초과(클러스터 사용 유도) |
-| 400 | `INVALID_INPUT` | 필터 enum/범위 위반, `radius` 음수 등 |
+| 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/모순(`swLat>neLat` 등) |
+| 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과 수가 서버 상한 초과 |
+| 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
 
 ### GET /api/v1/listings/search — 키워드 검색
 
@@ -453,8 +448,8 @@ Request Body: 없음
 | --- | --- | --- |
 | `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제된 매물 |
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 `centerLat`/`centerLng`가 누락됨 |
-| `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/모순(`swLat>neLat` 등) 또는 bbox·반경 모드 혼용 |
-| `LISTING_AREA_TOO_LARGE` | 400 | 비클러스터 지도 검색 결과가 상한을 초과(클러스터 사용 유도) |
+| `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/모순(`swLat>neLat` 등) |
+| `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 서버 상한을 초과 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다.
 > 이미 찜/미찜 상태에서의 토글은 별도 충돌 에러(`LISTING_ALREADY_FAVORITED` 등)로 보지 않고 멱등하게 현재 상태를 반환한다(등록은 신규 201 / 기존 200, 해제는 항상 200). 만약 "이미 찜" 충돌을 명시적으로 알리는 정책이 정해지면 `409`로 별도 코드를 추가한다.

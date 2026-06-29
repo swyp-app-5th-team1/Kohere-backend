@@ -2,6 +2,7 @@ package com.kohere.listing.application;
 
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
@@ -61,6 +62,12 @@ final class ListingResponseMapper {
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
         offer.filterTags().stream().map(Enum::name).toList());
+  }
+
+  /** 지도 SDK가 개별 마커로 사용할 최소 좌표 DTO를 만든다. */
+  static ListingMapResponse.Marker toMapMarker(Listing listing) {
+    return new ListingMapResponse.Marker(
+        listing.getId(), listing.getLocation().latitude(), listing.getLocation().longitude());
   }
 
   /** 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다. */

@@ -73,6 +73,12 @@ class ListingDocsTest {
           + "필터가 없으면 해당 범위의 공개 매물을, 필터가 있으면 같은 범위 안에서 조건을 만족하는 매물만 반환한다. "
           + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터를 지원한다. "
           + "이 API는 지도 바텀시트 리스트 카드용이며, 지도 핀/클러스터 데이터는 별도 지도 API에서 제공한다.";
+  private static final String LISTINGS_MAP_SUMMARY = "지도 마커 조회";
+  private static final String LISTINGS_MAP_DESCRIPTION =
+      "현재 지도 화면의 남서/북동 좌표를 기준으로 공개 매물의 개별 마커 좌표를 조회한다. "
+          + "지도 범위 좌표는 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
+          + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터는 리스트 API와 같은 기준으로 적용한다. "
+          + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
       "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
@@ -149,6 +155,32 @@ class ListingDocsTest {
                     .description(LISTINGS_LIST_DESCRIPTION),
                 queryParameters(listQueryParameters()),
                 responseFields(listResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/map")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("swLat", "37.45920")
+                .param("swLng", "126.95120")
+                .param("neLat", "37.45946")
+                .param("neLng", "126.95141")
+                .param("maxBudget", "500000")
+                .param("maxDeposit", "500000")
+                .param("type", "GOSIWON")
+                .param("conditions", "FEMALE_ONLY")
+                .param("arcRequired", "false")
+                .param("residentRegistration", "true"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.total").value(1))
+        .andDo(
+            document(
+                "listings-map",
+                resourceDetails()
+                    .summary(LISTINGS_MAP_SUMMARY)
+                    .description(LISTINGS_MAP_DESCRIPTION),
+                queryParameters(mapQueryParameters()),
+                responseFields(mapResponseFields())));
 
     mockMvc
         .perform(
@@ -241,6 +273,17 @@ class ListingDocsTest {
         "listings-list-invalid-distance-sort",
         LISTINGS_LIST_SUMMARY,
         LISTINGS_LIST_DESCRIPTION);
+
+    // ===== GET /listings/map =====
+    perform(
+        get("/api/v1/listings/map")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("swLat", "37.45"),
+        status().isBadRequest(),
+        "LISTING_INVALID_BBOX",
+        "listings-map-invalid-bbox",
+        LISTINGS_MAP_SUMMARY,
+        LISTINGS_MAP_DESCRIPTION);
 
     // ===== GET /listings/{listingId} =====
     perform(
@@ -351,6 +394,44 @@ class ListingDocsTest {
       parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
       parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
     };
+  }
+
+  /** 지도 마커 API의 query parameter 문서 정의다. */
+  private static ParameterDescriptor[] mapQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("swLat").description("현재 지도 화면의 남서쪽 위도. 지도 마커 조회는 bbox 네 값이 모두 필수"),
+      parameterWithName("swLng").description("현재 지도 화면의 남서쪽 경도"),
+      parameterWithName("neLat").description("현재 지도 화면의 북동쪽 위도. swLat보다 커야 함"),
+      parameterWithName("neLng").description("현재 지도 화면의 북동쪽 경도. swLng보다 커야 함"),
+      parameterWithName("minBudget").optional().description("월세 하한(KRW). maxBudget보다 클 수 없음"),
+      parameterWithName("maxBudget").optional().description("월세 상한(KRW). minBudget보다 작을 수 없음"),
+      parameterWithName("minDeposit").optional().description("보증금 하한(KRW). maxDeposit보다 클 수 없음"),
+      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW). minDeposit보다 작을 수 없음"),
+      parameterWithName("type")
+          .optional()
+          .description("매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+      parameterWithName("conditions")
+          .optional()
+          .description("매물 옵션 태그. 여러 값을 보내면 모두 만족하는 방 상품만 조회"),
+      parameterWithName("arcRequired").optional().description("false면 ARC 없이 계약 가능한 매물만 조회"),
+      parameterWithName("residentRegistration")
+          .optional()
+          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회. conditions=RESIDENT_REGISTRATION과 같은 의미")
+    };
+  }
+
+  /** 지도 마커 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> mapResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.markers[].listingId",
+            JsonFieldType.STRING,
+            "지도 마커가 가리키는 매물 식별자(ObjectId hex 문자열)"),
+        field("data.markers[].lat", JsonFieldType.NUMBER, "마커를 찍을 위도(WGS84)"),
+        field("data.markers[].lng", JsonFieldType.NUMBER, "마커를 찍을 경도(WGS84)"),
+        field("data.total", JsonFieldType.NUMBER, "현재 지도 범위와 필터에 맞는 전체 마커 수"),
+        errorNull());
   }
 
   /** 목록 API 응답 필드 문서 정의다. */

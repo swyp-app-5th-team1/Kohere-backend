@@ -21,6 +21,9 @@ public interface ListingRepository {
   /** 지도 범위와 필터 조건을 적용해 공개 매물 목록을 조회한다. */
   PageResponse<Listing> search(ListingSearchCondition condition);
 
+  /** 지도 SDK에 전달할 마커 후보를 조회한다. 전체 건수와 지정 상한 내 매물만 반환한다. */
+  ListingMapSearchResult searchForMap(ListingSearchCondition condition, int limit);
+
   /** 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다. */
   PageResponse<Listing> recommend(
       String region,

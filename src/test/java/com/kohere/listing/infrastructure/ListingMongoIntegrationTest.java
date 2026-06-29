@@ -11,6 +11,7 @@ import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
@@ -182,6 +183,35 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+  }
+
+  /** 지도 마커 조회는 같은 필터를 적용하되 페이지가 아니라 마커 후보와 전체 개수를 반환한다. */
+  @Test
+  void searchForMap_지도범위와_필터에_맞는_마커후보를_조회한다() {
+    new ListingSeedRunner(listingRepository).run(null);
+
+    ListingMapSearchResult result =
+        listingRepository.searchForMap(
+            new ListingSearchCondition(
+                new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
+                500000,
+                null,
+                500000,
+                Set.of(ListingType.GOSIWON),
+                Set.of(ConditionTag.FEMALE_ONLY),
+                false,
+                true,
+                ListingSort.RECOMMENDED,
+                null,
+                null,
+                0,
+                20),
+            500);
+
+    assertThat(result.total()).isEqualTo(1);
+    assertThat(result.listings()).hasSize(1);
+    assertThat(result.listings().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
   }
 
   /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */

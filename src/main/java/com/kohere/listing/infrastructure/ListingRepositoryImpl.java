@@ -4,6 +4,7 @@ import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
@@ -62,6 +63,26 @@ public class ListingRepositoryImpl implements ListingRepository {
       return findDistanceSortedPage(criteria, condition);
     }
     return findPage(criteria, condition.page(), condition.size(), sortBy(condition.sort()));
+  }
+
+  /** 지도 SDK가 클러스터링할 수 있도록 필터된 개별 매물 좌표 후보를 상한까지만 조회한다. */
+  @Override
+  public ListingMapSearchResult searchForMap(ListingSearchCondition condition, int limit) {
+    int safeLimit = Math.max(1, limit);
+    Criteria criteria = searchCriteria(condition);
+
+    long totalElements = mongoTemplate.count(new Query(criteria), ListingDocument.class);
+    if (totalElements > safeLimit) {
+      return new ListingMapSearchResult(List.of(), totalElements);
+    }
+
+    Query query = new Query(criteria).with(defaultSort()).limit(safeLimit);
+    List<Listing> content =
+        mongoTemplate.find(query, ListingDocument.class).stream()
+            .map(ListingMongoMapper::toDomain)
+            .toList();
+
+    return new ListingMapSearchResult(content, totalElements);
   }
 
   /** 진단 조건을 지역·학교·예산·방 태그 조건으로 조합해 추천 매물을 조회한다. */

@@ -557,33 +557,33 @@
   When 비로그인 사용자가 호출하면 각 항목 `favorited=false`로, 로그인 사용자가 호출하면 본인의 찜 여부가 `favorited`에 반영되어 반환된다
   Then 두 경우 모두 `200 OK`이며 공개 데이터는 동일하다
 
-### US-3-2 — 지도(bbox/반경) 검색과 클러스터 집계
+### US-3-2 — 지도 bbox 마커 조회
 
 **As a** 특정 지역·학교 주변에서 집을 찾는 외국인 사용자
-**I want** 지도 화면에 보이는 영역(bounding box) 또는 중심점+반경 내 매물을 줌 레벨에 따라 클러스터로 집계해 받기
+**I want** 지도 화면에 보이는 영역(bounding box) 내 매물의 개별 좌표를 받기
 **So that** 지도를 이동/확대하며 매물 분포를 빠르게 파악할 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 지도 패닝 시 잦은 호출을 견디는 응답시간/캐시 전략(NFR 미정)
-- 데이터 관점: bbox는 4좌표가 모두 있어야 유효, 반경 모드는 `centerLat/centerLng/radius`가 모두 있어야 유효하며 두 모드는 상호 배타, `cluster=true`면 좌표 그리드/지오해시로 서버 집계해 마커 수를 줄임, 비클러스터 모드는 상한(서버 설정값, 예: 최대 500건)으로 초과 시 에러 처리
+- 데이터 관점: bbox는 4좌표가 모두 있어야 유효, 서버는 요청 bbox를 20% 확장해 조회, 응답은 프론트 지도 SDK가 클러스터링할 개별 매물 좌표(`listingId`, `lat`, `lng`) 중심, 결과 수는 서버 설정값(예: 최대 500건)으로 초과 시 에러 처리
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 bbox 클러스터 조회
+- 시나리오: 정상 bbox 마커 조회
   Given 지도 영역이 유효 좌표로 주어지고
-  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05&zoom=13&cluster=true`를 호출하면
-  Then `200 OK`로 `data.clusters[]`(각 항목 `lat/lng/count` 및 `count==1`일 때 `listingId`)를 반환한다
-- 시나리오: 입력 검증 실패(좌표 불완전/모순/모드 혼용)
+  When `GET /api/v1/listings/map?swLat=37.49&swLng=126.95&neLat=37.57&neLng=127.05`를 호출하면
+  Then `200 OK`로 `data.markers[]`(각 항목 `listingId/lat/lng`)를 반환한다
+- 시나리오: 입력 검증 실패(좌표 불완전/모순)
   Given 클라이언트가
-  When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표, 또는 bbox와 반경(`centerLat/centerLng/radius`)을 동시에 보내면
+  When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표를 보내면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_BBOX`를 반환한다
 - 시나리오: 인증 선택(비로그인 허용)
   Given 토큰 없는 사용자가
   When 지도 검색을 호출하면
-  Then `200 OK`로 정상 조회된다(클러스터 응답에는 사용자 맞춤 필드 `favorited`가 포함되지 않으며, 비클러스터 항목의 `favorited`는 `false`로 처리)
-- 시나리오: 경계(과도한 영역/반경)
-  Given 한 번에 너무 넓은 bbox 또는 과대 `radius`가 주어지면
+  Then `200 OK`로 정상 조회된다(마커 응답에는 사용자 맞춤 필드 `favorited`가 포함되지 않는다)
+- 시나리오: 경계(과도한 영역)
+  Given 한 번에 너무 넓은 bbox가 주어지면
   When 검색을 호출하면
-  Then `cluster=true`면 집계 결과를 반환하고, 비클러스터인데 결과 수가 상한을 초과하면 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 클러스터 사용을 유도한다
+  Then 결과 수가 상한을 초과하는 경우 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 범위 축소를 유도한다
 
 ### US-3-3 — 키워드 검색(학교명·지역명·지하철역명)
 
