@@ -23,10 +23,7 @@ public class ListingSearchRequest {
   private Set<ListingType> type;
   private Set<ConditionTag> conditions;
   private Boolean arcRequired;
-  private Boolean residentRegistration;
   private ListingSort sort = ListingSort.RECOMMENDED;
-  private Double centerLat;
-  private Double centerLng;
   private int page = 0;
   private int size = 20;
 }

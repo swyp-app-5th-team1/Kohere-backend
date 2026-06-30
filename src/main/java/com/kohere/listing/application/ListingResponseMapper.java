@@ -5,42 +5,40 @@ import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
-import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSearchResult;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 
 /** Listing 도메인 모델을 외부 응답 DTO와 published view로 변환한다. */
 final class ListingResponseMapper {
 
   private ListingResponseMapper() {}
 
-  /** 목록 화면에 필요한 대표 가격·좌표·태그만 추려 요약 DTO를 만든다. */
-  static ListingSummaryResponse toSummary(Listing listing) {
-    Listing.RoomOffer offer = representativeOffer(listing);
-    return toSummary(listing, offer, null);
+  /**
+   * 목록 화면의 카드 응답을 만든다.
+   *
+   * <p>목록 조회는 이미 저장소에서 조건에 맞는 {@code roomOffer}를 모두 펼쳐 {@link ListingSearchResult}로 넘겨준다. 따라서 여기서는
+   * 추가로 대표 방을 고르지 않고, 전달받은 방 상품의 가격·조건·재고를 그대로 카드에 담는다.
+   */
+  static ListingSummaryResponse toSummary(ListingSearchResult result, Integer distanceMeters) {
+    return toSummary(result.listing(), result.roomOffer(), distanceMeters);
   }
 
-  /** 필터 조건에 맞는 방 상품을 대표로 골라 지도 바텀시트용 요약 DTO를 만든다. */
-  static ListingSummaryResponse toSummary(
-      Listing listing, ListingSearchCondition condition, Integer distanceMeters) {
-    Listing.RoomOffer offer = representativeOffer(listing, condition);
-    return toSummary(listing, offer, distanceMeters);
-  }
-
-  /** 이미 고른 대표 방 상품으로 목록 응답을 조립한다. */
+  /** 이미 고른 방 상품으로 목록 응답을 조립한다. */
   private static ListingSummaryResponse toSummary(
       Listing listing, Listing.RoomOffer offer, Integer distanceMeters) {
     return new ListingSummaryResponse(
         listing.getId(),
+        offer.roomOfferId(),
+        offer.name(),
         listing.getTitle(),
         listing.getType(),
         offer.pricing().monthlyRent(),
         offer.pricing().deposit(),
         offer.pricing().maintenanceFee(),
+        offer.inventory().availableCount(),
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
@@ -147,46 +145,17 @@ final class ListingResponseMapper {
         roomOffer.roomImageUrls());
   }
 
-  /** 목록·추천 카드에서 보여줄 대표 방 상품을 월세가 가장 낮은 활성 상품으로 선택한다. */
+  /**
+   * 매물당 카드가 하나만 필요한 흐름에서 사용할 기본 방 상품을 고른다.
+   *
+   * <p>일반 목록 조회는 더 이상 이 메서드를 쓰지 않는다. 목록은 조건에 맞는 모든 roomOffer를 카드로 펼친다. 이 메서드는 아직 roomOffer 단위로 바뀌지
+   * 않은 찜 목록이나 진단 추천 published view의 기본 가격을 만들 때만 사용한다.
+   */
   private static Listing.RoomOffer representativeOffer(Listing listing) {
     return listing.getRoomOffers().stream()
         .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
         .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
         .orElseGet(() -> listing.getRoomOffers().getFirst());
-  }
-
-  /** 필터 조건을 모두 만족하는 활성 방 상품 중 월세가 가장 낮은 상품을 대표로 선택한다. */
-  private static Listing.RoomOffer representativeOffer(
-      Listing listing, ListingSearchCondition condition) {
-    return listing.getRoomOffers().stream()
-        .filter(offer -> matches(offer, condition))
-        .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
-        .orElseGet(() -> representativeOffer(listing));
-  }
-
-  /** 방 상품 하나가 목록 조회 필터를 모두 만족하는지 확인한다. */
-  private static boolean matches(Listing.RoomOffer offer, ListingSearchCondition condition) {
-    if (offer.status() != Listing.RoomOfferStatus.ACTIVE) {
-      return false;
-    }
-    if (condition.minBudget() != null && offer.pricing().monthlyRent() < condition.minBudget()) {
-      return false;
-    }
-    if (condition.maxBudget() != null && offer.pricing().monthlyRent() > condition.maxBudget()) {
-      return false;
-    }
-    if (condition.minDeposit() != null && offer.pricing().deposit() < condition.minDeposit()) {
-      return false;
-    }
-    if (condition.maxDeposit() != null && offer.pricing().deposit() > condition.maxDeposit()) {
-      return false;
-    }
-    Set<ConditionTag> conditions = condition.effectiveConditions();
-    if (!offer.filterTags().containsAll(conditions)) {
-      return false;
-    }
-    return !conditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)
-        || offer.inventory().availableCount() > 0;
   }
 
   /** 건물 이미지 중 첫 번째 이미지를 썸네일로 사용하고, 없으면 null을 반환한다. */

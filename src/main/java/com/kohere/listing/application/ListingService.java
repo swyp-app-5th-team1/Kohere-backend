@@ -19,6 +19,7 @@ import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
@@ -51,17 +52,22 @@ public class ListingService {
   private final ListingRepository listingRepository;
   private final FavoriteRepository favoriteRepository;
 
-  /** 지도 범위와 필터 조건을 적용해 매물 카드 목록을 페이지 단위로 반환한다. */
+  /**
+   * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
+   *
+   * <p>목록 카드 1개는 건물 Listing 하나가 아니라 "Listing + roomOffer" 조합이다. 같은 고시원 안에 조건에 맞는 방 상품이 여러 개 있으면 같은
+   * listingId를 가진 카드가 여러 개 내려갈 수 있다.
+   */
   public PageResponse<ListingSummaryResponse> getListings(ListingSearchRequest request) {
     ListingSearchCondition condition = buildSearchCondition(request);
 
-    PageResponse<Listing> listings = listingRepository.search(condition);
+    PageResponse<ListingSearchResult> listings = listingRepository.search(condition);
     return PageResponse.of(
         listings.content().stream()
             .map(
-                listing ->
+                result ->
                     ListingResponseMapper.toSummary(
-                        listing, condition, distanceMeters(listing, condition)))
+                        result, distanceMeters(result.listing(), condition)))
             .toList(),
         listings.page());
   }
@@ -164,13 +170,13 @@ public class ListingService {
     validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
     validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
     validatePage(request.getPage(), request.getSize());
-    validateCenter(request.getSort(), request.getCenterLat(), request.getCenterLng());
 
-    ListingSearchCondition.BoundingBox bounds =
-        buildExpandedBounds(
-            request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    ListingSearchCondition.BoundingBox viewportBounds =
+        buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    validateDistanceSort(request.getSort(), viewportBounds);
+
     return new ListingSearchCondition(
-        bounds,
+        expandedBounds(viewportBounds),
         request.getMinBudget(),
         request.getMaxBudget(),
         request.getMinDeposit(),
@@ -178,10 +184,9 @@ public class ListingService {
         request.getType(),
         request.getConditions(),
         request.getArcRequired(),
-        request.getResidentRegistration(),
         request.getSort(),
-        request.getCenterLat(),
-        request.getCenterLng(),
+        centerLat(viewportBounds),
+        centerLng(viewportBounds),
         request.getPage(),
         request.getSize());
   }
@@ -191,14 +196,13 @@ public class ListingService {
     validateMoneyRange("monthlyRent", request.getMinBudget(), request.getMaxBudget());
     validateMoneyRange("deposit", request.getMinDeposit(), request.getMaxDeposit());
 
-    ListingSearchCondition.BoundingBox bounds =
-        buildExpandedBounds(
-            request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
-    if (bounds == null) {
+    ListingSearchCondition.BoundingBox viewportBounds =
+        buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
+    if (viewportBounds == null) {
       throw new ListingInvalidBboxException();
     }
     return new ListingSearchCondition(
-        bounds,
+        expandedBounds(viewportBounds),
         request.getMinBudget(),
         request.getMaxBudget(),
         request.getMinDeposit(),
@@ -206,7 +210,6 @@ public class ListingService {
         request.getType(),
         request.getConditions(),
         request.getArcRequired(),
-        request.getResidentRegistration(),
         ListingSort.RECOMMENDED,
         null,
         null,
@@ -214,8 +217,8 @@ public class ListingService {
         MAX_MAP_MARKERS);
   }
 
-  /** 지도 좌표가 모두 있으면 유효성을 검사한 뒤 전체 범위를 20% 넓힌다. */
-  private static ListingSearchCondition.BoundingBox buildExpandedBounds(
+  /** 지도 좌표가 모두 있으면 유효성을 검사한 뒤 원본 지도 화면 bbox로 묶는다. */
+  private static ListingSearchCondition.BoundingBox buildBounds(
       Double swLat, Double swLng, Double neLat, Double neLng) {
     boolean hasAny = swLat != null || swLng != null || neLat != null || neLng != null;
     if (!hasAny) {
@@ -232,8 +235,23 @@ public class ListingService {
         || swLng >= neLng) {
       throw new ListingInvalidBboxException();
     }
-    return new ListingSearchCondition.BoundingBox(swLat, swLng, neLat, neLng)
-        .expandedBy(BOUNDS_EXPANSION_RATIO);
+    return new ListingSearchCondition.BoundingBox(swLat, swLng, neLat, neLng);
+  }
+
+  /** UX상 화면 가장자리에 걸친 매물도 보이도록 MongoDB 조회 bbox만 20% 넓힌다. */
+  private static ListingSearchCondition.BoundingBox expandedBounds(
+      ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.expandedBy(BOUNDS_EXPANSION_RATIO);
+  }
+
+  /** bbox가 있으면 원본 지도 화면 중심 위도를 반환한다. */
+  private static Double centerLat(ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.centerLat();
+  }
+
+  /** bbox가 있으면 원본 지도 화면 중심 경도를 반환한다. */
+  private static Double centerLng(ListingSearchCondition.BoundingBox bounds) {
+    return bounds == null ? null : bounds.centerLng();
   }
 
   /** 돈 필터는 음수가 아니어야 하고, 최소값이 최대값보다 클 수 없다. */
@@ -259,16 +277,10 @@ public class ListingService {
     }
   }
 
-  /** 거리순 정렬이나 거리 표시를 쓰려면 기준 좌표가 둘 다 있어야 한다. */
-  private static void validateCenter(ListingSort sort, Double centerLat, Double centerLng) {
-    boolean hasAny = centerLat != null || centerLng != null;
-    if (hasAny && (centerLat == null || centerLng == null)) {
-      throw new ListingInvalidSortParamException();
-    }
-    if (sort == ListingSort.DISTANCE && !hasAny) {
-      throw new ListingInvalidSortParamException();
-    }
-    if (centerLat != null && (!isLatitude(centerLat) || !isLongitude(centerLng))) {
+  /** 거리순 정렬은 요청 bbox의 중심 좌표를 기준으로 하므로 bbox 네 값이 모두 필요하다. */
+  private static void validateDistanceSort(
+      ListingSort sort, ListingSearchCondition.BoundingBox bounds) {
+    if (sort == ListingSort.DISTANCE && bounds == null) {
       throw new ListingInvalidSortParamException();
     }
   }

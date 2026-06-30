@@ -22,5 +22,4 @@ public class ListingMapRequest {
   private Set<ListingType> type;
   private Set<ConditionTag> conditions;
   private Boolean arcRequired;
-  private Boolean residentRegistration;
 }

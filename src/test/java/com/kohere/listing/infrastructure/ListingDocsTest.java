@@ -67,19 +67,29 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class ListingDocsTest {
 
   private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
+  private static final String ROOM_OFFER_ID = ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID;
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
   private static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
   private static final String LISTINGS_LIST_DESCRIPTION =
-      "현재 지도 화면의 남서/북동 좌표를 기준으로 공개 매물 리스트를 조회한다. "
+      "현재 지도 화면의 남서/북동 좌표를 기준으로 공개 방 상품 카드 리스트를 조회한다. "
           + "지도 범위 좌표가 전달되면 서버가 전체 범위를 20% 확장해 조회하며, "
-          + "필터가 없으면 해당 범위의 공개 매물을, 필터가 있으면 같은 범위 안에서 조건을 만족하는 매물만 반환한다. "
-          + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터를 지원한다. "
+          + "거리 표시와 DISTANCE 정렬은 프론트가 보낸 별도 중심 좌표가 아니라 요청 bbox의 원본 중심점을 기준으로 계산한다. "
+          + "필터가 없으면 해당 범위의 active roomOffer를 모두 반환하고, "
+          + "필터가 있으면 같은 범위 안에서 조건을 만족하는 active roomOffer만 반환한다. "
+          + "월세·보증금·조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·ARC·지도 범위는 Listing 기준으로 적용한다. "
+          + "전입신고 가능 여부는 별도 파라미터가 아니라 conditions=RESIDENT_REGISTRATION으로 필터링한다. "
+          + "arcRequired=true는 ARC 필수 매물만 조회하고, false 또는 미전달은 ARC 조건을 적용하지 않는다. "
+          + "같은 매물에 조건에 맞는 roomOffer가 여러 개 있으면 같은 listingId가 여러 번 내려갈 수 있다. "
+          + "프론트는 roomOfferId를 상세 응답의 roomOffers[].roomOfferId와 매칭해 사용자가 선택한 방 상품을 강조할 수 있다. "
           + "이 API는 지도 바텀시트 리스트 카드용이며, 지도 핀/클러스터 데이터는 별도 지도 API에서 제공한다.";
   private static final String LISTINGS_MAP_SUMMARY = "지도 마커 조회";
   private static final String LISTINGS_MAP_DESCRIPTION =
       "현재 지도 화면의 bbox(swLat, swLng, neLat, neLng)에 포함되는 공개 매물의 개별 마커 좌표를 조회한다. "
           + "bbox 네 좌표는 모두 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
-          + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터는 리스트 API와 같은 기준으로 적용한다. "
+          + "필터 적용 기준은 리스트 API와 같지만, 응답은 roomOffer 카드가 아니라 Listing 마커 단위다. "
+          + "전입신고 가능 여부는 conditions=RESIDENT_REGISTRATION으로 필터링하고, "
+          + "arcRequired=true일 때만 ARC 필수 매물로 좁힌다. "
+          + "한 매물 안의 roomOffer가 여러 개 매칭되어도 지도 마커는 해당 listingId로 1개만 내려간다. "
           + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
@@ -158,15 +168,14 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
+                .param("conditions", "RESIDENT_REGISTRATION")
                 .param("arcRequired", "false")
-                .param("residentRegistration", "true")
                 .param("sort", "PRICE_ASC")
-                .param("centerLat", "37.459471")
-                .param("centerLng", "126.951422")
                 .param("page", "0")
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].roomOfferId").value(ROOM_OFFER_ID))
         .andDo(
             document(
                 "listings-list",
@@ -188,8 +197,8 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("arcRequired", "false")
-                .param("residentRegistration", "true"))
+                .param("conditions", "RESIDENT_REGISTRATION")
+                .param("arcRequired", "false"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.total").value(1))
@@ -510,29 +519,35 @@ class ListingDocsTest {
           .description("현재 지도 화면의 남서쪽 경도. bbox 네 값이 모두 오면 서버가 전체 범위를 20% 확장해 조회"),
       parameterWithName("neLat").optional().description("현재 지도 화면의 북동쪽 위도. swLat보다 커야 함"),
       parameterWithName("neLng").optional().description("현재 지도 화면의 북동쪽 경도. swLng보다 커야 함"),
-      parameterWithName("minBudget").optional().description("월세 하한(KRW). maxBudget보다 클 수 없음"),
-      parameterWithName("maxBudget").optional().description("월세 상한(KRW). minBudget보다 작을 수 없음"),
-      parameterWithName("minDeposit").optional().description("보증금 하한(KRW). maxDeposit보다 클 수 없음"),
-      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW). minDeposit보다 작을 수 없음"),
+      parameterWithName("minBudget")
+          .optional()
+          .description("roomOffer 월세 하한(KRW). 같은 roomOffer의 monthlyRent가 이 값 이상인 카드만 반환"),
+      parameterWithName("maxBudget")
+          .optional()
+          .description("roomOffer 월세 상한(KRW). 같은 roomOffer의 monthlyRent가 이 값 이하인 카드만 반환"),
+      parameterWithName("minDeposit")
+          .optional()
+          .description("roomOffer 보증금 하한(KRW). 같은 roomOffer의 deposit이 이 값 이상인 카드만 반환"),
+      parameterWithName("maxDeposit")
+          .optional()
+          .description("roomOffer 보증금 상한(KRW). 같은 roomOffer의 deposit이 이 값 이하인 카드만 반환"),
       parameterWithName("type")
           .optional()
-          .description("매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+          .description("Listing 기준 매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
       parameterWithName("conditions")
           .optional()
-          .description("매물 옵션 태그. 여러 값을 보내면 모두 만족하는 방 상품만 조회"),
-      parameterWithName("arcRequired").optional().description("false면 ARC 없이 계약 가능한 매물만 조회"),
-      parameterWithName("residentRegistration")
+          .description(
+              "roomOffer 기준 조건 태그. 여러 값을 보내면 같은 roomOffer가 모든 태그를 가진 카드만 반환. "
+                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
+      parameterWithName("arcRequired")
           .optional()
-          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회. conditions=RESIDENT_REGISTRATION과 같은 의미"),
+          .description(
+              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음"),
       parameterWithName("sort")
           .optional()
-          .description("정렬 프리셋. RECOMMENDED, PRICE_ASC, DISTANCE 중 하나. 기본값은 RECOMMENDED"),
-      parameterWithName("centerLat")
-          .optional()
-          .description("거리 계산 또는 DISTANCE 정렬 기준 위도. sort=DISTANCE이면 centerLat/centerLng 모두 필수"),
-      parameterWithName("centerLng")
-          .optional()
-          .description("거리 계산 또는 DISTANCE 정렬 기준 경도. sort=DISTANCE이면 centerLat/centerLng 모두 필수"),
+          .description(
+              "정렬 프리셋. RECOMMENDED는 기본 추천순, PRICE_ASC는 조건에 맞는 roomOffer 월세 낮은 순, "
+                  + "DISTANCE는 요청 bbox의 원본 중심점에서 가까운 Listing 순. sort=DISTANCE이면 bbox 네 좌표가 필요"),
       parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
       parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
     };
@@ -545,20 +560,30 @@ class ListingDocsTest {
       parameterWithName("swLng").description("현재 지도 화면의 남서쪽 경도"),
       parameterWithName("neLat").description("현재 지도 화면의 북동쪽 위도. swLat보다 커야 함"),
       parameterWithName("neLng").description("현재 지도 화면의 북동쪽 경도. swLng보다 커야 함"),
-      parameterWithName("minBudget").optional().description("월세 하한(KRW). maxBudget보다 클 수 없음"),
-      parameterWithName("maxBudget").optional().description("월세 상한(KRW). minBudget보다 작을 수 없음"),
-      parameterWithName("minDeposit").optional().description("보증금 하한(KRW). maxDeposit보다 클 수 없음"),
-      parameterWithName("maxDeposit").optional().description("보증금 상한(KRW). minDeposit보다 작을 수 없음"),
+      parameterWithName("minBudget")
+          .optional()
+          .description("roomOffer 월세 하한(KRW). 같은 roomOffer가 만족해야 마커 반환"),
+      parameterWithName("maxBudget")
+          .optional()
+          .description("roomOffer 월세 상한(KRW). 같은 roomOffer가 만족해야 마커 반환"),
+      parameterWithName("minDeposit")
+          .optional()
+          .description("roomOffer 보증금 하한(KRW). 같은 roomOffer가 만족해야 마커 반환"),
+      parameterWithName("maxDeposit")
+          .optional()
+          .description("roomOffer 보증금 상한(KRW). 같은 roomOffer가 만족해야 마커 반환"),
       parameterWithName("type")
           .optional()
-          .description("매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+          .description("Listing 기준 매물 종류 필터. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
       parameterWithName("conditions")
           .optional()
-          .description("매물 옵션 태그. 여러 값을 보내면 모두 만족하는 방 상품만 조회"),
-      parameterWithName("arcRequired").optional().description("false면 ARC 없이 계약 가능한 매물만 조회"),
-      parameterWithName("residentRegistration")
+          .description(
+              "roomOffer 기준 조건 태그. 여러 값은 같은 roomOffer가 모두 만족해야 매물 마커가 반환됨. "
+                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
+      parameterWithName("arcRequired")
           .optional()
-          .description("true면 전입신고 가능 태그가 있는 방 상품만 조회. conditions=RESIDENT_REGISTRATION과 같은 의미")
+          .description(
+              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음")
     };
   }
 
@@ -588,7 +613,10 @@ class ListingDocsTest {
             "지도 마커가 가리키는 매물 식별자(ObjectId hex 문자열)"),
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커를 찍을 위도(WGS84)"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커를 찍을 경도(WGS84)"),
-        field("data.total", JsonFieldType.NUMBER, "현재 지도 범위와 필터에 맞는 전체 마커 수"),
+        field(
+            "data.total",
+            JsonFieldType.NUMBER,
+            "현재 지도 범위와 필터에 맞는 전체 Listing 마커 수. roomOffer가 여러 개 매칭되어도 매물당 1개로 계산"),
         errorNull());
   }
 
@@ -637,24 +665,36 @@ class ListingDocsTest {
   private static List<FieldDescriptor> listResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
-        field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
-        field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
+        field(
+            "data.content[].listingId",
+            JsonFieldType.STRING,
+            "방 상품이 속한 매물 식별자(ObjectId hex 문자열). 같은 매물의 여러 roomOffer 카드가 내려오면 값이 반복될 수 있음"),
+        field(
+            "data.content[].roomOfferId",
+            JsonFieldType.STRING,
+            "목록 카드가 가리키는 방 상품 식별자. 상세 응답 roomOffers[].roomOfferId와 매칭 가능"),
+        field("data.content[].roomOfferName", JsonFieldType.STRING, "목록 카드에 표시할 방 상품명"),
+        field("data.content[].title", JsonFieldType.STRING, "방 상품이 속한 매물 제목"),
         field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
         field(
             "data.content[].monthlyRent",
             JsonFieldType.NUMBER,
-            "필터 조건을 만족하는 대표 방 상품의 월세(KRW). 대표 방 상품은 조건에 맞는 활성 방 중 월세가 가장 낮은 방"),
-        field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품의 보증금(KRW)"),
-        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "대표 방 상품의 관리비(KRW)"),
+            "해당 방 상품의 월세(KRW). PRICE_ASC는 이 값을 기준으로 정렬"),
+        field("data.content[].deposit", JsonFieldType.NUMBER, "해당 방 상품의 보증금(KRW)"),
+        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "해당 방 상품의 관리비(KRW)"),
+        field(
+            "data.content[].availableCount",
+            JsonFieldType.NUMBER,
+            "해당 방 상품 묶음 중 현재 계약 가능한 수량. IMMEDIATE_MOVE_IN 필터는 이 값이 1 이상인 roomOffer만 통과"),
         field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
         field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
-        field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품의 옵션 태그 목록"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "해당 방 상품의 옵션 태그 목록"),
         field(
             "data.content[].distanceMeters",
             JsonFieldType.NUMBER,
-            "centerLat/centerLng를 보냈을 때 계산되는 직선 거리(미터). 기준 좌표가 없으면 null"),
+            "요청 bbox의 원본 중심점에서 해당 Listing까지의 직선 거리(미터). bbox 없이 조회하면 null"),
         field(
             "data.content[].favorited",
             JsonFieldType.BOOLEAN,
@@ -662,9 +702,9 @@ class ListingDocsTest {
         field("data.content[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
         field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-        field("data.page.totalElements", JsonFieldType.NUMBER, "전체 건수"),
-        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
-        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "필터와 지도 범위에 맞는 전체 roomOffer 카드 수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "roomOffer 카드 기준 전체 페이지 수"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 roomOffer 카드 페이지 존재 여부"),
         errorNull());
   }
 

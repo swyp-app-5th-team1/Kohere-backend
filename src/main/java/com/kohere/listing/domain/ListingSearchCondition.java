@@ -1,10 +1,13 @@
 package com.kohere.listing.domain;
 
-import java.util.Collections;
-import java.util.EnumSet;
 import java.util.Set;
 
-/** 매물 목록 조회에 쓰는 검색 조건이다. 컨트롤러가 받은 쿼리 파라미터를 서비스가 검증한 뒤 이 객체에 담아 저장소로 넘긴다. */
+/**
+ * 매물 검색에 쓰는 내부 조건이다.
+ *
+ * <p>컨트롤러가 받은 쿼리 파라미터를 서비스가 검증·보정한 뒤 이 객체에 담아 저장소로 넘긴다. {@code centerLat}와 {@code centerLng}는 프론트가
+ * 보내는 값이 아니라, 서비스가 요청 bbox의 원본 중심점으로 계산한 거리 기준 좌표다.
+ */
 public record ListingSearchCondition(
     BoundingBox bounds,
     Integer minBudget,
@@ -14,7 +17,6 @@ public record ListingSearchCondition(
     Set<ListingType> types,
     Set<ConditionTag> conditions,
     Boolean arcRequired,
-    Boolean residentRegistration,
     ListingSort sort,
     Double centerLat,
     Double centerLng,
@@ -28,14 +30,9 @@ public record ListingSearchCondition(
     sort = sort == null ? ListingSort.RECOMMENDED : sort;
   }
 
-  /** 전입신고 필터를 조건 태그와 같은 방식으로 다루기 위해 최종 조건 태그 묶음을 만든다. */
+  /** roomOffer가 모두 만족해야 하는 최종 조건 태그 묶음이다. */
   public Set<ConditionTag> effectiveConditions() {
-    EnumSet<ConditionTag> effective =
-        conditions.isEmpty() ? EnumSet.noneOf(ConditionTag.class) : EnumSet.copyOf(conditions);
-    if (Boolean.TRUE.equals(residentRegistration)) {
-      effective.add(ConditionTag.RESIDENT_REGISTRATION);
-    }
-    return Collections.unmodifiableSet(effective);
+    return conditions;
   }
 
   /** 거리 계산에 필요한 기준 좌표가 둘 다 있는지 알려준다. */
@@ -43,8 +40,18 @@ public record ListingSearchCondition(
     return centerLat != null && centerLng != null;
   }
 
-  /** 지도에서 보이는 네모 범위를 표현한다. 프론트는 보이는 범위를 보내고, 서버는 UX를 위해 이 범위를 조금 넓혀 조회한다. */
+  /** 지도에서 보이는 네모 범위를 표현한다. */
   public record BoundingBox(double swLat, double swLng, double neLat, double neLng) {
+
+    /** 지도 화면 중심 위도다. 거리순 정렬과 거리 표시 기준으로 사용한다. */
+    public double centerLat() {
+      return (swLat + neLat) / 2.0;
+    }
+
+    /** 지도 화면 중심 경도다. 거리순 정렬과 거리 표시 기준으로 사용한다. */
+    public double centerLng() {
+      return (swLng + neLng) / 2.0;
+    }
 
     /** 전체 가로·세로가 ratio만큼 커지도록 상하좌우를 같은 비율로 넓힌다. */
     public BoundingBox expandedBy(double ratio) {

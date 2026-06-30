@@ -8,6 +8,7 @@ import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
+import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingValidator;
 import java.util.ArrayList;
@@ -58,14 +59,31 @@ public class ListingRepositoryImpl implements ListingRepository {
     return findPage(criteria, page, size, defaultSort());
   }
 
-  /** 지도 범위·가격·보증금·매물종류·옵션 조건을 MongoDB 쿼리로 바꿔 매물을 조회한다. */
+  /**
+   * 지도 범위·가격·보증금·매물종류·옵션 조건을 적용해 목록 카드 후보를 조회한다.
+   *
+   * <p>MongoDB 쿼리는 먼저 조건에 맞는 방 상품을 하나 이상 가진 Listing 문서만 좁혀 온다. 그 다음 Java 코드에서 해당 Listing의 {@code
+   * roomOffers}를 다시 순회하면서 실제로 조건에 맞는 방 상품을 모두 {@link ListingSearchResult}로 펼친다. 이렇게 해야 같은 고시원 안에
+   * 조건을 만족하는 Green Zone이 여러 개 있을 때 목록 카드도 여러 개 만들 수 있다.
+   */
   @Override
-  public PageResponse<Listing> search(ListingSearchCondition condition) {
+  public PageResponse<ListingSearchResult> search(ListingSearchCondition condition) {
     Criteria criteria = searchCriteria(condition);
-    if (condition.sort() == ListingSort.DISTANCE) {
-      return findDistanceSortedPage(criteria, condition);
+    List<Listing> listings = findSearchCandidateListings(criteria, condition);
+    List<ListingSearchResult> roomOfferResults = matchingRoomOfferResults(listings, condition);
+
+    if (condition.sort() == ListingSort.PRICE_ASC) {
+      roomOfferResults =
+          roomOfferResults.stream()
+              .sorted(
+                  Comparator.<ListingSearchResult>comparingInt(
+                          result -> result.roomOffer().pricing().monthlyRent())
+                      .thenComparingInt(result -> result.roomOffer().pricing().deposit())
+                      .thenComparing(result -> result.listing().getId())
+                      .thenComparing(result -> result.roomOffer().roomOfferId()))
+              .toList();
     }
-    return findPage(criteria, condition.page(), condition.size(), sortBy(condition.sort()));
+    return pageFrom(roomOfferResults, condition.page(), condition.size());
   }
 
   /** 지도 SDK가 클러스터링할 수 있도록 필터된 개별 매물 좌표 후보를 상한까지만 조회한다. */
@@ -214,15 +232,20 @@ public class ListingRepositoryImpl implements ListingRepository {
       rootCriteria.add(
           Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
     }
-    if (condition.arcRequired() != null) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(condition.arcRequired()));
+    if (Boolean.TRUE.equals(condition.arcRequired())) {
+      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(true));
     }
 
     rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
     return new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
   }
 
-  /** 방 상품 배열 안에서 같은 방 상품이 가격·보증금·옵션을 모두 만족하게 만드는 조건이다. */
+  /**
+   * 방 상품 배열 안에서 같은 방 상품이 가격·보증금·옵션을 모두 만족하게 만드는 MongoDB 조건이다.
+   *
+   * <p>이 조건은 Listing 문서를 빠르게 좁히기 위한 1차 필터다. 목록 응답은 이후 {@link #matchesRoomOffer}로 다시 한 번 같은 기준을 적용해서
+   * 조건에 맞는 방 상품만 카드로 펼친다.
+   */
   private static Criteria roomOfferCriteria(ListingSearchCondition condition) {
     List<Criteria> criteria = new ArrayList<>();
     criteria.add(Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name()));
@@ -261,15 +284,74 @@ public class ListingRepositoryImpl implements ListingRepository {
             new Point(bounds.swLng(), bounds.swLat())));
   }
 
-  /** 거리순은 MongoDB 조회 후 기준 좌표와 가까운 순서로 정렬해서 페이지를 만든다. */
-  private PageResponse<Listing> findDistanceSortedPage(
+  /**
+   * 목록 조회의 1차 후보 Listing을 가져온다.
+   *
+   * <p>거리순은 Listing 위치 기준이므로 Listing을 먼저 거리순으로 정렬한다. 가격순은 방 상품 기준으로 다시 정렬해야 정확하므로 여기서는 기본 추천순으로 후보를
+   * 가져오고, {@link #search(ListingSearchCondition)}에서 펼친 방 상품 결과를 월세 기준으로 다시 정렬한다.
+   */
+  private List<Listing> findSearchCandidateListings(
       Criteria criteria, ListingSearchCondition condition) {
-    List<Listing> sorted =
-        mongoTemplate.find(new Query(criteria), ListingDocument.class).stream()
-            .map(ListingMongoMapper::toDomain)
-            .sorted(Comparator.comparingDouble(listing -> distanceSquared(listing, condition)))
-            .toList();
-    return pageFrom(sorted, condition.page(), condition.size());
+    Query query = new Query(criteria);
+    if (condition.sort() == ListingSort.DISTANCE) {
+      return mongoTemplate.find(query, ListingDocument.class).stream()
+          .map(ListingMongoMapper::toDomain)
+          .sorted(Comparator.comparingDouble(listing -> distanceSquared(listing, condition)))
+          .toList();
+    }
+    return mongoTemplate.find(query.with(defaultSort()), ListingDocument.class).stream()
+        .map(ListingMongoMapper::toDomain)
+        .toList();
+  }
+
+  /**
+   * Listing 문서 안의 roomOffers를 목록 카드 단위 결과로 펼친다.
+   *
+   * <p>필터가 없으면 활성 방 상품이 모두 카드가 되고, 필터가 있으면 가격·보증금·옵션·재고 조건을 모두 만족하는 활성 방 상품만 카드가 된다.
+   */
+  private static List<ListingSearchResult> matchingRoomOfferResults(
+      List<Listing> listings, ListingSearchCondition condition) {
+    return listings.stream()
+        .flatMap(
+            listing ->
+                listing.getRoomOffers().stream()
+                    .filter(roomOffer -> matchesRoomOffer(roomOffer, condition))
+                    .map(roomOffer -> new ListingSearchResult(listing, roomOffer)))
+        .toList();
+  }
+
+  /**
+   * 방 상품 하나가 목록 필터를 실제로 만족하는지 확인한다.
+   *
+   * <p>MongoDB의 {@code elemMatch}와 같은 기준을 Java에서도 적용한다. Listing 문서가 조건을 통과했더라도, 그 문서 안에는 조건을 만족하지
+   * 않는 다른 방 상품도 함께 들어 있으므로 목록 카드로 펼치기 전에 이 검사가 반드시 필요하다.
+   */
+  private static boolean matchesRoomOffer(
+      Listing.RoomOffer roomOffer, ListingSearchCondition condition) {
+    if (roomOffer.status() != Listing.RoomOfferStatus.ACTIVE) {
+      return false;
+    }
+    if (condition.minBudget() != null
+        && roomOffer.pricing().monthlyRent() < condition.minBudget()) {
+      return false;
+    }
+    if (condition.maxBudget() != null
+        && roomOffer.pricing().monthlyRent() > condition.maxBudget()) {
+      return false;
+    }
+    if (condition.minDeposit() != null && roomOffer.pricing().deposit() < condition.minDeposit()) {
+      return false;
+    }
+    if (condition.maxDeposit() != null && roomOffer.pricing().deposit() > condition.maxDeposit()) {
+      return false;
+    }
+
+    Set<ConditionTag> effectiveConditions = condition.effectiveConditions();
+    if (!roomOffer.filterTags().containsAll(effectiveConditions)) {
+      return false;
+    }
+    return !effectiveConditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)
+        || roomOffer.inventory().availableCount() > 0;
   }
 
   /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
@@ -279,26 +361,23 @@ public class ListingRepositoryImpl implements ListingRepository {
     return lat * lat + lng * lng;
   }
 
-  /** 이미 메모리에 있는 목록을 공통 PageResponse 형태로 자른다. */
-  private static PageResponse<Listing> pageFrom(List<Listing> content, int page, int size) {
-    int from = Math.min(page * size, content.size());
-    int to = Math.min(from + size, content.size());
+  /**
+   * 이미 메모리에 있는 결과를 공통 PageResponse 형태로 자른다.
+   *
+   * <p>목록 조회에서는 Listing 문서 개수가 아니라 펼쳐진 방 상품 카드 개수가 {@code totalElements}가 되어야 한다. 그래서 MongoDB count
+   * 결과를 그대로 쓰지 않고, Java에서 펼친 결과 목록을 기준으로 페이지 메타를 만든다.
+   */
+  private static <T> PageResponse<T> pageFrom(List<T> content, int page, int size) {
+    int safePage = Math.max(page, 0);
+    int safeSize = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
+    int from = Math.min(safePage * safeSize, content.size());
+    int to = Math.min(from + safeSize, content.size());
     long totalElements = content.size();
-    int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / size);
-    boolean hasNext = page + 1 < totalPages;
+    int totalPages = totalElements == 0 ? 0 : (int) Math.ceil((double) totalElements / safeSize);
+    boolean hasNext = safePage + 1 < totalPages;
     return PageResponse.of(
-        content.subList(from, to), new PageInfo(page, size, totalElements, totalPages, hasNext));
-  }
-
-  /** 요청 정렬값을 Mongo Sort로 변환한다. 현재는 가격 오름차순과 기본 추천순을 지원한다. */
-  private static Sort sortBy(ListingSort sort) {
-    if (sort == null) {
-      return defaultSort();
-    }
-    if (sort == ListingSort.PRICE_ASC) {
-      return Sort.by(Sort.Direction.ASC, "roomOffers.pricing.monthlyRent");
-    }
-    return defaultSort();
+        content.subList(from, to),
+        new PageInfo(safePage, safeSize, totalElements, totalPages, hasNext));
   }
 
   /** 문자열 정렬값을 받는 진단 추천 조회와 호환되도록 남겨 둔 정렬 변환이다. */
