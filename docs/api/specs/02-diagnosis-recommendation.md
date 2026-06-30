@@ -409,11 +409,11 @@
 
 ### 7. GET `/api/v1/diagnoses/{diagnosisId}/recommendations` — 진단 결과(추천 매물 + 지도 좌표)
 
-진단 조건으로 매칭한 매물 요약 리스트와 지도 마커 좌표를 반환한다. 매물 요약은 매물 탐색(01) 도메인의 `ListingSummaryResponse`를 재사용한다(확인 필요). 매칭이 0건이면 빈 목록 + 조건/월세 범위/키워드 조정 제안(`suggestions`)을 함께 반환한다(에러 아님).
+진단 조건으로 매칭한 매물 요약 리스트와 지도 마커 좌표를 반환한다. 매물 요약은 매물 탐색 도메인의 `ListingSummaryResponse`를 재사용한다. 매칭이 0건이면 빈 목록 + 조건/월세 범위/키워드 조정 제안(`suggestions`)을 함께 반환한다(에러 아님).
 
 - **인증**: 필수. **본인 소유가 아니면 `403 FORBIDDEN`.**
-- **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 현재 페이지 매물의 좌표를 함께 제공한다(확인 필요 — 전체 매칭 좌표를 한 번에 줄지, 페이지 단위로 줄지는 01 매물 탐색의 클러스터링 정책과 맞춤).
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria` 류)를 동기 호출하고, `ListingSummaryResponse` 목록 + 좌표를 수신해 위 응답으로 조립한다(엔티티 비공유, DTO/포트로만). 두 변경의 cross-module 계약 영향: (1) **대학** — `RecommendationCriteria.university`는 단일 `String`이 아니라 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 `pricing.monthlyRent >= monthlyRentMin` AND `<= monthlyRentMax`를 **별개 조건**으로 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). **`listing` 내부 스키마·매칭 로직은 본 스펙 범위 밖**이며 여기서는 진단이 호출할 인터페이스 수준만 기술한다 — 매물 요약 DTO(`ListingSummaryResponse`)의 정본은 매물 탐색(01) 스펙이다(확인 필요 — 01 스펙 확정 시 필드·인터페이스 시그니처 동기화).
+- **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria` 류)를 동기 호출하고, `ListingSummaryResponse` 목록 + 좌표를 수신해 위 응답으로 조립한다(엔티티 비공유, DTO/포트로만). 두 변경의 cross-module 계약 영향: (1) **대학** — `RecommendationCriteria.university`는 단일 `String`이 아니라 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 `pricing.monthlyRent >= monthlyRentMin` AND `<= monthlyRentMax`를 **별개 조건**으로 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). **`listing` 내부 스키마·매칭 로직은 본 스펙 범위 밖**이며 여기서는 진단이 호출할 인터페이스 수준만 기술한다 — 매물 요약 DTO(`ListingSummaryResponse`)의 정본은 매물 탐색 스펙이다.
 
 #### Path 파라미터
 

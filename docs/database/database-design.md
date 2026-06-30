@@ -301,7 +301,7 @@
 
 | 인덱스 | 대상 | 종류 | 목적 |
 | --- | --- | --- | --- |
-| `listings.location` | `location` | **2dsphere** | bbox/반경·거리순(`$near`/`$geoWithin`, [ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
+| `listings.location` | `location` | **2dsphere** | bbox 지도 마커 조회·거리순(`$geoWithin`/`$near`, 반경 검색은 별도 API 확정 시 사용, [ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
 | `listings_status_type_rent` | `status, type, roomOffers.pricing.monthlyRent` | 복합/multikey | 공개 매물·유형·방 상품 월세 필터 |
 | `listings_landlord_status_updated` | `landlordId, status, updatedAt desc` | 복합 | 임대인의 매물 관리 목록 |
 | `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |

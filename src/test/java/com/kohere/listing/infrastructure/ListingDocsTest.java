@@ -75,8 +75,8 @@ class ListingDocsTest {
           + "이 API는 지도 바텀시트 리스트 카드용이며, 지도 핀/클러스터 데이터는 별도 지도 API에서 제공한다.";
   private static final String LISTINGS_MAP_SUMMARY = "지도 마커 조회";
   private static final String LISTINGS_MAP_DESCRIPTION =
-      "현재 지도 화면의 남서/북동 좌표를 기준으로 공개 매물의 개별 마커 좌표를 조회한다. "
-          + "지도 범위 좌표는 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
+      "현재 지도 화면의 bbox(swLat, swLng, neLat, neLng)에 포함되는 공개 매물의 개별 마커 좌표를 조회한다. "
+          + "bbox 네 좌표는 모두 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
           + "월세·보증금·매물 종류·매물 옵션·ARC·전입신고 필터는 리스트 API와 같은 기준으로 적용한다. "
           + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";

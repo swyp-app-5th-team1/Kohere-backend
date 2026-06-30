@@ -170,7 +170,7 @@
   1. 임대인 연락 = **인앱 채팅(F-03: 신청→채팅 기록) 채택** — 외부 메신저 링크·전화 방식은 종료. 단 실시간 메시징(WebSocket)·푸시는 추후.
   2. MySQL 마이그레이션 도구 = Flyway 유지.
   3. MongoDB 마이그레이션 도구 = **Mongock**(`@ChangeUnit`, 모듈별) 채택([ADR-0032](../adr/0032-mongodb-migration-runner.md)).
-- 확정 컷: 추천은 규칙기반(ML 제외), OAuth는 Google 먼저(Apple 여유 시). 지도는 Mongo 지오로 bbox+마커+거리순 유지(클러스터 격자만 시간 보면 추가). (커뮤니티 사진 업로드는 community 이연으로 범위 밖.)
+- 확정 컷: 추천은 규칙기반(ML 제외), OAuth는 Google 먼저(Apple 여유 시). 지도는 Mongo 지오로 bbox 기반 마커 조회와 거리순을 유지하고, 클러스터링은 프론트 지도 SDK가 담당한다. (커뮤니티 사진 업로드는 community 이연으로 범위 밖.)
 
 ## 8. 가정과 리스크 (Assumptions & Risks)
 
