@@ -5,6 +5,7 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
+import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
@@ -19,10 +20,12 @@ import org.bson.types.ObjectId;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.geo.Point;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.geo.GeoJsonPolygon;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 /** MongoDB 저장 모델을 도메인 모델로 변환하는 매물 영속 어댑터다. */
@@ -131,6 +134,52 @@ public class ListingRepositoryImpl implements ListingRepository {
     ListingValidator.validateForSave(listing);
     ListingDocument saved = mongoRepository.save(ListingMongoMapper.toDocument(listing));
     return ListingMongoMapper.toDomain(saved);
+  }
+
+  /**
+   * 매물 찜 수를 원자적으로 1 증가시키고 변경 후 값을 반환한다.
+   *
+   * <p>찜 수는 목록/상세 화면에서 자주 읽는 값이라 {@code favorites}를 매번 집계하지 않고 {@code listings.favoriteCount} 캐시로
+   * 들고 있다. 여러 사용자가 동시에 찜해도 값이 덮어써지지 않도록 MongoDB {@code $inc}로 숫자만 갱신한다.
+   */
+  @Override
+  public int increaseFavoriteCount(String listingId) {
+    ListingDocument updated = updateFavoriteCount(listingId, 1, false);
+    if (updated == null) {
+      throw new ListingNotFoundException();
+    }
+    return updated.getFavoriteCount();
+  }
+
+  /**
+   * 매물 찜 수를 원자적으로 1 감소시키되 0 미만으로 내리지 않고 변경 후 값을 반환한다.
+   *
+   * <p>감소 조건에 {@code favoriteCount > 0}을 포함해 데이터가 이미 0인 상태에서는 음수가 되지 않게 막는다. 보통은 {@code favorites}
+   * 문서가 실제로 삭제된 뒤에만 호출되므로 1 감소가 일어나지만, 방어적으로 현재 값을 다시 읽어 반환한다.
+   */
+  @Override
+  public int decreaseFavoriteCount(String listingId) {
+    ListingDocument updated = updateFavoriteCount(listingId, -1, true);
+    if (updated != null) {
+      return updated.getFavoriteCount();
+    }
+    return findById(listingId).map(Listing::getFavoriteCount).orElse(0);
+  }
+
+  private ListingDocument updateFavoriteCount(
+      String listingId, int delta, boolean requirePositiveCount) {
+    if (!ObjectId.isValid(listingId)) {
+      return null;
+    }
+    Criteria criteria = Criteria.where("_id").is(new ObjectId(listingId));
+    if (requirePositiveCount) {
+      criteria = criteria.and("favoriteCount").gt(0);
+    }
+    return mongoTemplate.findAndModify(
+        new Query(criteria),
+        new Update().inc("favoriteCount", delta),
+        FindAndModifyOptions.options().returnNew(true),
+        ListingDocument.class);
   }
 
   /** count와 실제 조회를 함께 수행해 공통 PageResponse 형태로 묶는다. */

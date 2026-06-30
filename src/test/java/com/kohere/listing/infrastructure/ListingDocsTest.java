@@ -4,7 +4,9 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
@@ -86,6 +88,23 @@ class ListingDocsTest {
           + "고시원 매물의 propertyInfo.featureSummary는 활성 방 상품들이 가진 조건 태그의 합집합이다. "
           + "상세 화면의 작은 지도는 응답의 locationInfo.location 좌표를 사용해 프론트에서 렌더링한다. "
           + "공개 상태가 아닌 매물이나 존재하지 않는 매물은 LISTING_NOT_FOUND를 반환한다.";
+  private static final String FAVORITE_ADD_SUMMARY = "매물 찜 등록";
+  private static final String FAVORITE_ADD_DESCRIPTION =
+      "로그인 사용자가 공개 매물을 찜한다. "
+          + "신규 찜이면 201 Created, 이미 찜한 매물을 다시 요청하면 200 OK를 반환한다. "
+          + "두 경우 모두 응답 body는 favorited=true와 변경 후 favoriteCount로 동일하므로, "
+          + "프론트는 status와 무관하게 이 값으로 버튼 상태와 찜 수를 갱신하면 된다.";
+  private static final String FAVORITE_REMOVE_SUMMARY = "매물 찜 해제";
+  private static final String FAVORITE_REMOVE_DESCRIPTION =
+      "로그인 사용자가 본인의 매물 찜을 해제한다. "
+          + "이미 찜하지 않은 상태에서 다시 호출해도 에러가 아니며 200 OK와 favorited=false를 반환한다. "
+          + "프론트는 응답의 favoriteCount로 카드/상세 화면의 찜 수를 갱신하면 된다.";
+  private static final String FAVORITES_LIST_SUMMARY = "내 찜한 매물 목록";
+  private static final String FAVORITES_LIST_DESCRIPTION =
+      "로그인 사용자가 찜한 공개 매물을 최근 찜한 순으로 조회한다. "
+          + "MVP에서는 별도 sort 파라미터를 받지 않고 favoritedAt desc로 고정한다. "
+          + "응답 항목은 모두 현재 사용자가 찜한 매물이므로 favorited=true이며, "
+          + "DRAFT/PAUSED/DELETED 등 공개 상태가 아닌 매물은 content와 totalElements에서 제외된다.";
 
   // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
   private static final String FORGED_TOKEN =
@@ -118,6 +137,7 @@ class ListingDocsTest {
             .apply(documentationConfiguration(restDocumentation))
             .build();
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
     new ListingSeedRunner(listingRepository).run(null);
   }
 
@@ -198,6 +218,73 @@ class ListingDocsTest {
                     parameterWithName("listingId")
                         .description("상세 조회할 매물 식별자(ObjectId 24자리 hex 문자열)")),
                 responseFields(detailResponseFields())));
+
+    mockMvc
+        .perform(
+            post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.favorited").value(true))
+        .andExpect(jsonPath("$.data.favoriteCount").value(1))
+        .andDo(
+            document(
+                "listing-favorite-add-created",
+                resourceDetails()
+                    .summary(FAVORITE_ADD_SUMMARY)
+                    .description(FAVORITE_ADD_DESCRIPTION),
+                pathParameters(favoritePathParameters()),
+                responseFields(favoriteToggleResponseFields())));
+
+    mockMvc
+        .perform(
+            post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.favorited").value(true))
+        .andExpect(jsonPath("$.data.favoriteCount").value(1))
+        .andDo(
+            document(
+                "listing-favorite-add-existing",
+                resourceDetails()
+                    .summary("매물 찜 등록 — 이미 찜한 상태")
+                    .description(
+                        FAVORITE_ADD_DESCRIPTION + " 이미 찜한 매물을 다시 호출해도 중복 저장하지 않고 현재 상태를 반환한다."),
+                pathParameters(favoritePathParameters()),
+                responseFields(favoriteToggleResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/users/me/favorites")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].favorited").value(true))
+        .andDo(
+            document(
+                "my-favorites-list",
+                resourceDetails()
+                    .summary(FAVORITES_LIST_SUMMARY)
+                    .description(FAVORITES_LIST_DESCRIPTION),
+                queryParameters(favoritesQueryParameters()),
+                responseFields(favoritesResponseFields())));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.favorited").value(false))
+        .andExpect(jsonPath("$.data.favoriteCount").value(0))
+        .andDo(
+            document(
+                "listing-favorite-remove",
+                resourceDetails()
+                    .summary(FAVORITE_REMOVE_SUMMARY)
+                    .description(FAVORITE_REMOVE_DESCRIPTION),
+                pathParameters(favoritePathParameters()),
+                responseFields(favoriteToggleResponseFields())));
   }
 
   /** 스펙의 "발생 가능한 에러"를 실제로 트리거해 status·error.code와 실패 응답 스니펫을 함께 만든다. */
@@ -312,6 +399,61 @@ class ListingDocsTest {
         "listing-detail-token-expired",
         LISTING_DETAIL_SUMMARY,
         LISTING_DETAIL_DESCRIPTION);
+
+    // ===== POST/DELETE /listings/{listingId}/favorite =====
+    perform(
+        post("/api/v1/listings/{listingId}/favorite", LISTING_ID),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "listing-favorite-add-unauthenticated",
+        FAVORITE_ADD_SUMMARY,
+        FAVORITE_ADD_DESCRIPTION);
+
+    perform(
+        post("/api/v1/listings/{listingId}/favorite", LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "listing-favorite-add-token-expired",
+        FAVORITE_ADD_SUMMARY,
+        FAVORITE_ADD_DESCRIPTION);
+
+    perform(
+        post("/api/v1/listings/{listingId}/favorite", MISSING_LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        "listing-favorite-add-not-found",
+        FAVORITE_ADD_SUMMARY,
+        FAVORITE_ADD_DESCRIPTION);
+
+    perform(
+        delete("/api/v1/listings/{listingId}/favorite", MISSING_LISTING_ID)
+            .header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isNotFound(),
+        "LISTING_NOT_FOUND",
+        "listing-favorite-remove-not-found",
+        FAVORITE_REMOVE_SUMMARY,
+        FAVORITE_REMOVE_DESCRIPTION);
+
+    // ===== GET /users/me/favorites =====
+    perform(
+        get("/api/v1/users/me/favorites"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "my-favorites-list-unauthenticated",
+        FAVORITES_LIST_SUMMARY,
+        FAVORITES_LIST_DESCRIPTION);
+
+    perform(
+        get("/api/v1/users/me/favorites")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "my-favorites-list-invalid-page-size",
+        FAVORITES_LIST_SUMMARY,
+        FAVORITES_LIST_DESCRIPTION);
   }
 
   private void perform(
@@ -420,6 +562,22 @@ class ListingDocsTest {
     };
   }
 
+  /** 찜 등록/해제 API의 path parameter 문서 정의다. */
+  private static ParameterDescriptor[] favoritePathParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("listingId")
+          .description("찜 등록/해제할 매물 식별자(ObjectId 24자리 hex 문자열). 공개 매물만 대상")
+    };
+  }
+
+  /** 내 찜 목록 API의 query parameter 문서 정의다. */
+  private static ParameterDescriptor[] favoritesQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
+    };
+  }
+
   /** 지도 마커 API 응답 필드 문서 정의다. */
   private static List<FieldDescriptor> mapResponseFields() {
     return List.of(
@@ -431,6 +589,47 @@ class ListingDocsTest {
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커를 찍을 위도(WGS84)"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커를 찍을 경도(WGS84)"),
         field("data.total", JsonFieldType.NUMBER, "현재 지도 범위와 필터에 맞는 전체 마커 수"),
+        errorNull());
+  }
+
+  /** 찜 등록/해제 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> favoriteToggleResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.favorited",
+            JsonFieldType.BOOLEAN,
+            "요청 처리 후 현재 사용자 기준 찜 상태. 등록 후 true, 해제 후 false"),
+        field("data.favoriteCount", JsonFieldType.NUMBER, "요청 처리 후 매물의 전체 찜 수"),
+        errorNull());
+  }
+
+  /** 내 찜 목록 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> favoritesResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.content[].listingId", JsonFieldType.STRING, "찜한 매물 식별자(ObjectId hex 문자열)"),
+        field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
+        field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
+        field("data.content[].monthlyRent", JsonFieldType.NUMBER, "대표 방 상품의 월세(KRW)"),
+        field("data.content[].deposit", JsonFieldType.NUMBER, "대표 방 상품의 보증금(KRW)"),
+        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "대표 방 상품의 관리비(KRW)"),
+        field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
+        field("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
+        field("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
+        field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "대표 방 상품의 옵션 태그 목록"),
+        field(
+            "data.content[].favorited",
+            JsonFieldType.BOOLEAN,
+            "내 찜 목록 항목이므로 항상 true. 해제 성공 후에는 목록에서 빠진다"),
+        field("data.content[].favoriteCount", JsonFieldType.NUMBER, "매물의 전체 찜 수"),
+        field("data.content[].favoritedAt", JsonFieldType.STRING, "사용자가 이 매물을 찜한 시각(UTC ISO-8601)"),
+        field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+        field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "공개 상태라 실제 응답 가능한 내 찜 매물 수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
         errorNull());
   }
 

@@ -9,9 +9,16 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.listing.api.RecommendedListingView;
+import com.kohere.listing.application.ListingService;
+import com.kohere.listing.application.dto.FavoriteListingResponse;
+import com.kohere.listing.application.dto.FavoriteToggleResponse;
+import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.Favorite;
+import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
+import com.kohere.listing.domain.ListingNotFoundException;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
@@ -47,13 +54,16 @@ class ListingMongoIntegrationTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   @Autowired private ListingRepository listingRepository;
+  @Autowired private FavoriteRepository favoriteRepository;
+  @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
   @Autowired private MongoTemplate mongoTemplate;
 
-  /** 각 테스트가 독립적으로 실행되도록 listings 컬렉션을 비운다. */
+  /** 각 테스트가 독립적으로 실행되도록 listing 관련 컬렉션을 비운다. */
   @BeforeEach
-  void cleanListings() {
+  void cleanListingCollections() {
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
   }
 
   /** 도메인 매물을 저장한 뒤 중첩 roomOffers와 GeoJSON 좌표가 보존되는지 확인한다. */
@@ -108,6 +118,13 @@ class ListingMongoIntegrationTest {
             "listings_status_room_filter_tags",
             "listings_status_room_available_count",
             "listings_status_arc_required");
+
+    Set<String> favoriteIndexNames =
+        mongoTemplate.indexOps(FavoriteDocument.class).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(favoriteIndexNames).contains("favorites_user_listing", "favorites_user_favoritedAt");
   }
 
   /** seed 적재가 고정 ObjectId 저장 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
@@ -214,6 +231,138 @@ class ListingMongoIntegrationTest {
     assertThat(result.listings().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
   }
 
+  /** 찜 등록·중복 등록·해제가 멱등하게 동작하고 favoriteCount가 한 번씩만 증감하는지 확인한다. */
+  @Test
+  void favorite_등록과_해제를_멱등하게_처리한다() {
+    listingRepository.save(sampleListing());
+
+    FavoriteToggleResult created = listingService.addFavorite(1L, LISTING_ID);
+    FavoriteToggleResult duplicated = listingService.addFavorite(1L, LISTING_ID);
+    FavoriteToggleResponse removed = listingService.removeFavorite(1L, LISTING_ID);
+    FavoriteToggleResponse removedAgain = listingService.removeFavorite(1L, LISTING_ID);
+
+    assertThat(created.created()).isTrue();
+    assertThat(created.response()).isEqualTo(new FavoriteToggleResponse(true, 1));
+    assertThat(duplicated.created()).isFalse();
+    assertThat(duplicated.response()).isEqualTo(new FavoriteToggleResponse(true, 1));
+    assertThat(removed).isEqualTo(new FavoriteToggleResponse(false, 0));
+    assertThat(removedAgain).isEqualTo(new FavoriteToggleResponse(false, 0));
+    assertThat(listingRepository.findById(LISTING_ID).orElseThrow().getFavoriteCount()).isZero();
+  }
+
+  /** 찜하지 않은 매물 해제는 성공으로 응답하되 favoriteCount를 감소시키지 않는다. */
+  @Test
+  void favorite_찜하지_않은_매물_해제는_count를_변경하지_않는다() {
+    listingRepository.save(sampleListingBuilder().favoriteCount(3).build());
+
+    FavoriteToggleResponse response = listingService.removeFavorite(1L, LISTING_ID);
+
+    assertThat(response).isEqualTo(new FavoriteToggleResponse(false, 3));
+    assertThat(listingRepository.findById(LISTING_ID).orElseThrow().getFavoriteCount())
+        .isEqualTo(3);
+  }
+
+  /** 존재하지 않거나 ObjectId 형식이 아닌 매물은 찜 등록/해제 모두 LISTING_NOT_FOUND로 거부한다. */
+  @Test
+  void favorite_없는_매물이나_잘못된_id는_404로_취급한다() {
+    listingRepository.save(sampleListing());
+
+    assertThatThrownBy(() -> listingService.addFavorite(1L, "not-object-id"))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.addFavorite(1L, "6858e20000000000000000ff"))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.removeFavorite(1L, "6858e20000000000000000ff"))
+        .isInstanceOf(ListingNotFoundException.class);
+  }
+
+  /** 찜 목록은 공개 매물만 최근 찜한 순으로 반환하고 비공개 상태 매물은 응답에서 제외한다. */
+  @Test
+  void favorite_목록은_공개매물만_최근순으로_반환한다() {
+    String newerListingId = "6858e2000000000000000003";
+    String pausedListingId = "6858e2000000000000000004";
+    listingRepository.save(sampleListing());
+    listingRepository.save(sampleListingBuilder().id(newerListingId).title("두 번째 고시원").build());
+    listingRepository.save(
+        sampleListingBuilder()
+            .id(pausedListingId)
+            .title("노출 중지 고시원")
+            .status(Listing.ListingStatus.PAUSED)
+            .build());
+    favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(1L, newerListingId, "2026-06-24T03:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(1L, pausedListingId, "2026-06-24T04:00:00Z"));
+
+    PageResponse<FavoriteListingResponse> result = listingService.getMyFavorites(1L, 0, 20);
+
+    assertThat(result.page().totalElements()).isEqualTo(2);
+    assertThat(result.content())
+        .extracting(FavoriteListingResponse::listingId)
+        .containsExactly(newerListingId, LISTING_ID);
+    assertThat(result.content()).allMatch(FavoriteListingResponse::favorited);
+    assertThatThrownBy(() -> listingService.addFavorite(1L, pausedListingId))
+        .isInstanceOf(ListingNotFoundException.class);
+  }
+
+  /** 찜 목록은 사용자별로 분리되고 page/size에 맞게 잘린다. */
+  @Test
+  void favorite_목록은_사용자별로_분리하고_페이지네이션한다() {
+    String secondListingId = "6858e2000000000000000005";
+    String thirdListingId = "6858e2000000000000000006";
+    listingRepository.save(sampleListing());
+    listingRepository.save(sampleListingBuilder().id(secondListingId).title("두 번째 고시원").build());
+    listingRepository.save(sampleListingBuilder().id(thirdListingId).title("세 번째 고시원").build());
+    favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(1L, secondListingId, "2026-06-24T02:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(1L, thirdListingId, "2026-06-24T03:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(2L, LISTING_ID, "2026-06-24T04:00:00Z"));
+
+    PageResponse<FavoriteListingResponse> firstPage = listingService.getMyFavorites(1L, 0, 2);
+    PageResponse<FavoriteListingResponse> secondPage = listingService.getMyFavorites(1L, 1, 2);
+    PageResponse<FavoriteListingResponse> otherUser = listingService.getMyFavorites(2L, 0, 20);
+
+    assertThat(firstPage.page().totalElements()).isEqualTo(3);
+    assertThat(firstPage.page().totalPages()).isEqualTo(2);
+    assertThat(firstPage.page().hasNext()).isTrue();
+    assertThat(firstPage.content())
+        .extracting(FavoriteListingResponse::listingId)
+        .containsExactly(thirdListingId, secondListingId);
+    assertThat(secondPage.page().hasNext()).isFalse();
+    assertThat(secondPage.content())
+        .extracting(FavoriteListingResponse::listingId)
+        .containsExactly(LISTING_ID);
+    assertThat(otherUser.page().totalElements()).isEqualTo(1);
+    assertThat(otherUser.content())
+        .extracting(FavoriteListingResponse::listingId)
+        .containsExactly(LISTING_ID);
+  }
+
+  /** 찜한 매물이 없으면 빈 content와 0개 page 메타를 정상 응답으로 반환한다. */
+  @Test
+  void favorite_목록이_비어도_정상_페이지를_반환한다() {
+    PageResponse<FavoriteListingResponse> result = listingService.getMyFavorites(1L, 0, 20);
+
+    assertThat(result.content()).isEmpty();
+    assertThat(result.page().number()).isZero();
+    assertThat(result.page().size()).isEqualTo(20);
+    assertThat(result.page().totalElements()).isZero();
+    assertThat(result.page().totalPages()).isZero();
+    assertThat(result.page().hasNext()).isFalse();
+  }
+
+  /** 찜 목록 page/size는 다른 목록 API와 같은 범위를 강제한다. */
+  @Test
+  void favorite_목록_페이지_파라미터를_검증한다() {
+    assertThatThrownBy(() -> listingService.getMyFavorites(1L, -1, 20))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("page");
+    assertThatThrownBy(() -> listingService.getMyFavorites(1L, 0, 0))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("size");
+    assertThatThrownBy(() -> listingService.getMyFavorites(1L, 0, 101))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("size");
+  }
+
   /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */
   @Test
   void search_조건을_모두_만족하지_않으면_빈_목록을_반환한다() {
@@ -282,6 +431,15 @@ class ListingMongoIntegrationTest {
   /** 저장·조회 테스트에서 사용할 대표 매물 도메인 객체를 만든다. */
   private static Listing sampleListing() {
     return sampleListingBuilder().build();
+  }
+
+  /** 저장·조회 테스트에서 사용할 찜 도메인 객체를 만든다. */
+  private static Favorite favorite(Long userId, String listingId, String favoritedAt) {
+    return Favorite.builder()
+        .userId(userId)
+        .listingId(listingId)
+        .favoritedAt(Instant.parse(favoritedAt))
+        .build();
   }
 
   /** 저장·조회 테스트에서 일부 필드만 바꿔 쓸 대표 매물 빌더를 만든다. */

@@ -1,10 +1,12 @@
 package com.kohere.listing.application;
 
 import com.kohere.listing.api.RecommendedListingView;
+import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingSearchCondition;
 import java.util.Comparator;
@@ -68,6 +70,32 @@ final class ListingResponseMapper {
   static ListingMapResponse.Marker toMapMarker(Listing listing) {
     return new ListingMapResponse.Marker(
         listing.getId(), listing.getLocation().latitude(), listing.getLocation().longitude());
+  }
+
+  /**
+   * 내 찜 목록에서 사용할 매물 요약 DTO를 만든다.
+   *
+   * <p>목록 항목은 이미 "내가 찜한 매물"이라는 전제에서 조회되므로 {@code favorited=true}로 고정한다. 찜 목록 화면은 거리 기준 정렬/표시를 쓰지
+   * 않으므로 일반 {@link ListingSummaryResponse} 대신 {@code favoritedAt}을 포함한 전용 DTO를 반환한다.
+   */
+  static FavoriteListingResponse toFavoriteListing(FavoriteListing favoriteListing) {
+    Listing listing = favoriteListing.listing();
+    Listing.RoomOffer offer = representativeOffer(listing);
+    return new FavoriteListingResponse(
+        listing.getId(),
+        listing.getTitle(),
+        listing.getType(),
+        offer.pricing().monthlyRent(),
+        offer.pricing().deposit(),
+        offer.pricing().maintenanceFee(),
+        thumbnailUrl(listing),
+        listing.getLocation().latitude(),
+        listing.getLocation().longitude(),
+        listing.getAddress().fullAddress(),
+        List.copyOf(offer.filterTags()),
+        true,
+        listing.getFavoriteCount(),
+        favoriteListing.favorite().getFavoritedAt());
   }
 
   /** 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다. */

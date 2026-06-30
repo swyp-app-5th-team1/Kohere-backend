@@ -2,10 +2,14 @@ package com.kohere.listing.application;
 
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
+import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
+import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.domain.Favorite;
+import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingAreaTooLargeException;
@@ -18,6 +22,7 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -75,16 +80,22 @@ public class ListingService {
 
   /** 단일 매물 상세 정보를 조회하고 상세 화면 섹션별 응답으로 변환한다. */
   public ListingDetailResponse getListing(String listingId) {
-    return listingRepository
-        .findById(listingId)
-        .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
-        .map(ListingResponseMapper::toDetail)
-        .orElseThrow(ListingNotFoundException::new);
+    return ListingResponseMapper.toDetail(requirePublishedListing(listingId));
   }
 
-  /** 내가 찜한 매물 목록 조회 예정 지점이다. */
-  public PageResponse<ListingSummaryResponse> getMyFavorites(int page, int size) {
-    throw new UnsupportedOperationException("TODO: 내 찜 목록 조회");
+  /**
+   * 내가 찜한 공개 매물 목록을 최근 찜한 순으로 반환한다.
+   *
+   * <p>프론트가 별도 정렬 파라미터를 보내지 않아도 항상 {@code favoritedAt desc} 기준이다. {@code DRAFT}, {@code PAUSED},
+   * {@code DELETED} 같은 비공개 매물은 목록과 총 개수에서 제외하므로, 화면의 페이지 정보는 실제 표시 가능한 카드 수와 일치한다.
+   */
+  public PageResponse<FavoriteListingResponse> getMyFavorites(Long userId, int page, int size) {
+    validatePage(page, size);
+    PageResponse<FavoriteListing> favorites =
+        favoriteRepository.findPublishedByUserIdOrderByFavoritedAtDesc(userId, page, size);
+    return PageResponse.of(
+        favorites.content().stream().map(ListingResponseMapper::toFavoriteListing).toList(),
+        favorites.page());
   }
 
   /** 최근 본 매물 조회 예정 지점이다. */
@@ -92,14 +103,60 @@ public class ListingService {
     throw new UnsupportedOperationException("TODO: 최근 본 매물(7일·최대 5건)");
   }
 
-  /** 매물 찜 등록 예정 지점이다. */
-  public FavoriteToggleResponse addFavorite(String listingId) {
-    throw new UnsupportedOperationException("TODO: 찜 등록(토글, 멱등)");
+  /**
+   * 매물을 찜한다.
+   *
+   * <p>대상 매물은 반드시 {@code PUBLISHED} 상태여야 한다. 처음 찜하면 {@code created=true}와 증가한 {@code
+   * favoriteCount}를 반환하고, 이미 찜한 상태라면 저장·카운트 증감 없이 {@code created=false}와 현재 {@code favoriteCount}를
+   * 반환한다.
+   */
+  public FavoriteToggleResult addFavorite(Long userId, String listingId) {
+    Listing listing = requirePublishedListing(listingId);
+    if (favoriteRepository.findByUserIdAndListingId(userId, listingId).isPresent()) {
+      return new FavoriteToggleResult(
+          false, new FavoriteToggleResponse(true, listing.getFavoriteCount()));
+    }
+
+    boolean created =
+        favoriteRepository.saveIfAbsent(
+            Favorite.builder()
+                .userId(userId)
+                .listingId(listing.getId())
+                .favoritedAt(Instant.now())
+                .build());
+    int favoriteCount =
+        created
+            ? listingRepository.increaseFavoriteCount(listingId)
+            : requirePublishedListing(listingId).getFavoriteCount();
+    return new FavoriteToggleResult(created, new FavoriteToggleResponse(true, favoriteCount));
   }
 
-  /** 매물 찜 해제 예정 지점이다. */
-  public FavoriteToggleResponse removeFavorite(String listingId) {
-    throw new UnsupportedOperationException("TODO: 찜 해제(토글, 멱등)");
+  /**
+   * 매물 찜을 해제한다.
+   *
+   * <p>찜 기록이 있으면 {@code favorites} 문서를 삭제하고 {@code favoriteCount}를 1 감소시킨다. 원래 찜하지 않은 매물이어도 에러가 아니라
+   * 현재 상태({@code favorited=false})를 반환한다. 단, 대상 매물 자체가 없거나 공개 상태가 아니면 스펙대로 {@code
+   * LISTING_NOT_FOUND}가 된다.
+   */
+  public FavoriteToggleResponse removeFavorite(Long userId, String listingId) {
+    Listing listing = requirePublishedListing(listingId);
+    boolean deleted = favoriteRepository.deleteByUserIdAndListingId(userId, listingId);
+    int favoriteCount =
+        deleted ? listingRepository.decreaseFavoriteCount(listingId) : listing.getFavoriteCount();
+    return new FavoriteToggleResponse(false, favoriteCount);
+  }
+
+  /**
+   * 공개 중인 매물만 사용자 액션 대상으로 취급한다.
+   *
+   * <p>존재하지 않는 매물, 잘못된 ObjectId, {@code DRAFT}/{@code PAUSED}/{@code DELETED} 매물은 모두 사용자에게 구분하지 않고
+   * {@code LISTING_NOT_FOUND}로 응답한다. 비공개 리소스의 존재 여부를 노출하지 않기 위한 정책이다.
+   */
+  private Listing requirePublishedListing(String listingId) {
+    return listingRepository
+        .findById(listingId)
+        .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
+        .orElseThrow(ListingNotFoundException::new);
   }
 
   /** 컨트롤러에서 받은 값을 검증하고 저장소가 이해하기 쉬운 검색 조건으로 묶는다. */

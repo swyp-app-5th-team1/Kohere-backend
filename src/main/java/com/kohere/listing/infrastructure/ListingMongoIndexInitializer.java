@@ -64,5 +64,20 @@ class ListingMongoIndexInitializer implements InitializingBean {
             .on("status", ASC)
             .on("propertyPolicies.arcRequired", ASC)
             .named("listings_status_arc_required"));
+
+    var favoriteIndexOperations = mongoTemplate.indexOps(FavoriteDocument.class);
+
+    // 사용자 한 명이 같은 매물을 여러 번 찜할 수 없게 DB 레벨에서 보장한다.
+    // 서비스는 중복 키 예외를 "이미 찜한 상태"로 바꿔 멱등한 200 OK 응답을 만든다.
+    favoriteIndexOperations.createIndex(
+        new Index()
+            .on("userId", ASC)
+            .on("listingId", ASC)
+            .unique()
+            .named("favorites_user_listing"));
+
+    // 내 찜 목록은 MVP에서 favoritedAt desc 고정이므로 사용자+찜시각 인덱스로 최신순 페이지 조회를 지원한다.
+    favoriteIndexOperations.createIndex(
+        new Index().on("userId", ASC).on("favoritedAt", DESC).named("favorites_user_favoritedAt"));
   }
 }

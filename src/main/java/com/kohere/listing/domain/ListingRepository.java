@@ -37,4 +37,10 @@ public interface ListingRepository {
 
   /** 매물 도메인 객체를 저장하고 저장된 결과를 반환한다. */
   Listing save(Listing listing);
+
+  /** 매물 찜 수를 원자적으로 1 증가시키고 변경 후 값을 반환한다. */
+  int increaseFavoriteCount(String listingId);
+
+  /** 매물 찜 수를 원자적으로 1 감소시키되 0 미만으로 내리지 않고 변경 후 값을 반환한다. */
+  int decreaseFavoriteCount(String listingId);
 }
