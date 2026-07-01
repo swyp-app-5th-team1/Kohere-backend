@@ -10,6 +10,7 @@ import java.util.Set;
  */
 public record ListingSearchCondition(
     BoundingBox bounds,
+    Integer radiusMeters,
     Integer minBudget,
     Integer maxBudget,
     Integer minDeposit,
@@ -28,6 +29,9 @@ public record ListingSearchCondition(
     types = types == null ? Set.of() : Set.copyOf(types);
     conditions = conditions == null ? Set.of() : Set.copyOf(conditions);
     sort = sort == null ? ListingSort.RECOMMENDED : sort;
+    if (radiusMeters != null && radiusMeters <= 0) {
+      radiusMeters = null;
+    }
   }
 
   /** roomOffer가 모두 만족해야 하는 최종 조건 태그 묶음이다. */
@@ -38,6 +42,11 @@ public record ListingSearchCondition(
   /** 거리 계산에 필요한 기준 좌표가 둘 다 있는지 알려준다. */
   public boolean hasCenter() {
     return centerLat != null && centerLng != null;
+  }
+
+  /** 중심 좌표와 반경이 모두 있어 실제 반경 필터를 적용할 수 있는지 알려준다. */
+  public boolean hasRadius() {
+    return hasCenter() && radiusMeters != null;
   }
 
   /** 지도에서 보이는 네모 범위를 표현한다. */

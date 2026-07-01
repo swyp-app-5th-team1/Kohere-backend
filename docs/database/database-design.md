@@ -311,6 +311,22 @@
 - `availableCount=0`이어도 매물/방 상품은 유지하며, 다음 입주 가능일을 알 수 있으면 `nextAvailableFrom`에 저장한다.
 - 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 참고용으로 둔다.
 
+`searchPlaces`
+
+키워드 검색용 POI(Point Of Interest) 사전 컬렉션이다. 사용자가 학교명·지역명·지하철역명을 입력하면 서버가 `name`과 `aliases`를 비교해
+가장 적절한 장소 1개를 찾고, 해당 좌표 기준 3km 이내 매물을 조회한다.
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · 사람이 읽기 쉬운 고정 코드(예: `UNIV_YONSEI`) |
+| `type` | string (enum `SearchPlaceType`) | `UNIVERSITY`/`SUBWAY_STATION`/`REGION` |
+| `name` | string | 공식 장소명. 응답의 `matchedPlace.name` |
+| `aliases` | string[] | 사용자가 입력할 수 있는 별칭(예: `연세`, `연세대`, `yonsei`) |
+| `lat` | double | 대표 위도(WGS84) |
+| `lng` | double | 대표 경도(WGS84) |
+| `active` | boolean | false면 검색 후보에서 제외 |
+| `priority` | int | 같은 점수로 매칭될 때 대표 장소 우선순위 |
+
 `favorites`
 
 | 필드 | 타입 | 키/제약 |
@@ -339,6 +355,7 @@
 | `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |
 | `listings_status_room_available_count` | `status, roomOffers.inventory.availableCount` | 복합/multikey | 현재 계약 가능한 방 상품이 있는 매물 검색 |
 | `listings_status_arc_required` | `status, propertyPolicies.arcRequired` | 복합 | ARC 미보유 사용자 추천/필터 |
+| `search_places_active_priority_name` | `active, priority desc, name` | 복합 | 활성 POI 후보 목록 조회 |
 | `favorites_user_listing` | `userId, listingId` | UNIQUE | 중복 찜 불가·토글 멱등 |
 | `favorites_user_favoritedAt` | `userId, favoritedAt` | 복합(desc) | 내 찜 목록 |
 | `recentListings_user_listing` | `userId, listingId` | UNIQUE | 재조회 upsert |

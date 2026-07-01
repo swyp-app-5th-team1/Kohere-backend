@@ -3,6 +3,7 @@ package com.kohere.listing.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -91,6 +92,14 @@ class ListingDocsTest {
           + "arcRequired=true일 때만 ARC 필수 매물로 좁힌다. "
           + "한 매물 안의 roomOffer가 여러 개 매칭되어도 지도 마커는 해당 listingId로 1개만 내려간다. "
           + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
+  private static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
+  private static final String LISTINGS_SEARCH_DESCRIPTION =
+      "학교명·지역명·지하철역명을 keyword 하나로 받아 POI(searchPlaces) 사전에서 장소를 찾고, "
+          + "매칭된 장소 좌표 기준 3km 이내의 공개 roomOffer 카드 목록을 반환한다. "
+          + "일부 검색어와 별칭 검색을 지원한다. 예를 들어 keyword=연세는 연세대학교, keyword=신촌은 신촌역으로 매칭될 수 있다. "
+          + "정렬 기본값은 DISTANCE이며, distanceMeters는 matchedPlace 좌표에서 매물까지의 직선 거리다. "
+          + "검색어가 POI 사전에 없으면 404가 아니라 200 OK로 matchedPlace=null, content=[]를 반환한다. "
+          + "프론트는 matchedPlace=null이면 '검색된 장소가 없어요', matchedPlace가 있고 content=[]이면 '이 주변에 매물이 없어요'처럼 구분해 표시할 수 있다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
       "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
@@ -148,7 +157,9 @@ class ListingDocsTest {
             .build();
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
     new ListingSeedRunner(listingRepository).run(null);
+    new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
   }
 
   /** 매물 목록/상세 API를 호출해 Swagger 생성에 필요한 REST Docs 스니펫을 만든다. */
@@ -184,6 +195,46 @@ class ListingDocsTest {
                     .description(LISTINGS_LIST_DESCRIPTION),
                 queryParameters(listQueryParameters()),
                 responseFields(listResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/search")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("keyword", "서울대")
+                .param("sort", "DISTANCE")
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.matchedPlace.name").value("서울대학교"))
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].roomOfferId").value(ROOM_OFFER_ID))
+        .andDo(
+            document(
+                "listings-search",
+                resourceDetails()
+                    .summary(LISTINGS_SEARCH_SUMMARY)
+                    .description(LISTINGS_SEARCH_DESCRIPTION),
+                queryParameters(searchQueryParameters()),
+                responseFields(searchResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/search")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("keyword", "없는장소")
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.matchedPlace").value(nullValue()))
+        .andExpect(jsonPath("$.data.content").isEmpty())
+        .andDo(
+            document(
+                "listings-search-empty-place",
+                resourceDetails()
+                    .summary(LISTINGS_SEARCH_SUMMARY)
+                    .description(LISTINGS_SEARCH_DESCRIPTION),
+                queryParameters(searchQueryParameters()),
+                responseFields(searchEmptyPlaceResponseFields())));
 
     mockMvc
         .perform(
@@ -369,6 +420,46 @@ class ListingDocsTest {
         "listings-list-invalid-distance-sort",
         LISTINGS_LIST_SUMMARY,
         LISTINGS_LIST_DESCRIPTION);
+
+    // ===== GET /listings/search =====
+    perform(
+        get("/api/v1/listings/search").header(HttpHeaders.AUTHORIZATION, bearer(token)),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-search-invalid-keyword-missing",
+        LISTINGS_SEARCH_SUMMARY,
+        LISTINGS_SEARCH_DESCRIPTION);
+
+    perform(
+        get("/api/v1/listings/search")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("keyword", "   "),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-search-invalid-keyword-blank",
+        LISTINGS_SEARCH_SUMMARY,
+        LISTINGS_SEARCH_DESCRIPTION);
+
+    perform(
+        get("/api/v1/listings/search")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("keyword", "가".repeat(51)),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-search-invalid-keyword-too-long",
+        LISTINGS_SEARCH_SUMMARY,
+        LISTINGS_SEARCH_DESCRIPTION);
+
+    perform(
+        get("/api/v1/listings/search")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("keyword", "서울대")
+            .param("size", "101"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-search-invalid-page-size",
+        LISTINGS_SEARCH_SUMMARY,
+        LISTINGS_SEARCH_DESCRIPTION);
 
     // ===== GET /listings/map =====
     perform(
@@ -587,6 +678,22 @@ class ListingDocsTest {
     };
   }
 
+  /** 키워드 검색 API의 query parameter 문서 정의다. */
+  private static ParameterDescriptor[] searchQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("keyword")
+          .description(
+              "필수 검색어(1~50자). 학교명·지역명·지하철역명 또는 별칭 일부를 보낼 수 있음. " + "예: 연세, 연세대, 서울대, 신촌, 홍대입구역"),
+      parameterWithName("sort")
+          .optional()
+          .description(
+              "정렬 프리셋(기본 DISTANCE). DISTANCE는 matchedPlace 좌표에서 가까운 순, "
+                  + "PRICE_ASC는 roomOffer 월세 낮은 순, RECOMMENDED는 추천순"),
+      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0)"),
+      parameterWithName("size").optional().description("페이지 크기(기본 20, 최대 100)")
+    };
+  }
+
   /** 찜 등록/해제 API의 path parameter 문서 정의다. */
   private static ParameterDescriptor[] favoritePathParameters() {
     return new ParameterDescriptor[] {
@@ -705,6 +812,72 @@ class ListingDocsTest {
         field("data.page.totalElements", JsonFieldType.NUMBER, "필터와 지도 범위에 맞는 전체 roomOffer 카드 수"),
         field("data.page.totalPages", JsonFieldType.NUMBER, "roomOffer 카드 기준 전체 페이지 수"),
         field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 roomOffer 카드 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** 키워드 검색 성공 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> searchResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.matchedPlace.type",
+            JsonFieldType.STRING,
+            "검색어로 매칭된 장소 종류. UNIVERSITY, SUBWAY_STATION, REGION 중 하나"),
+        field("data.matchedPlace.name", JsonFieldType.STRING, "프론트에 표시할 공식 장소명"),
+        field("data.matchedPlace.lat", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 위도(WGS84)"),
+        field("data.matchedPlace.lng", JsonFieldType.NUMBER, "지도 중심 이동에 사용할 장소 경도(WGS84)"),
+        field(
+            "data.content[].listingId",
+            JsonFieldType.STRING,
+            "방 상품이 속한 매물 식별자(ObjectId hex 문자열). 같은 매물의 여러 roomOffer 카드가 내려오면 값이 반복될 수 있음"),
+        field(
+            "data.content[].roomOfferId",
+            JsonFieldType.STRING,
+            "목록 카드가 가리키는 방 상품 식별자. 상세 응답 roomOffers[].roomOfferId와 매칭 가능"),
+        field("data.content[].roomOfferName", JsonFieldType.STRING, "목록 카드에 표시할 방 상품명"),
+        field("data.content[].title", JsonFieldType.STRING, "방 상품이 속한 매물 제목"),
+        field("data.content[].type", JsonFieldType.STRING, "매물 유형"),
+        field("data.content[].monthlyRent", JsonFieldType.NUMBER, "해당 방 상품의 월세(KRW)"),
+        field("data.content[].deposit", JsonFieldType.NUMBER, "해당 방 상품의 보증금(KRW)"),
+        field("data.content[].maintenanceFee", JsonFieldType.NUMBER, "해당 방 상품의 관리비(KRW)"),
+        field("data.content[].availableCount", JsonFieldType.NUMBER, "해당 방 상품 묶음 중 현재 계약 가능한 수량"),
+        field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
+        field("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
+        field("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
+        field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "해당 방 상품의 옵션 태그 목록"),
+        field(
+            "data.content[].distanceMeters",
+            JsonFieldType.NUMBER,
+            "matchedPlace 좌표에서 해당 Listing까지의 직선 거리(미터). 프론트 거리 표시용"),
+        field(
+            "data.content[].favorited",
+            JsonFieldType.BOOLEAN,
+            "현재 사용자 찜 여부. 현재는 사용자별 찜 연동 전이라 false로 반환하며, 찜 API 연동 후 사용자별 상태로 변경 예정"),
+        field("data.content[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
+        field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호"),
+        field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
+        field(
+            "data.page.totalElements", JsonFieldType.NUMBER, "검색 장소 3km 이내에 있는 전체 roomOffer 카드 수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "roomOffer 카드 기준 전체 페이지 수"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 roomOffer 카드 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** POI 매칭이 없는 키워드 검색 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> searchEmptyPlaceResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.matchedPlace",
+            JsonFieldType.NULL,
+            "POI 사전에 매칭된 장소가 없다는 뜻. 프론트는 '검색된 장소가 없어요' 상태를 표시하면 됨"),
+        field("data.content", JsonFieldType.ARRAY, "장소를 찾지 못했으므로 빈 배열"),
+        field("data.page.number", JsonFieldType.NUMBER, "요청한 페이지 번호"),
+        field("data.page.size", JsonFieldType.NUMBER, "요청한 페이지 크기"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "항상 0"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "항상 0"),
+        field("data.page.hasNext", JsonFieldType.BOOLEAN, "항상 false"),
         errorNull());
   }
 

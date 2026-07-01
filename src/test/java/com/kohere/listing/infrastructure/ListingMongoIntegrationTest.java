@@ -13,6 +13,7 @@ import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
+import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Favorite;
@@ -26,6 +27,8 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.SearchPlaceRepository;
+import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import java.time.Instant;
 import java.util.List;
@@ -61,6 +64,7 @@ class ListingMongoIntegrationTest {
   @Autowired private FavoriteRepository favoriteRepository;
   @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
+  @Autowired private SearchPlaceRepository searchPlaceRepository;
   @Autowired private MongoTemplate mongoTemplate;
 
   /** 각 테스트가 독립적으로 실행되도록 listing 관련 컬렉션을 비운다. */
@@ -68,6 +72,7 @@ class ListingMongoIntegrationTest {
   void cleanListingCollections() {
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
   }
 
   /** 도메인 매물을 저장한 뒤 중첩 roomOffers와 GeoJSON 좌표가 보존되는지 확인한다. */
@@ -129,6 +134,28 @@ class ListingMongoIntegrationTest {
             .collect(java.util.stream.Collectors.toSet());
 
     assertThat(favoriteIndexNames).contains("favorites_user_listing", "favorites_user_favoritedAt");
+
+    Set<String> searchPlaceIndexNames =
+        mongoTemplate.indexOps(SearchPlaceDocument.class).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(searchPlaceIndexNames).contains("search_places_active_priority_name");
+  }
+
+  /** searchPlaces 레퍼런스 카탈로그는 Mongock changeUnit으로 MongoDB에 적재된다. */
+  @Test
+  void searchPlaceSeed_장소사전을_저장하고_활성_POI를_조회한다() {
+    SearchPlaceSeedChangeUnit seed = new SearchPlaceSeedChangeUnit();
+
+    seed.execution(mongoTemplate);
+    seed.execution(mongoTemplate);
+
+    assertThat(mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).countDocuments())
+        .isEqualTo(SearchPlaceSeedFixtures.documents().size());
+    assertThat(searchPlaceRepository.findActive())
+        .extracting("name")
+        .contains("연세대학교", "서울대학교", "신촌역", "관악구");
   }
 
   /** seed 적재가 고정 ObjectId 저장 방식이라 재실행해도 같은 매물이 중복되지 않는지 확인한다. */
@@ -179,6 +206,74 @@ class ListingMongoIntegrationTest {
     assertThat(found.getString("title")).isEqualTo("고시원001");
   }
 
+  /** 키워드 검색은 POI를 찾은 뒤 해당 좌표 3km 안의 roomOffer 카드만 반환한다. */
+  @Test
+  void searchListings_대학키워드로_POI와_주변매물을_반환한다() {
+    new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
+    new ListingSeedRunner(listingRepository).run(null);
+
+    ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("서울대"));
+
+    assertThat(response.matchedPlace()).isNotNull();
+    assertThat(response.matchedPlace().name()).isEqualTo("서울대학교");
+    assertThat(response.content()).hasSize(1);
+    assertThat(response.content().getFirst().listingId())
+        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+    assertThat(response.content().getFirst().roomOfferId())
+        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID);
+    assertThat(response.content().getFirst().distanceMeters()).isLessThan(500);
+    assertThat(response.page().totalElements()).isEqualTo(1);
+  }
+
+  /** 장소는 찾았지만 3km 안에 매물이 없으면 matchedPlace는 유지하고 빈 목록을 반환한다. */
+  @Test
+  void searchListings_POI는_있지만_주변매물이_없으면_빈목록을_반환한다() {
+    new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
+    new ListingSeedRunner(listingRepository).run(null);
+
+    ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("연세"));
+
+    assertThat(response.matchedPlace()).isNotNull();
+    assertThat(response.matchedPlace().name()).isEqualTo("연세대학교");
+    assertThat(response.content()).isEmpty();
+    assertThat(response.page().totalElements()).isZero();
+  }
+
+  /** POI 사전에 없는 키워드는 에러가 아니라 프론트 빈 상태용 응답으로 반환한다. */
+  @Test
+  void searchListings_POI매칭이_없으면_matchedPlace_null과_빈목록을_반환한다() {
+    new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
+
+    ListingKeywordSearchResponse response = listingService.searchListings(keywordRequest("없는장소"));
+
+    assertThat(response.matchedPlace()).isNull();
+    assertThat(response.content()).isEmpty();
+    assertThat(response.page().totalElements()).isZero();
+  }
+
+  /** keyword가 비어 있거나 너무 길면 INVALID_INPUT으로 거부한다. */
+  @Test
+  void searchListings_keyword_검증을_수행한다() {
+    assertThatThrownBy(() -> listingService.searchListings(keywordRequest("   ")))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("keyword");
+
+    assertThatThrownBy(() -> listingService.searchListings(keywordRequest("가".repeat(51))))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("50");
+  }
+
+  /** 키워드 검색도 목록 API와 같은 페이지 크기 정책을 따른다. */
+  @Test
+  void searchListings_page_size_검증을_수행한다() {
+    ListingKeywordSearchRequest request = keywordRequest("서울대");
+    request.setSize(101);
+
+    assertThatThrownBy(() -> listingService.searchListings(request))
+        .isInstanceOf(InvalidInputException.class)
+        .hasMessageContaining("size");
+  }
+
   /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품 카드만 반환한다. */
   @Test
   void search_지도범위와_필터로_매물을_조회한다() {
@@ -188,6 +283,7 @@ class ListingMongoIntegrationTest {
         listingRepository.search(
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
                 null,
                 500000,
                 null,
@@ -254,6 +350,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(),
                 null,
@@ -303,6 +400,7 @@ class ListingMongoIntegrationTest {
         listingRepository.search(
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
                 480000,
                 600000,
                 null,
@@ -362,6 +460,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
+            null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
             null,
@@ -373,6 +472,7 @@ class ListingMongoIntegrationTest {
     ListingSearchCondition secondPageCondition =
         new ListingSearchCondition(
             firstPageCondition.bounds(),
+            null,
             null,
             null,
             null,
@@ -432,6 +532,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.IMMEDIATE_MOVE_IN),
                 null,
@@ -473,6 +574,7 @@ class ListingMongoIntegrationTest {
         listingRepository.search(
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
                 null,
                 null,
                 null,
@@ -519,6 +621,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
+            null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
             false,
@@ -530,6 +633,7 @@ class ListingMongoIntegrationTest {
     ListingSearchCondition onlyArcRequired =
         new ListingSearchCondition(
             withoutArcFilter.bounds(),
+            null,
             null,
             null,
             null,
@@ -643,6 +747,7 @@ class ListingMongoIntegrationTest {
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
                 null,
+                null,
                 500000,
                 null,
                 500000,
@@ -688,6 +793,7 @@ class ListingMongoIntegrationTest {
         listingRepository.searchForMap(
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
+                null,
                 null,
                 null,
                 null,
@@ -849,6 +955,7 @@ class ListingMongoIntegrationTest {
             new ListingSearchCondition(
                 new ListingSearchCondition.BoundingBox(37.45, 126.90, 37.50, 127.00),
                 null,
+                null,
                 200000,
                 null,
                 null,
@@ -901,6 +1008,15 @@ class ListingMongoIntegrationTest {
                 "SEOUL", 500000, Set.of("IMMEDIATE_MOVE_IN"), "SNU", null, 0, 20, null));
 
     assertThat(result.content()).isEmpty();
+  }
+
+  /** 서비스 검색 테스트에서 사용할 기본 키워드 검색 요청을 만든다. */
+  private static ListingKeywordSearchRequest keywordRequest(String keyword) {
+    ListingKeywordSearchRequest request = new ListingKeywordSearchRequest();
+    request.setKeyword(keyword);
+    request.setPage(0);
+    request.setSize(20);
+    return request;
   }
 
   /** 저장·조회 테스트에서 사용할 대표 매물 도메인 객체를 만든다. */

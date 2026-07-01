@@ -6,8 +6,10 @@ import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 매물 탐색·찜 REST 컨트롤러. 입력 검증·DTO 변환만 담당하고 비즈니스 로직은 응용 계층에 위임한다 (docs/convention/code-style.md §3-3).
  * 도메인 DTO만 반환하고, 공통 래퍼는 {@link com.kohere.common.response.ApiResponseWrapper}가 자동 적용한다(ADR-0013).
  *
- * <p>스펙: docs/api/specs/03-listings-favorites.md. TODO: 키워드 검색(GET /search)를 채운다.
+ * <p>스펙: docs/api/specs/03-listings-favorites.md.
  */
 @RestController
 @RequestMapping("/api/v1/listings")
@@ -46,6 +48,18 @@ public class ListingController {
   @GetMapping("/map")
   public ListingMapResponse getListingMap(@ModelAttribute ListingMapRequest request) {
     return listingService.getListingMap(request);
+  }
+
+  /**
+   * 학교명·지역명·지하철역명 키워드로 검색된 장소 주변의 방 상품 카드 목록을 조회한다.
+   *
+   * <p>검색어가 POI 사전에 없으면 에러가 아니라 {@code matchedPlace=null}, {@code content=[]}로 반환해 프론트가 "검색된 장소가
+   * 없어요" 상태를 표시할 수 있게 한다.
+   */
+  @GetMapping("/search")
+  public ListingKeywordSearchResponse searchListings(
+      @ModelAttribute ListingKeywordSearchRequest request) {
+    return listingService.searchListings(request);
   }
 
   /** 매물 상세 화면에서 사용할 객체별 상세 정보를 반환한다. */
