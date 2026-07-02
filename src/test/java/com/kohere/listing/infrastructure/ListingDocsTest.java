@@ -8,7 +8,9 @@ import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuild
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.fieldWithPath;
+import static org.springframework.restdocs.payload.PayloadDocumentation.relaxedRequestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
+import static org.springframework.restdocs.payload.PayloadDocumentation.subsectionWithPath;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
@@ -37,6 +39,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
 import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
@@ -115,6 +118,11 @@ class ListingDocsTest {
           + "MVP에서는 별도 sort 파라미터를 받지 않고 favoritedAt desc로 고정한다. "
           + "응답 항목은 모두 현재 사용자가 찜한 매물이므로 favorited=true이며, "
           + "DRAFT/PAUSED/DELETED 등 공개 상태가 아닌 매물은 content와 totalElements에서 제외된다.";
+  private static final String DEV_LISTINGS_IMPORT_SUMMARY = "[임시/미완성] dev 매물 JSON import";
+  private static final String DEV_LISTINGS_IMPORT_DESCRIPTION =
+      "임시 데이터 확인용 미완성 API다. local/dev/test 프로파일에서만 활성화되며 prod에서는 컨트롤러가 뜨지 않는다. "
+          + "ListingDocument 저장 형태에 맞춘 MongoDB Extended JSON 배열을 listings 컬렉션에 _id 기준 upsert한다. "
+          + "CSV 변환, 상세 검증, 운영용 등록 플로우는 제공하지 않는다. Swagger에서 로그인 후 생성된 accessToken을 Authorize에 넣고 사용한다.";
 
   // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
   private static final String FORGED_TOKEN =
@@ -155,6 +163,24 @@ class ListingDocsTest {
   @Test
   void generatesListingSnippets() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
+
+    mockMvc
+        .perform(
+            post("/api/dev/listings/import")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(devListingImportJson()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.savedCount").value(1))
+        .andExpect(jsonPath("$.data.collectionName").value("listings"))
+        .andDo(
+            document(
+                "dev-listings-import",
+                resourceDetails()
+                    .summary(DEV_LISTINGS_IMPORT_SUMMARY)
+                    .description(DEV_LISTINGS_IMPORT_DESCRIPTION),
+                relaxedRequestFields(devListingImportRequestFields()),
+                responseFields(devListingImportResponseFields())));
 
     mockMvc
         .perform(
@@ -808,9 +834,147 @@ class ListingDocsTest {
         errorNull());
   }
 
+  /** 임시 dev import API 요청 예시다. 실제 사용 시에는 변환된 JSON 배열 전체를 붙여넣는다. */
+  private static String devListingImportJson() {
+    return """
+        [
+          {
+            "_id": {"$oid": "6858e2000000000000000abc"},
+            "schemaVersion": 1,
+            "landlordId": 1,
+            "title": "임시 import 매물",
+            "type": "GOSIWON",
+            "status": "DRAFT",
+            "location": {
+              "type": "Point",
+              "coordinates": [126.951422, 37.459471]
+            },
+            "address": {
+              "city": "SEOUL",
+              "district": "GWANAK_GU",
+              "fullAddress": "서울특별시 관악구 테스트로 1",
+              "detail": null
+            },
+            "nearestTransit": {
+              "type": "SUBWAY",
+              "name": "서울대입구",
+              "walkMinutes": 5
+            },
+            "nearbyPlacesDescription": "임시 데이터",
+            "nearbyUniversityCodes": ["SNU"],
+            "building": {
+              "type": "VILLA",
+              "usedFloorMin": 1,
+              "usedFloorMax": 2,
+              "totalFloors": 4,
+              "parkingAvailable": false,
+              "elevatorAvailable": true,
+              "heatingSystem": "CENTRAL"
+            },
+            "propertyPolicies": {
+              "arcRequired": false,
+              "residentRegistrationAvailable": true,
+              "studySuitable": true,
+              "mealsProvided": true,
+              "englishAvailable": false
+            },
+            "facilities": {
+              "laundry": ["COIN_LAUNDRY"],
+              "livingAmenities": ["WIFI"],
+              "securityFeatures": ["CCTV"],
+              "commonSpaces": [{"type": "STUDY_ROOM", "count": null}],
+              "providedSupplies": ["BEDDING"]
+            },
+            "roomOffers": [
+              {
+                "roomOfferId": {"$oid": "6858e2000000000000000abd"},
+                "name": "스탠다드 1인실",
+                "status": "ACTIVE",
+                "rentalType": "MONTHLY_RENT",
+                "pricing": {
+                  "monthlyRent": 300000,
+                  "deposit": 300000,
+                  "maintenanceFee": 0,
+                  "currency": "KRW"
+                },
+                "contract": {
+                  "minStayMonths": 1,
+                  "maxStayMonths": 6,
+                  "refundPolicy": {
+                    "code": "FULL_REFUND_BEFORE_7_DAYS",
+                    "description": "입주 7일 전 취소 시 전액 환불"
+                  }
+                },
+                "inventory": {
+                  "totalCount": 1,
+                  "availableCount": 1,
+                  "nextAvailableFrom": null
+                },
+                "genderPolicy": "ANY",
+                "features": ["SINGLE_ROOM"],
+                "filterTags": ["MEALS_PROVIDED"],
+                "roomImageUrls": []
+              }
+            ],
+            "featureSummary": ["MEALS_PROVIDED"],
+            "descriptions": {
+              "ko": "Swagger import 예시용 임시 매물입니다.",
+              "en": "Temporary listing for Swagger import."
+            },
+            "extraNotes": "임시 데이터입니다.",
+            "imageUrls": [],
+            "favoriteCount": 0,
+            "createdAt": {"$date": "2024-09-15T00:00:00Z"},
+            "updatedAt": {"$date": "2024-09-15T00:00:00Z"}
+          }
+        ]
+        """;
+  }
+
+  /** 임시 dev import API 요청 필드 문서 정의다. */
+  private static List<FieldDescriptor> devListingImportRequestFields() {
+    return List.of(
+        subsection("[]._id", JsonFieldType.OBJECT, "MongoDB ObjectId. 같은 _id가 있으면 덮어쓴다"),
+        field("[].schemaVersion", JsonFieldType.NUMBER, "ListingDocument 스키마 버전"),
+        field("[].landlordId", JsonFieldType.NUMBER, "임대인 식별자"),
+        field("[].title", JsonFieldType.STRING, "매물 제목"),
+        field("[].type", JsonFieldType.STRING, "매물 유형"),
+        field("[].status", JsonFieldType.STRING, "매물 상태"),
+        subsection("[].location", JsonFieldType.OBJECT, "GeoJSON Point. coordinates는 [lng, lat]"),
+        subsection("[].address", JsonFieldType.OBJECT, "주소 정보"),
+        subsection("[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통 정보"),
+        field("[].nearbyPlacesDescription", JsonFieldType.STRING, "주변 장소 설명"),
+        field("[].nearbyUniversityCodes", JsonFieldType.ARRAY, "주변 대학교 코드 목록"),
+        subsection("[].building", JsonFieldType.OBJECT, "건물 정보"),
+        subsection("[].propertyPolicies", JsonFieldType.OBJECT, "매물 운영 정책"),
+        subsection("[].facilities", JsonFieldType.OBJECT, "공용 시설 정보"),
+        subsection("[].roomOffers", JsonFieldType.ARRAY, "방 상품 목록"),
+        field("[].featureSummary", JsonFieldType.ARRAY, "매물 대표 조건 태그"),
+        subsection("[].descriptions", JsonFieldType.OBJECT, "다국어 설명"),
+        field("[].extraNotes", JsonFieldType.STRING, "추가 메모"),
+        field("[].imageUrls", JsonFieldType.ARRAY, "매물 이미지 URL 목록"),
+        field("[].favoriteCount", JsonFieldType.NUMBER, "찜 수"),
+        subsection("[].createdAt", JsonFieldType.OBJECT, "생성 시각. MongoDB Extended JSON $date 형식"),
+        subsection("[].updatedAt", JsonFieldType.OBJECT, "수정 시각. MongoDB Extended JSON $date 형식"));
+  }
+
+  /** 임시 dev import API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> devListingImportResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.savedCount", JsonFieldType.NUMBER, "저장 또는 덮어쓴 매물 문서 수"),
+        field("data.collectionName", JsonFieldType.STRING, "저장 대상 MongoDB 컬렉션 이름"),
+        errorNull());
+  }
+
   /** REST Docs 필드 설명을 짧게 만들기 위한 헬퍼다. */
   private static FieldDescriptor field(String path, JsonFieldType type, String description) {
     return fieldWithPath(path).type(type).description(description);
+  }
+
+  /** REST Docs 하위 문서 설명을 짧게 만들기 위한 헬퍼다. */
+  private static FieldDescriptor subsection(String path, JsonFieldType type, String description) {
+    return subsectionWithPath(path).type(type).description(description);
   }
 
   /** 공통 실패 응답 필드 문서 정의다. */
