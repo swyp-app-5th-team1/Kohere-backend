@@ -22,6 +22,7 @@
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
 | [`gamification`](#4-8-gamification) | **MongoDB** | `quizzes`(문항·선택지 카탈로그 — 인라인 언어-키 맵·무상태 채점) | 이후 |
 | [`report`](#4-9-report) | **저장소(추후 결정)** | `reports` | 이후 |
+| [`lifetip`](#4-10-lifetip) | **MongoDB** | `lifeTipTopics`·`lifeTips` — 인라인 언어-키 맵 번역, US-8-1·US-8-2 | 이후 |
 
 > `access` 토큰은 무상태 JWT라 저장소에 없다. `common`은 공유 커널(스키마 없음).
 
@@ -593,6 +594,98 @@
 - **교차 모듈 no-FK**: `reporter_id`(→user)·`target_id`(→community/chat 다형) 값 참조. 다형이라 단일 FK 불가.
 - **프라이버시**: `reporter_id`·`detail`은 저장하되 응답 비노출([error-response-guide §6](../api/error-response-guide.md)).
 - **불변**: 전이 없음 → `updated_at`/소프트삭제 불요. 자기 신고 차단(`422`)·대상 존재 검증(`404`)·MESSAGE 참여 권한(`403`)은 대상 모듈 공개 쿼리로.
+
+### 4-10. `lifetip`
+
+> 스토어: **MongoDB** (문서형·가변 스키마·언어-키 맵 임베드. [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 · [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). **1차 MVP 이후**(홈 부가 기능·읽기 전용). domain-model `LifeTipTopic`·`LifeTip`(US-8-1·US-8-2·US-8-3).
+>
+> 온보딩을 마친 세입자(외국인)가 한국 생활 정보를 **주제(topic)** 별로 조회하는 읽기 전용 큐레이션이다. 주제·팁은 운영이 시드로 적재하는 큐레이션 콘텐츠라 사용자 작성·수정·좋아요·신고가 없다(발행/구독 도메인 이벤트 없음). 표시 문자열(주제명·제목·내용)은 별도 메시지 컬렉션 없이 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하며, 진단 i18n(§4-4 `diagnosisQuestions`, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)·US-2-6)과 **완전히 동일한 전략**을 재사용한다 — 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키(없으면 `en` 폴백, 에러 아님)로 문자열을 골라 조립하고, 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이다. `Accept-Language`·토큰 클레임은 쓰지 않는다. 모듈 의존 `lifetip → {common, user}`(진단과 동일 근거 — [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 주제 : 팁 = **1 : N**.
+
+#### 주제 카탈로그 — `lifeTipTopics`
+
+생활 팁을 묶는 **주제(topic)** 카탈로그다(US-8-1). 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE, `_id`)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 **인라인 언어-키 맵**으로 임베드한다. `GET /api/v1/life-tips/topics`가 (이 카탈로그 + 사용자 언어 키)으로 노출 순서대로 전체 배열을 조립해 내려준다(고정·소규모라 비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `_id`(주제 코드)는 US-8-2에서 특정 주제의 팁을 지정하는 path 키(`{topicCode}`)로 쓰인다. 시드/마이그레이션으로 적재, 운영 중 갱신 가능.
+
+`lifeTipTopics`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자, 예 `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`) · `GET /topics/{topicCode}/tips` path 키 |
+| `name` | object | NOT NULL · 주제 표시명(번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `order` | int | NOT NULL · 노출 순서(오름차순) |
+
+**인덱스**: PK `_id` / INDEX `{ order: 1 }`(노출 순서 정렬 조회).
+
+- **번역**: 표시 문자열은 도큐먼트 내부 `name`의 **인라인 언어-키 맵**(`{ lang → message }`)에 임베드한다 — 서버가 `getLanguage(userId)`로 취득한 표시 언어 키를 골라 조립하고, 해당 키가 없으면 `en` 폴백(에러 아님, `Accept-Language` 비의존). 등록 국가→언어 매핑은 `user`의 `countries.lang`이 보유하며 교차 모듈 **값 참조**(no-FK). `_id`(주제 코드)는 언어와 무관하게 동일하다.
+- **비페이지**: 주제 수는 고정·소규모라 페이지네이션 없이 `order` 오름차순 전체 배열을 한 번에 반환한다(페이지 객체 없음).
+
+**예시 도큐먼트** (`lifeTipTopics`)
+
+```json
+{
+  "_id": "MOVING_IN",
+  "name": { "en": "Moving In", "ja": "入居", "ko": "입주" },
+  "order": 1
+}
+```
+
+#### 팁 카탈로그 — `lifeTips`
+
+한 주제(`topicCode`)에 속한 생활 팁(**제목 · 내용 · 사진**)을 영속하는 카탈로그다(US-8-2). 주제 : 팁 = **1 : N**. `title`·`content`는 표시 문자열이라 **인라인 언어-키 맵**으로 임베드하고, `imageUrl`은 언어 무관(사진, 없으면 `null`)이다. `GET /api/v1/life-tips/topics/{topicCode}/tips`가 path의 주제 `code`로 그 주제의 팁 전체를 노출 순서(`order`)대로 조립해 내려준다(주제당 팁 수가 제한적이라 비페이지 — "해당 주제에 맞는 모든 리스트"). 경로의 `{topicCode}`가 `lifeTipTopics`에 없으면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약). 시드/마이그레이션으로 적재, 운영 중 갱신 가능.
+
+`lifeTips`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | ObjectId | PK · 팁 식별자(API에서는 24자리 hex 문자열 `id`) |
+| `topicCode` | string | NOT NULL · 소속 주제 코드 · → `lifeTipTopics._id` 값 참조(애플리케이션 레벨 조인, DB 조인·FK 없음) |
+| `order` | int | NOT NULL · 주제 내 노출 순서(오름차순) |
+| `title` | object | NOT NULL · 제목(번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `content` | object | NOT NULL · 내용(번역 대상)의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 사용자 언어 키 선택, 없으면 `en` 폴백 |
+| `imageUrl` | string | NULL · 사진 이미지 URL(언어 무관 불변) · 사진이 없으면 `null`(또는 생략) |
+
+**인덱스**: PK `_id` / 복합 `{ topicCode: 1, order: 1 }`(주제별 팁을 노출 순서대로 조회).
+
+- **주제 참조**: `topicCode`는 `lifeTipTopics._id`(주제 코드)를 **값으로만** 참조한다 — 같은 `lifetip` 모듈 안이지만 Mongo 컬렉션 간 조인은 두지 않고 애플리케이션 레벨 조인으로 팁을 조립한다. 경로 `{topicCode}`가 `lifeTipTopics`에 없으면 팁을 조회하지 않고 `404 LIFE_TIP_TOPIC_NOT_FOUND`.
+- **번역**: 표시 문자열은 도큐먼트 내부 `title`·`content`의 **인라인 언어-키 맵**에 임베드한다 — 서버가 사용자 언어 키를 골라 조립하고, 없으면 `en` 폴백(에러 아님, `Accept-Language` 비의존). 식별자(`_id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+- **사진 nullable**: `imageUrl`은 언어 무관이며 사진이 없는 팁은 `null`(또는 필드 생략)로 두고, 이때도 `title`·`content`는 정상 노출한다(US-8-2 "사진 없는 팁").
+- **비페이지**: 주제당 팁 수가 제한적이라 `order` 오름차순 전체 리스트를 한 번에 반환한다(페이지 객체 없음).
+- **교차 모듈 no-FK**: `lifetip`은 표시 언어 도출을 위해 `user` 공개 query(`getLanguage`)만 값 참조로 동기 호출하고(등록 국가→언어는 `user`의 `countries.lang`), 자체 컬렉션 외 다른 모듈을 참조하지 않는다. 읽기 전용이라 발행/구독 도메인 이벤트가 없다.
+
+**예시 도큐먼트** (`lifeTips`)
+
+```json
+{
+  "_id": { "$oid": "665f1b2c4a3e2f0012a4c7d1" },
+  "topicCode": "MOVING_IN",
+  "order": 1,
+  "title": {
+    "en": "Setting up utilities",
+    "ja": "公共料金の手続き",
+    "ko": "공과금 설정하기"
+  },
+  "content": {
+    "en": "How to register for electricity, water, and gas after moving in.",
+    "ja": "入居後の電気・水道・ガスの登録方法。",
+    "ko": "입주 후 전기·수도·가스를 등록하는 방법."
+  },
+  "imageUrl": "https://cdn.kohere.app/life-tips/moving-in/utilities.png"
+}
+```
+
+> `imageUrl`이 없는(사진 미제공) 팁 예시 — 언어-키 맵은 그대로 채우고 `imageUrl`만 `null`(또는 생략)이다.
+
+```json
+{
+  "_id": { "$oid": "665f1b2c4a3e2f0012a4c7d2" },
+  "topicCode": "MOVING_IN",
+  "order": 2,
+  "title": { "en": "Resident registration", "ja": "転入届", "ko": "전입신고" },
+  "content": { "en": "Where and when to file your move-in report.", "ja": "転入届の提出先と期限。", "ko": "전입신고를 어디에·언제 하는지." },
+  "imageUrl": null
+}
+```
+
+- **시드(Mongock `@ChangeUnit`)**: `lifeTipTopics`·`lifeTips`는 진단 카탈로그(§4-4)와 동일하게 모듈별 Mongock `@ChangeUnit`으로 환경당 1회 적재한다(멱등 시더가 아니라 변경 관리 러너 — [ADR-0032](../adr/0032-mongodb-migration-runner.md), [migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)). 인덱스(`lifeTipTopics.{order}`·`lifeTips.{topicCode,order}`)는 부트스트랩/마이그레이션에서 기동 시 멱등 보장한다.
 
 ## 5. 관련 문서
 

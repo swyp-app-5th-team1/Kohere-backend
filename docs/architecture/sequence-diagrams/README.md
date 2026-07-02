@@ -1,7 +1,7 @@
 # 시퀀스 다이어그램 (Sequence Diagrams)
 
 > 핵심 기능 유저 스토리별 **사용자 → 앱(클라이언트) → 백엔드 모듈** 시퀀스 다이어그램이다. API 흐름(요청 메서드·경로·상태코드) 중심으로 그렸다.
-> 백엔드는 단일 서버가 아니라 Spring Modulith **모듈 단위 컴포넌트**(`auth` / `diagnosis` / `listing` / `booking` / `chat` / `community` / `gamification` / `report`)로 분해하고, 한 스토리에 **실제 관여하는 모듈만** 참가자로 둔다.
+> 백엔드는 단일 서버가 아니라 Spring Modulith **모듈 단위 컴포넌트**(`auth` / `diagnosis` / `listing` / `booking` / `chat` / `community` / `gamification` / `report` / `lifetip`)로 분해하고, 한 스토리에 **실제 관여하는 모듈만** 참가자로 둔다.
 >
 > 표기 규약:
 >
@@ -12,7 +12,7 @@
 >   - **정식 자원(ROLE_USER)**: 나머지 보호 엔드포인트. **PENDING(온보딩 스코프) 토큰으로 ROLE_USER 자원에 접근하면 SEC가 403 `AUTH_ONBOARDING_REQUIRED`**(`AccessDeniedHandler`, 모듈 도달 전).
 > - 인증 실패 경계: 토큰 무효/만료/누락은 **EntryPoint가 401**(`UNAUTHENTICATED`/`TOKEN_EXPIRED`). **스코프 부족 403은 SEC(AccessDeniedHandler) 책임**, **리소스 소유권 403(`FORBIDDEN`)은 모듈 책임**으로 구분한다. 비즈니스 규칙(409/422)도 **모듈**이 판단한다.
 > - **도메인 상태 영속**은 가장 오른쪽의 `저장소(participant)` 컴포넌트로 표기한다(`모듈->>저장소` 저장/조회/갱신, `저장소-->>모듈` 결과). 저장소 배치는 **폴리글랏으로 확정**됐다([ADR-0005](../../adr/0005-polyglot-persistence.md)·[ADR-0006](../../adr/0006-refresh-token-store-redis.md)) — 각 `모듈->>저장소` 화살표는 **그 화살표 왼쪽 모듈이 소유한 저장소**를 가리킨다:
->   - **MongoDB**: `listing`(+`favorite`·`recent-listing`)·`diagnosis`·`gamification`(퀴즈 카탈로그)
+>   - **MongoDB**: `listing`(+`favorite`·`recent-listing`)·`diagnosis`·`lifetip`·`gamification`(읽기 전용, 1차 MVP 이후)
 >   - **MySQL**: `auth`(계정·소셜·회원상태)·`user`(프로필)·`community`
 >   - **Redis**: `auth`의 **refresh 토큰**(해시 저장·조회·회전·무효화, TTL 기반)
 >   - **저장소(추후 결정)**: `booking`·`chat`(F-03)·`report` — ADR 미정이라 구체 저장소를 임의 확정하지 않는다
@@ -30,5 +30,6 @@
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community/](05-community/README.md) | 5 |
 | 6 | 게이미피케이션 (퀴즈) | [06-gamification/](06-gamification/README.md) | 3 |
 | 7 | 신고 처리 | [07-reports/](07-reports/README.md) | 3 |
+| 8 | 생활 팁 (주제별 생활 정보) | [08-life-tips/](08-life-tips/README.md) | 2 |
 
-총 29개 다이어그램.
+총 31개 다이어그램.

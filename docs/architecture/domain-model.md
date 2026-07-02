@@ -30,6 +30,7 @@
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
 | [`gamification`](#8-gamification--퀴즈) | `Quiz` | `QuizChoice` | 이후 |
 | [`report`](#9-report--신고-처리) | `Report` | `ReportTarget`, `ReportDetail` | 이후 |
+| [`lifetip`](#10-lifetip--생활-팁주제별-생활-정보) | `LifeTipTopic`, `LifeTip` | — | 이후 |
 
 > `common`은 공유 커널(애그리거트 없음): 응답 래퍼·예외 표준만 제공.
 
@@ -837,6 +838,49 @@
 | `ReportStatus` | `RECEIVED` | 접수됨(단일 값, 상태 전이 없음) |
 
 **협력 / 이벤트:** 타 애그리거트는 식별자(`reporterId`·`targetId`)로만 참조한다(ADR-0002). 대상 존재 검증·작성자 동일성(자기 신고 판별)·채팅방 참여 권한 평가는 대상 보유 모듈의 공개 쿼리에 위임한다 — `POST`/`COMMENT`는 `community`, `MESSAGE`는 `chat`. 신고 사유 카탈로그(`ReportReason`)는 고정·소규모 정적 메타로 외부에 노출되어 클라이언트가 사유 선택지를 서버와 동일하게 구성하는 단일 출처가 된다.
+
+---
+
+## 10. `lifetip` — 생활 팁(주제별 생활 정보)
+
+> [API 스펙](../api/specs/08-life-tips.md) · [시퀀스](sequence-diagrams/08-life-tips/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
+
+온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
+
+**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시명(`name`)은 언어-키 맵으로 임베드된다. 식별자 `code`(주제 코드, 언어 무관 불변).
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `code` | 식별자(String) | 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자). 예: `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`. US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다 |
+| `name` | 언어-키 맵 | 표시명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
+| `order` | int | 노출 순서(오름차순) |
+
+**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`은 표시 문자열만 언어별이고 `code`·`order`는 언어 무관; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
+
+**`LifeTip`** — 하나의 주제에 속한 생활 팁 항목(애그리거트 루트). 주제 : 팁 = **1 : N**. `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 식별자 `id`, 소속 주제 참조 `topicCode`(→ `LifeTipTopic.code`, 애플리케이션 레벨 조인·DB 조인 없음).
+
+**속성:**
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 팁 식별자(언어 무관 불변) |
+| `topicCode` | String | 소속 주제 코드 → `LifeTipTopic` 식별자(`code`) 참조(애플리케이션 레벨 조인, DB 조인 없음) |
+| `order` | int | 주제 내 노출 순서(오름차순) |
+| `title` | 언어-키 맵 | 제목(번역 대상). `{ "en": …, "ja": …, "ko": … }` — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
+| `content` | 언어-키 맵 | 내용(번역 대상). 인라인 언어-키 맵(서버가 사용자 언어 키로 선택, 부재 시 `en` 폴백) |
+| `imageUrl` | String, nullable | 사진 URL(언어 무관). 사진이 없으면 `null`(또는 응답에서 생략) |
+
+**불변식:** `topicCode`는 실재하는 `LifeTipTopic.code`를 가리켜야 한다(참조 무결성 — 없는 주제 코드로 조회 시 `404 LIFE_TIP_TOPIC_NOT_FOUND`); 한 주제의 팁 목록은 `(topicCode, order)`로 노출 순서를 정하며, 주제당 팁 수가 제한적이라 페이지네이션 없이 전체 리스트를 한 번에 반환한다(비페이지 — "해당 주제에 맞는 제목-내용-사진의 모든 리스트"); `title`·`content`는 표시 문자열만 언어별이고 `id`·`imageUrl`은 언어 무관 불변; `imageUrl`이 없는 팁은 `null`로 두되 나머지 필드(`title`·`content`)는 정상 노출한다; 응답 스키마는 언어와 무관하게 동일하고 서버가 언어 문자열만 채운다.
+
+> `LifeTipTopic`·`LifeTip` 모두 운영이 시드로 적재하는 큐레이션 카탈로그다(사용자 생성 콘텐츠 아님). 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips` 컬렉션에 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)). 컬렉션·인덱스 등 영속 매핑(`lifeTipTopics { order: 1 }`, `lifeTips { topicCode: 1, order: 1 }` 복합)은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
+
+**i18n(진단과 동일 전략):** 번역 기준은 **사용자 등록 국가**(온보딩 수집값)이고, 표시 언어는 `user` 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임 미사용; [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6 일관). 표시 문자열(`name`/`title`/`content`)은 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하고, 서버가 사용자 언어 키로 문자열을 고르되 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)·`imageUrl`은 언어 무관 불변이라 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다). 진단 문항 라벨(`diagnosisQuestions`의 인라인 언어-키 맵)과 같은 부류로, 새 i18n 메커니즘을 만들지 않는다.
+
+**협력 / 이벤트:** 타 애그리거트·타 모듈은 식별자/원시 값으로만 참조한다(엔티티 비공유, ADR-0002) — 표시 언어 결정에 쓸 `user` 공개 쿼리(`getLanguage`)를 **동기 취득**하고(`user`가 등록 국가 `countries.lang`으로 도출), `user`를 식별자/원시 값으로만 참조한다. 주제-팁 참조는 `LifeTip.topicCode → LifeTipTopic.code`의 **애플리케이션 레벨 조인**(DB 조인 없음)으로 처리한다. **읽기 전용 컨텍스트**라 상태 전이·불변식 위반 외 부작용이 없고, 발행하거나 구독하는 도메인 이벤트가 없다. 대상 액터는 **ACTIVE 세입자(`userType=TENANT`)**로, 모든 조회는 정식 인증(ROLE_USER)을 요구한다 — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트).
+
+- **`allowedDependencies`** — 표시 텍스트 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `lifetip`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}` — 진단과 동일 근거: [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md)). 이는 `package-info.java`/`@ApplicationModule`에 반영된다. **1차 MVP 이후**(홈 부가 기능)이며 읽기 전용이라 발행·구독 도메인 이벤트는 없다.
 
 ---
 

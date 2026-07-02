@@ -63,6 +63,10 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/business/verify", "/api/v1/auth/logout")
                     .hasRole("USER")
+                    // 생활 팁 — 등록 국가 언어 번역이 온보딩 국가에 의존하므로 ACTIVE 세입자(ROLE_USER)만(US-8,
+                    // 08-life-tips.md)
+                    .requestMatchers("/api/v1/life-tips/**")
+                    .hasRole("USER")
                     // 학습 퀴즈 — 온보딩 완료(ACTIVE=ROLE_USER) 전용. 세입자 한정은 응용 계층에서 검증(ADR-0035)
                     .requestMatchers("/api/v1/quizzes/**")
                     .hasRole("USER")

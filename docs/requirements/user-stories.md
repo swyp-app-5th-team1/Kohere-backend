@@ -4,7 +4,7 @@
 
     # User Stories & Acceptance Criteria
 
-> Kohere 핵심 기능(7종)의 **백엔드 유저 스토리**와 인수 조건(AC, Given/When/Then)이다.
+> Kohere 핵심 기능(8종)의 **백엔드 유저 스토리**와 인수 조건(AC, Given/When/Then)이다.
 > 작성 형식: [user-story-template](user-story-template.md). 각 기능의 API는 [api 스펙](../api/specs/)으로 연결된다.
 > 에러 코드/형식은 [error-response-guide](../api/error-response-guide.md), 설계 규약은 [api-design-guide](../api/api-design-guide.md)를 따른다.
 
@@ -17,6 +17,7 @@
 - 5. 커뮤니티 (게시판 · 동네친구) — [API 스펙](../api/specs/05-community.md)
 - 6. 게이미피케이션 (퀴즈) — [API 스펙](../api/specs/06-gamification.md)
 - 7. 신고 처리 — [API 스펙](../api/specs/07-reports.md)
+- 8. 생활 팁 (주제별 생활 정보) — [API 스펙](../api/specs/08-life-tips.md) *(스펙 작성 예정 · 이슈 #79)*
 
 ---
 
@@ -1418,3 +1419,119 @@ Given 클라이언트가
 When  /api/v1/reports/reasons 에 POST 등 미허용 메서드로 요청하면
 Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 ```
+
+## 8. 생활 팁 (주제별 생활 정보)
+
+> 관련 API 스펙: [08-life-tips](../api/specs/08-life-tips.md) *(작성 예정 · 이슈 #79)*
+
+온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
+
+**번역이 이 기능의 바탕이다** — 주제명·제목·내용 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 사진 `imageUrl`은 언어 무관 불변이고, 표시 텍스트만 언어별이다.
+
+> **인증·상태 게이트 기준**: 표시 언어를 **등록 국가에서 도출**하려면 온보딩으로 국가·언어가 확정된 사용자여야 한다. 따라서 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다(임대인·온보딩 미완료 사용자는 등록 국가가 없어 대상이 아니다) — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+
+> **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 모듈 경계(`lifetip` 신설 여부)·저장소·MVP 편입 시점 확정은 이슈 #79에서 다룬다.
+
+### US-8-1 — 생활 팁 주제 목록 조회
+
+**As a** 온보딩을 마친(ACTIVE) 세입자(외국인) 사용자
+**I want** 생활 팁이 어떤 주제로 나뉘어 있는지 주제 목록을 내 언어로 조회하고
+**So that** 관심 있는 주제를 골라 관련 생활 정보를 찾아 들어갈 수 있다
+
+- **우선순위**: Mid (홈 진입 콘텐츠, 보호 핵심(진단·추천) 아님)
+- **관련 NFR**: 국제화(i18n — 등록 국가 기반 번역·`en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
+- **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)은 언어-키 맵으로 임베드된다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`을 채워 노출 순서대로 반환한다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 주제 목록을 내 언어로 조회
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `200 OK`와 함께 `topics[]`(각 `code`(UPPER_SNAKE), 노출 순서대로의 `name` — 일본어로 번역된 표시명)를 공통 래퍼로 반환하며, 페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** 주제 표시명이 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `code`는 언어와 무관하게 동일하다
+- 시나리오: 상태 게이트 — 온보딩 미완료
+
+  - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다(정식 인증 ROLE_USER=ACTIVE만 허용)
+- 시나리오: 인증 누락
+
+  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **When** `GET /api/v1/life-tips/topics`를 호출한다
+  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+
+### US-8-2 — 특정 주제의 생활 팁(제목·내용·사진) 목록 조회
+
+**As a** 특정 주제의 생활 정보를 보려는 ACTIVE 세입자(외국인) 사용자
+**I want** 고른 주제에 속한 생활 팁(제목·내용·사진) 전체를 내 언어로 한 번에 받고
+**So that** 그 주제의 정보를 앱을 새로 배포하지 않고도 최신 큐레이션으로 읽을 수 있다
+
+- **우선순위**: Mid
+- **관련 NFR**: 국제화(i18n — 제목·내용 번역·`en` 폴백), 일관성(주제-팁 참조 무결성), 성능(주제당 팁 수가 제한적이라 전체 반환)
+- **백엔드 관점**: 생활 팁(`LifeTip`)은 하나의 주제(`topicCode`)에 속하며(주제 : 팁 = 1 : N), `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 클라이언트가 주제 `code`를 path로 지정해 `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출하면, 서버가 그 주제의 팁 전체를 노출 순서(`order`)대로 조립해 반환한다 — 각 팁의 `title`·`content`는 `getLanguage(userId)`로 정한 언어 키(없으면 `en`)로 채우고 `imageUrl`은 그대로 싣는다. 주제당 팁 수가 제한적이므로 페이지네이션 없이 전체 리스트를 한 번에 반환한다("해당 주제에 맞는 제목-내용-사진의 모든 리스트"). 존재하지 않는 주제 `code`는 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약). 사진이 없는 팁은 `imageUrl`을 `null`(또는 생략)로 둔다.
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 주제별 팁 전체 조회
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자와, 팁 3건이 속한 주제(`code=MOVING_IN`)가 있다
+  - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
+  - **Then** `200 OK`와 함께 `tips[]`(각 `id`, 일본어로 번역된 `title`·`content`, `imageUrl`)가 노출 순서대로 3건 모두 반환되며, 페이지 객체 없이 전체 배열을 한 번에 준다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 ACTIVE 세입자가 위 주제를 조회한다
+  - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
+  - **Then** 각 팁의 `title`·`content`가 영어(`en`)로 폴백되어 `200 OK`로 반환된다(에러 아님), `imageUrl`은 언어와 무관하게 동일하다
+- 시나리오: 경계 — 사진 없는 팁
+
+  - **Given** 조회한 주제에 사진이 없는 팁이 포함되어 있다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** 해당 팁의 `imageUrl`이 `null`(또는 생략)로 반환되고 나머지 필드(`title`·`content`)는 정상 노출된다
+- 시나리오: 경계 — 존재하지 않는 주제
+
+  - **Given** 경로의 `{topicCode}`가 카탈로그에 없다
+  - **When** `GET /api/v1/life-tips/topics/UNKNOWN_TOPIC/tips`를 호출한다
+  - **Then** `404 Not Found`와 `error.code=LIFE_TIP_TOPIC_NOT_FOUND`를 받는다
+- 시나리오: 상태 게이트 — 온보딩 미완료
+
+  - **Given** PENDING/TERMS_AGREED 상태(ROLE_ONBOARDING 토큰)의 사용자다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `403 Forbidden`과 `error.code=AUTH_ONBOARDING_REQUIRED`를 받는다
+- 시나리오: 인증 누락
+
+  - **Given** Authorization 헤더가 없거나 토큰이 만료/위조되었다
+  - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
+  - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
+
+### US-8-3 — 사용자 국가 기반 생활 팁 번역 제공
+
+**As a** 한국어가 익숙하지 않은 ACTIVE 세입자(외국인) 사용자
+**I want** 주제명·제목·내용을 내 국가(언어)에 맞게 번역된 텍스트로 받고
+**So that** 모국어 또는 영어로 생활 정보를 이해할 수 있다
+
+- **우선순위**: High (외국인 대상 서비스의 핵심 접근성 — 이 기능의 바탕)
+- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 `en` 폴백), 보안(본인 등록 국가 기반 — 온보딩 수집값)
+- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 번역 기준은 **사용자 등록 국가**(온보딩 수집값)이고, 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+
+**AC (Given / When / Then)**
+
+- 시나리오: 정상 — 국가에 맞는 번역 제공
+
+  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 주제 목록 또는 주제별 팁을 조회한다
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 주제명·제목·내용 표시 텍스트가 일본어로 번역되어 반환되고, `code`/`id`·`imageUrl`은 언어와 무관하게 동일하다
+- 시나리오: 폴백 — 미지원 언어
+
+  - **Given** 번역이 준비되지 않은 국가/언어의 사용자다(또는 국가→언어 매핑 미정의)
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 기본 언어(영어 `en`)로 폴백해 `200 OK`로 반환한다(에러 아님)
+- 시나리오: 언어 결정 출처 — 헤더 무관
+
+  - **Given** 사용자가 `Accept-Language`를 다른 값으로 보내도 등록 국가는 일본이다
+  - **When** 생활 팁 조회 엔드포인트를 호출한다
+  - **Then** 응답 언어는 헤더와 무관하게 등록 국가(일본어)로 결정된다(번역 언어 출처는 `user`의 `countries.lang`)

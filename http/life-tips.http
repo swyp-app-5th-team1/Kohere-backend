@@ -1,0 +1,116 @@
+# Kohere — 생활 팁(주제별 생활 정보) 로컬 수동 테스트 (주제 목록 → 주제별 팁 → 에러 케이스)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#              └ local 프로파일이라 lifeTipTopics·lifeTips 카탈로그(5주제, ko/en/ja)가 Mongock으로 자동 시드된다.
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#      └ 로컬은 GOOGLE_CLIENT_ID 미설정이라 audience 검증을 건너뛴다 → 유효한 Google 서명 idToken 이면 통과.
+#   4) 각 요청 위의 "Send Request" 를 위에서부터 순서대로 클릭한다.
+#
+# 중요 — 생활 팁은 "온보딩 완료(ACTIVE) 세입자(TENANT)" 전용이다:
+#   · SecurityConfig 가 /api/v1/life-tips/** 를 hasRole("USER")(=ACTIVE) 로 게이팅한다.
+#   · 표시 언어를 등록 국가에서 도출하므로(getLanguage) 온보딩으로 국가가 확정된 사용자여야 한다.
+#   · 그래서 소셜로그인 직후의 "온보딩 임시 토큰"으로 호출하면 403 AUTH_ONBOARDING_REQUIRED 다(§11에서 확인).
+#   · 신규 회원은 §1~§5(약관→이메일 인증→세입자 온보딩)로 정식 access 토큰을 받은 뒤 §6부터 호출한다.
+#   · 이미 ACTIVE 세입자면 §1 응답이 바로 정식 토큰이라 §2~§5를 건너뛰고 {{login...}} 토큰으로 §6부터 해도 된다.
+#
+# 참고:
+#   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
+#   - 표시 언어는 온보딩 국가로 결정된다(country=KR→ko, 미지원 언어는 en 폴백). 아래 온보딩은 country=KR(→ko) 예시다.
+#   - 시드 주제 코드(노출 순서): MOVING_IN · ADMINISTRATION · TRANSPORT · FINANCE · HOUSING.
+#   - MOVING_IN 주제엔 팁 2건 — 전입신고(imageUrl 있음) + 공과금(imageUrl=null). 사진 nullable 확인용.
+
+@baseUrl = http://localhost:8080
+@idToken = PASTE_GOOGLE_ID_TOKEN_HERE
+@email = tester@example.com
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP 면 앱+인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 (공개) — 신규/미완료: 온보딩 임시 토큰 / 기존 ACTIVE: 정식 access·refresh
+# @name login
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+### 2. 약관 동의 (온보딩 임시 토큰) — 신규 회원만
+POST {{baseUrl}}/api/v1/auth/terms
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### 3. 이메일 인증번호 발송 — 발송 후 http://localhost:8025 (MailHog)에서 6자리 코드 확인
+POST {{baseUrl}}/api/v1/auth/email/verification-code
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 ---
+@code = 000000
+
+### 4. 이메일 인증번호 확인
+POST {{baseUrl}}/api/v1/auth/email/verify
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{code}}"
+}
+
+### 5. 세입자 온보딩 제출 — 성공 시 정식 access/refresh 발급(=ACTIVE·TENANT)
+#    country=KR 면 주제명·제목·내용이 한국어(ko)로, 그 외(예: VN)는 영어(en)로 내려온다.
+# @name onboarding
+POST {{baseUrl}}/api/v1/auth/onboarding
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Minji",
+  "lastName": "Kim",
+  "gender": "FEMALE",
+  "birthDate": "1995-03-21",
+  "country": "KR",
+  "occupation": "STUDENT",
+  "email": "{{email}}",
+  "visaType": "VISA_STUDENT"
+}
+
+### 6. 생활 팁 주제 목록 조회 — 노출 순서대로 전체(번역된 name, 비페이지)
+#    ↓ 이미 ACTIVE 회원이면 {{onboarding...}} 대신 {{login.response.body.$.data.accessToken}} 로 바꿔도 된다.
+# @name topics
+GET {{baseUrl}}/api/v1/life-tips/topics
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 7. 특정 주제의 생활 팁 조회 — §6 응답의 첫 주제 code 를 자동 전달(제목·내용·사진 전체, 비페이지)
+GET {{baseUrl}}/api/v1/life-tips/topics/{{topics.response.body.$.data.topics[0].code}}/tips
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 8. (결정적 예시) MOVING_IN 주제의 팁 — 2건: 전입신고(imageUrl 있음) + 공과금(imageUrl=null)
+GET {{baseUrl}}/api/v1/life-tips/topics/MOVING_IN/tips
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 9. (에러) 존재하지 않는 주제 — 404 LIFE_TIP_TOPIC_NOT_FOUND
+GET {{baseUrl}}/api/v1/life-tips/topics/UNKNOWN_TOPIC/tips
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 10. (에러) 인증 누락 — 401 UNAUTHENTICATED
+GET {{baseUrl}}/api/v1/life-tips/topics
+
+### 11. (에러) 온보딩 미완료(비-ACTIVE) 임시 토큰으로 조회 — 403 AUTH_ONBOARDING_REQUIRED
+#    §1 직후의 임시 토큰(신규 회원)은 ROLE_ONBOARDING 이라 거부된다. (이미 ACTIVE 회원이면 이 케이스는 재현되지 않는다.)
+GET {{baseUrl}}/api/v1/life-tips/topics
+Authorization: Bearer {{login.response.body.$.data.accessToken}}

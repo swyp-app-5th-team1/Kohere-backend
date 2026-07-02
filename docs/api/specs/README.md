@@ -13,3 +13,4 @@
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community](05-community.md) |
 | 6 | 게이미피케이션 (퀴즈) | [06-gamification](06-gamification.md) |
 | 7 | 신고 처리 | [07-reports](07-reports.md) |
+| 8 | 생활 팁 (주제별 생활 정보) | [08-life-tips](08-life-tips.md) |

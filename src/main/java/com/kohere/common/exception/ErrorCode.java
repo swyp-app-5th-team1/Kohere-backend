@@ -6,7 +6,7 @@ import org.springframework.http.HttpStatus;
  * 표준 에러 코드 카탈로그. 코드 식별자({@link #getCode()})는 enum 상수명(UPPER_SNAKE_CASE)과 같다.
  *
  * <p>새 에러는 상수 추가로 등록하고 docs/api/error-response-guide.md §4 카탈로그에 누적한다. status 매핑은 §3을 따른다. 도메인 코드는
- * 모듈별 prefix(AUTH/USER/DIAGNOSIS/LISTING/BOOKING/CHAT/POST/COMMENT/QUIZ/REPORT)를 쓴다.
+ * 모듈별 prefix(AUTH/USER/DIAGNOSIS/LISTING/BOOKING/CHAT/POST/COMMENT/QUIZ/REPORT/LIFE_TIP)를 쓴다.
  */
 public enum ErrorCode {
 
@@ -72,7 +72,10 @@ public enum ErrorCode {
   // --- 신고 (report) — docs/api/specs/07-reports.md ---
   REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "신고 대상을 찾을 수 없습니다."),
   REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신고한 대상입니다."),
-  REPORT_SELF_TARGET(HttpStatus.UNPROCESSABLE_ENTITY, "본인 콘텐츠는 신고할 수 없습니다.");
+  REPORT_SELF_TARGET(HttpStatus.UNPROCESSABLE_ENTITY, "본인 콘텐츠는 신고할 수 없습니다."),
+
+  // --- 생활 팁 (lifetip) — docs/api/specs/08-life-tips.md ---
+  LIFE_TIP_TOPIC_NOT_FOUND(HttpStatus.NOT_FOUND, "생활 팁 주제를 찾을 수 없습니다.");
 
   private final HttpStatus httpStatus;
   private final String defaultMessage;
