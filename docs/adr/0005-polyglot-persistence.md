@@ -39,6 +39,8 @@ Accepted
 > **보완([ADR-0006](./0006-refresh-token-store-redis.md), 2026-06-15):** `RefreshToken`의 **저장은 Redis**로 옮긴다(불투명 토큰의 회전·TTL 적합성, [ADR-0003](./0003-jwt-auth-after-oauth-login.md)의 "refresh 저장소" 후속이 닫힘). `auth`의 계정·소셜 연동은 MySQL 유지 — 즉 `auth`는 **MySQL(계정) + Redis(refresh)** 혼합이다.
 >
 > **제공자 확정([ADR-0018](./0018-documentdb-for-mongodb-on-aws.md), 2026-06-21):** MongoDB 호환 저장소(`listing`·`diagnosis`)의 클라우드 매니지드 제공자를 **Amazon DocumentDB**로 확정한다(Atlas 대비, AWS 네이티브 일관성). 지오공간(`2dsphere`·`$geoNear`/`$geoWithin`) 호환성 검증은 [ADR-0018](./0018-documentdb-for-mongodb-on-aws.md) Validation 참조.
+>
+> **보완([ADR-0035](./0035-gamification-quiz-random-stateless-catalog.md), 2026-07-02):** gamification의 학습 퀴즈 문항 카탈로그(quizzes)는 문서형·언어-키 맵 임베드·무상태 채점 특성상 MongoDB에 둔다(진단 카탈로그와 동종). 제출 기록·포인트 저장은 없다.
 
 세부 정책:
 

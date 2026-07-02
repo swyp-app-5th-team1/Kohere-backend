@@ -1,13 +1,16 @@
 package com.kohere.listing.application;
 
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.application.dto.MatchedPlaceResponse;
 import com.kohere.listing.domain.Favorite;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.FavoriteRepository;
@@ -21,6 +24,9 @@ import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
+import com.kohere.listing.domain.SearchPlace;
+import com.kohere.listing.domain.SearchPlaceRepository;
+import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import java.time.Instant;
@@ -46,11 +52,17 @@ public class ListingService {
   /** 지도 SDK에 한 번에 넘기는 마커가 너무 많아지지 않도록 둔 서버 방어 상한이다. */
   private static final int MAX_MAP_MARKERS = 500;
 
+  /** 키워드로 매칭된 장소 주변에서 보여줄 MVP 기본 검색 반경이다. */
+  private static final int KEYWORD_SEARCH_RADIUS_METERS = 3_000;
+
   private static final int MAX_PAGE_SIZE = 100;
+  private static final int MAX_KEYWORD_LENGTH = 50;
   private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+  private static final double METERS_PER_LATITUDE_DEGREE = 111_320.0;
 
   private final ListingRepository listingRepository;
   private final FavoriteRepository favoriteRepository;
+  private final SearchPlaceRepository searchPlaceRepository;
 
   /**
    * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
@@ -70,6 +82,21 @@ public class ListingService {
                         result, distanceMeters(result.listing(), condition)))
             .toList(),
         listings.page());
+  }
+
+  /**
+   * 학교명·지역명·지하철역명 키워드를 POI로 매칭하고, 그 장소 주변의 방 상품 카드 목록을 반환한다.
+   *
+   * <p>검색어가 POI에 없다는 것은 서버 오류가 아니므로 404를 던지지 않는다. 프론트가 "검색된 장소가 없어요" 상태를 쉽게 구분할 수 있도록 {@code
+   * matchedPlace=null}, {@code content=[]}, {@code totalElements=0}으로 200 OK를 반환한다.
+   */
+  public ListingKeywordSearchResponse searchListings(ListingKeywordSearchRequest request) {
+    String keyword = validateAndNormalizeKeyword(request.getKeyword());
+    validatePage(request.getPage(), request.getSize());
+
+    return SearchPlaceMatcher.bestMatch(keyword, searchPlaceRepository.findActive())
+        .map(place -> searchListingsAround(place, request))
+        .orElseGet(() -> emptyKeywordSearchResponse(request.getPage(), request.getSize()));
   }
 
   /** 지도 SDK 클러스터링에 사용할 개별 매물 마커 좌표를 반환한다. */
@@ -177,6 +204,7 @@ public class ListingService {
 
     return new ListingSearchCondition(
         expandedBounds(viewportBounds),
+        null,
         request.getMinBudget(),
         request.getMaxBudget(),
         request.getMinDeposit(),
@@ -203,6 +231,7 @@ public class ListingService {
     }
     return new ListingSearchCondition(
         expandedBounds(viewportBounds),
+        null,
         request.getMinBudget(),
         request.getMaxBudget(),
         request.getMinDeposit(),
@@ -215,6 +244,66 @@ public class ListingService {
         null,
         0,
         MAX_MAP_MARKERS);
+  }
+
+  /** 매칭된 POI 좌표를 중심으로 3km 반경의 매물 카드를 조회한다. */
+  private static ListingSearchCondition buildKeywordSearchCondition(
+      SearchPlace place, ListingKeywordSearchRequest request) {
+    ListingSearchCondition.BoundingBox bounds =
+        boundsAround(place.getLat(), place.getLng(), KEYWORD_SEARCH_RADIUS_METERS);
+    return new ListingSearchCondition(
+        bounds,
+        KEYWORD_SEARCH_RADIUS_METERS,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        request.getSort(),
+        place.getLat(),
+        place.getLng(),
+        request.getPage(),
+        request.getSize());
+  }
+
+  /**
+   * POI 주변 검색 결과를 응답 DTO로 조립한다.
+   *
+   * <p>목록 API와 같은 {@link ListingSummaryResponse} 카드 구조를 재사용하되, {@code distanceMeters}는 요청 bbox 중심이
+   * 아니라 검색된 POI 좌표를 기준으로 계산된다.
+   */
+  private ListingKeywordSearchResponse searchListingsAround(
+      SearchPlace place, ListingKeywordSearchRequest request) {
+    ListingSearchCondition condition = buildKeywordSearchCondition(place, request);
+    PageResponse<ListingSearchResult> listings = listingRepository.search(condition);
+    return new ListingKeywordSearchResponse(
+        new MatchedPlaceResponse(place.getType(), place.getName(), place.getLat(), place.getLng()),
+        listings.content().stream()
+            .map(
+                result ->
+                    ListingResponseMapper.toSummary(
+                        result, distanceMeters(result.listing(), condition)))
+            .toList(),
+        listings.page());
+  }
+
+  /** POI 매칭이 없을 때 프론트가 빈 상태를 바로 판단할 수 있는 페이지 응답을 만든다. */
+  private static ListingKeywordSearchResponse emptyKeywordSearchResponse(int page, int size) {
+    return new ListingKeywordSearchResponse(null, List.of(), new PageInfo(page, size, 0, 0, false));
+  }
+
+  /** keyword는 필수이며, 앞뒤 공백 제거 후 1~50자 안에 있어야 한다. */
+  private static String validateAndNormalizeKeyword(String keyword) {
+    if (keyword == null || keyword.trim().isEmpty()) {
+      throw new InvalidInputException("keyword는 필수입니다.");
+    }
+    String normalized = keyword.trim();
+    if (normalized.length() > MAX_KEYWORD_LENGTH) {
+      throw new InvalidInputException("keyword는 1자 이상 50자 이하이어야 합니다.");
+    }
+    return normalized;
   }
 
   /** 지도 좌표가 모두 있으면 유효성을 검사한 뒤 원본 지도 화면 bbox로 묶는다. */
@@ -242,6 +331,25 @@ public class ListingService {
   private static ListingSearchCondition.BoundingBox expandedBounds(
       ListingSearchCondition.BoundingBox bounds) {
     return bounds == null ? null : bounds.expandedBy(BOUNDS_EXPANSION_RATIO);
+  }
+
+  /**
+   * 중심 좌표와 반경(m)을 MongoDB 1차 후보 조회용 bbox로 바꾼다.
+   *
+   * <p>정확한 3km 판정은 저장소의 거리 계산 필터가 한 번 더 수행한다. 여기서 만든 bbox는 MongoDB가 너무 넓은 범위를 읽지 않도록 후보를 먼저 줄이는
+   * 용도다.
+   */
+  private static ListingSearchCondition.BoundingBox boundsAround(
+      double centerLat, double centerLng, int radiusMeters) {
+    double latDelta = radiusMeters / METERS_PER_LATITUDE_DEGREE;
+    double lngMeter =
+        METERS_PER_LATITUDE_DEGREE * Math.max(0.000001, Math.cos(Math.toRadians(centerLat)));
+    double lngDelta = radiusMeters / lngMeter;
+    return new ListingSearchCondition.BoundingBox(
+        clamp(centerLat - latDelta, -90.0, 90.0),
+        clamp(centerLng - lngDelta, -180.0, 180.0),
+        clamp(centerLat + latDelta, -90.0, 90.0),
+        clamp(centerLng + lngDelta, -180.0, 180.0));
   }
 
   /** bbox가 있으면 원본 지도 화면 중심 위도를 반환한다. */
@@ -293,6 +401,11 @@ public class ListingService {
   /** 경도 값이 지구 좌표 범위 안에 있는지 확인한다. */
   private static boolean isLongitude(double value) {
     return value >= -180.0 && value <= 180.0;
+  }
+
+  /** 좌표 계산 결과가 WGS84 범위를 벗어나지 않도록 자른다. */
+  private static double clamp(double value, double min, double max) {
+    return Math.max(min, Math.min(max, value));
   }
 
   /** 기준 좌표가 있으면 매물까지의 직선 거리를 미터 단위로 계산한다. */

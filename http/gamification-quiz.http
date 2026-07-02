@@ -1,0 +1,157 @@
+# Kohere — 학습 퀴즈(게이미피케이션) 로컬 수동 테스트 (랜덤 조회 → 정답 채점 → 에러 케이스)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#              └ local 프로파일이라 quizzes 카탈로그(5문항, id 4001~4005, ko/en)가 Mongock으로 자동 시드된다.
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#      └ 로컬은 GOOGLE_CLIENT_ID 미설정이라 audience 검증을 건너뛴다 → 유효한 Google 서명 idToken 이면 통과.
+#   4) 각 요청 위의 "Send Request" 를 위에서부터 순서대로 클릭한다.
+#
+# 중요 — 퀴즈는 "온보딩 완료(ACTIVE) 세입자(TENANT)" 전용이다:
+#   · SecurityConfig 가 /api/v1/quizzes/** 를 hasRole("USER")(=ACTIVE) 로 게이팅하고, 서버가 userType=TENANT 를 검사한다.
+#   · 그래서 소셜로그인 직후의 "온보딩 임시 토큰"으로 호출하면 403 AUTH_ONBOARDING_REQUIRED 다(§9에서 확인).
+#   · 신규 회원은 §1~§5(약관→이메일 인증→세입자 온보딩)로 정식 access 토큰을 받은 뒤 §6부터 호출한다.
+#   · 이미 ACTIVE 세입자면 §1 응답이 바로 정식 토큰이라 §2~§5를 건너뛰고 {{login...}} 토큰으로 §6부터 해도 된다.
+#
+# 참고:
+#   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
+#   - 정답 판정은 서버 전용이다. 조회(§6) 응답에는 correctChoice/explanation 이 없고, 채점(§7~) 응답에서만(오답 시) 내려온다.
+#   - 표시 언어는 온보딩 국가로 결정된다(country=KR→ko, 그 외 미지원 언어는 en 폴백). 아래 온보딩은 country=VN(→en 폴백) 예시다.
+
+@baseUrl = http://localhost:8080
+@idToken = PASTE_GOOGLE_ID_TOKEN_HERE
+@email = tester@example.com
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP 면 앱+인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 (공개) — 신규/미완료: 온보딩 임시 토큰 / 기존 ACTIVE: 정식 access·refresh
+# @name login
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+### 2. 약관 동의 (온보딩 임시 토큰) — 신규 회원만
+POST {{baseUrl}}/api/v1/auth/terms
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "termsOfServiceAgreed": true,
+  "privacyPolicyAgreed": true,
+  "marketingAgreed": false
+}
+
+### 3. 이메일 인증번호 발송 — 발송 후 http://localhost:8025 (MailHog)에서 6자리 코드 확인
+POST {{baseUrl}}/api/v1/auth/email/verification-code
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 ---
+@code = 000000
+
+### 4. 이메일 인증번호 확인
+POST {{baseUrl}}/api/v1/auth/email/verify
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{code}}"
+}
+
+### 5. 세입자 온보딩 제출 — 성공 시 정식 access/refresh 발급(=ACTIVE·TENANT)
+#    country=KR 로 바꾸면 이후 퀴즈가 한국어(ko)로, 그 외(예: VN)는 영어(en)로 내려온다.
+# @name onboarding
+POST {{baseUrl}}/api/v1/auth/onboarding
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Minji",
+  "lastName": "Kim",
+  "gender": "FEMALE",
+  "birthDate": "1995-03-21",
+  "country": "KR",
+  "occupation": "STUDENT",
+  "email": "{{email}}",
+  "visaType": "VISA_STUDENT"
+}
+
+### 6. 랜덤 퀴즈 조회 — 활성 풀에서 무작위 1개(사용자 언어 번역, 정답·해설 미포함)
+#    반복 호출하면 매번(무상태) 새 퀴즈가 올 수 있다. quizId 는 §7 채점 경로로 자동 전달된다.
+#    ↓ 이미 ACTIVE 회원이면 {{onboarding...}} 대신 {{login.response.body.$.data.accessToken}} 로 바꿔도 된다.
+# @name random
+GET {{baseUrl}}/api/v1/quizzes/random
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+
+### 7. 정답 제출·채점 (§6에서 받은 quizId 로) — 무상태(200 OK, 제출 기록·포인트 없음)
+#    정답이면 { correct:true } 만, 오답이면 correctChoice + explanation(번역)이 함께 온다.
+POST {{baseUrl}}/api/v1/quizzes/{{random.response.body.$.data.quizId}}/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "selectedChoice": "A"
+}
+
+### 8. (결정적 예시) 시드 퀴즈 4001 정답 제출 — A가 정답 → correct=true
+#    시드 4001: "전세 계약 시 임차인의 대항력·우선변제권을 확보해 주는 제도는?" (정답 A=확정일자)
+POST {{baseUrl}}/api/v1/quizzes/4001/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "selectedChoice": "A"
+}
+
+### 9. (결정적 예시) 시드 퀴즈 4001 오답 제출 — B → correct=false + correctChoice=A + explanation(번역)
+POST {{baseUrl}}/api/v1/quizzes/4001/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "selectedChoice": "B"
+}
+
+### 10. (에러) 허용되지 않은 보기 값 — 400 INVALID_INPUT (selectedChoice 는 A~D 만)
+POST {{baseUrl}}/api/v1/quizzes/4001/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "selectedChoice": "E"
+}
+
+### 11. (에러) 본문 해석 불가 — 400 MALFORMED_REQUEST
+POST {{baseUrl}}/api/v1/quizzes/4001/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{ "oops" }
+
+### 12. (에러) 존재하지 않는 퀴즈 채점 — 404 QUIZ_NOT_FOUND
+POST {{baseUrl}}/api/v1/quizzes/9999/answer
+Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "selectedChoice": "A"
+}
+
+### 13. (에러) 인증 누락 — 401 UNAUTHENTICATED
+GET {{baseUrl}}/api/v1/quizzes/random
+
+### 14. (에러) 온보딩 미완료(비-ACTIVE) 임시 토큰으로 조회 — 403 AUTH_ONBOARDING_REQUIRED
+#    §1 직후의 임시 토큰(신규 회원)은 ROLE_ONBOARDING 이라 거부된다. (이미 ACTIVE 회원이면 이 케이스는 재현되지 않는다.)
+GET {{baseUrl}}/api/v1/quizzes/random
+Authorization: Bearer {{login.response.body.$.data.accessToken}}

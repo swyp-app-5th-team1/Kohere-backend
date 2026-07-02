@@ -28,7 +28,7 @@
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | `GreetingMessage` | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | ✅ |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
-| [`gamification`](#8-gamification--퀴즈포인트) | `Quiz`, `QuizSubmission`, `PointHistory` | `QuizChoice` | 이후 |
+| [`gamification`](#8-gamification--퀴즈) | `Quiz` | `QuizChoice` | 이후 |
 | [`report`](#9-report--신고-처리) | `Report` | `ReportTarget`, `ReportDetail` | 이후 |
 
 > `common`은 공유 커널(애그리거트 없음): 응답 래퍼·예외 표준만 제공.
@@ -748,76 +748,46 @@
 
 ---
 
-## 8. `gamification` — 퀴즈·포인트
+## 8. `gamification` — 퀴즈
 
-> [API 스펙](../api/specs/06-gamification.md) · [시퀀스](sequence-diagrams/06-gamification/README.md) · `allowedDependencies = {common}` · **1차 MVP 이후**
+> [API 스펙](../api/specs/06-gamification.md) · [시퀀스](sequence-diagrams/06-gamification/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
 
-오늘의 퀴즈(하루 1문제, 4지선다)를 제공하고, 제출을 서버가 채점해 정답이면 포인트를 적립하며, 사용자별 포인트 합계·적립 내역을 제공한다.
+외국인 임차인(`userType=TENANT`·`status=ACTIVE`) 대상 학습형 퀴즈를 제공한다 — 요청마다 활성 풀에서 4지선다 퀴즈 1개를 **랜덤 선정**해 사용자 언어로 번역해 내려주고, 사용자가 보기를 선택해 답하면 서버가 저장된 정답과 대조해 채점한다. **무제한 재응시·무상태**로, 제출·적립·이력·이벤트를 남기지 않으며(멱등·재응시 가능), 하루 1회 제한이나 오늘의 퀴즈·포인트 개념은 없다.
 
-**`Quiz`** — 특정 날짜에 노출되는 4지선다 오늘의 퀴즈(애그리거트 루트). 식별자 `id`, 비즈니스 키 `quizDate`. [값 객체: `QuizChoice`]
-
-**속성:**
-
-| 속성 | 타입 | 설명 |
-| --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `quizDate` | LocalDate | 퀴즈가 노출되는 날짜(날짜당 1개) |
-| `question` | String | 문제 본문 |
-| `choices` | `List<QuizChoice>` | 4지선다 보기(키 A~D, 보기 텍스트) |
-| `correctChoice` | enum `ChoiceKey` | 정답 보기 키(제출을 마친 사용자에게만 공개) |
-| `explanation` | String | 정답 해설(제출을 마친 사용자에게만 공개) |
-
-**불변식:** `quizDate`는 전 퀴즈에 걸쳐 유일(날짜당 정확히 1개); `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; `correctChoice`·`explanation`은 제출을 마친 주체에게만 노출(미제출자에겐 가림); 서버 기준 오늘 퀴즈가 없으면 조회·제출 실패(`404 QUIZ_NOT_FOUND`); 제출은 `quizDate`가 오늘인 퀴즈에만(`422 QUIZ_NOT_TODAY`).
-
-**`QuizSubmission`** — 한 사용자의 하루 1회 제출 결과 스냅샷(채점·적립 확정값) 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, quizDate)`.
+**`Quiz`** — 활성 풀에서 랜덤 노출되는 4지선다 퀴즈 콘텐츠(콘텐츠 카탈로그 애그리거트 루트). 식별자 `id`만 가지며(날짜·비즈니스 키 없음). [값 객체: `QuizChoice`]
 
 **속성:**
 
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `userId` | 식별자 | 제출 주체 → `User` 식별자 참조 |
-| `quizId` | 식별자 | 제출 대상 → `Quiz` 식별자 참조 |
-| `quizDate` | LocalDate | 제출 대상 퀴즈의 날짜(하루 1회 판정 기준값) |
-| `selectedChoice` | enum `ChoiceKey` | 사용자가 선택한 보기 키 |
-| `correct` | boolean | 서버 채점 결과(정답 여부) |
-| `earnedPoint` | int | 이 제출로 적립된 포인트(오답이면 0) |
-| `submittedAt` | Instant | 제출·채점 확정 시각(UTC) |
+| `id` | 식별자 | 애그리거트 식별자(`quizId`) |
+| `question` | 인라인 언어-키 맵 | 문제 본문 — `{ "en": .., "ja": .., "ko": .. }` 언어 코드를 키로 하는 맵. 서버가 `getLanguage`로 얻은 표시 언어 키로 선택(부재 시 영어(`en`) 폴백) |
+| `choices` | `List<QuizChoice>` | 4지선다 보기(키 A~D, 보기 텍스트). 키 A~D는 언어 무관 |
+| `correctChoice` | enum `ChoiceKey` | 정답 보기 키. `GET random`에는 절대 포함하지 않고 **오답 응답에만** 반환 |
+| `explanation` | 인라인 언어-키 맵 | 오답 사유(해설) — `{ "en": .., "ja": .. }` 언어-키 맵. 서버가 표시 언어 키로 선택(부재 시 `en` 폴백), **오답 응답에만** 반환 |
+| `active` | boolean | 랜덤 풀 게이팅(`true`인 퀴즈만 랜덤 선정 대상) |
 
-**불변식:** `(userId, quizDate)`는 유일 → 사용자당 같은 날 제출 1건만(동시·재시도 `409 QUIZ_ALREADY_SUBMITTED`, 멱등); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `correct`는 클라이언트 입력이 아니라 `Quiz.correctChoice`와 대조한 서버 판정; `correct=true`면 `earnedPoint`는 정답 적립 단위, `false`면 0; 채점·제출 기록·정답 적립은 하나의 원자적 단위로 처리(정답은 정확히 1건 적립, 중복 없음); 제출은 오늘 퀴즈에만(`422 QUIZ_NOT_TODAY`); 결과는 제출을 마친 본인에게만 노출.
-
-**`PointHistory`** — 포인트 적립 1건을 기록하는 추가 전용(append-only) 애그리거트 루트. 식별자 `id`.
-
-**속성:**
-
-| 속성 | 타입 | 설명 |
-| --- | --- | --- |
-| `id` | 식별자 | 애그리거트 식별자 |
-| `userId` | 식별자 | 적립 귀속 주체 → `User` 식별자 참조 |
-| `amount` | int | 적립 포인트(양수, **포인트 정수이며 KRW 금액 아님**) |
-| `reason` | enum `PointReason` | 적립 사유 |
-| `createdAt` | Instant | 적립 시각(UTC) |
-
-**불변식:** 추가 전용(기록 후 수정·삭제 없음); `amount`는 양수(현재 범위에 차감·음수 없음); 정답 제출당 정확히 1건의 `PointHistory`(`QUIZ_CORRECT` 사유), 오답은 미생성; 사용자 포인트 합계는 별도 잔액이 아니라 해당 `userId`의 `amount` 합으로 도출(집계가 유일한 진실 원천); 조회는 인증 주체 `userId`로만 필터링.
+**불변식:** `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; 보기 키 A~D는 **언어 무관**(채점은 키로 판정); `question`·`choices[].text`·`explanation`은 **인라인 언어-키 맵**으로 저장하고 서버가 `getLanguage` 표시 언어 키로 골라 응답(해당 언어 키 부재 시 영어(`en`) 폴백; diagnosis와 동일 i18n 경로); **채점은 무상태** — 서버가 `selectedChoice`를 `Quiz.correctChoice`와 대조해 정답이면 `{ quizId, selectedChoice, correct:true }`, 오답이면 `{ quizId, selectedChoice, correct:false, correctChoice, explanation }`을 반환하며 제출·적립·이력·이벤트를 남기지 않는다(멱등·재응시 가능); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `GET random`에는 `correctChoice`·`explanation`을 포함하지 않는다(정답 응답에도 미포함 — 정답 시 `explanation` 동봉 여부는 **(확인 필요)**); `quizId`가 없거나 활성 풀이 공백이면 `404 QUIZ_NOT_FOUND`; **접근은 외국인 임차인 활성 사용자(`userType=TENANT`·`status=ACTIVE`)로 제한** — 비-`ACTIVE`는 `403 AUTH_ONBOARDING_REQUIRED`(01-auth-onboarding 교차 참조). 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 두어 `TENANT`·`ACTIVE` 강제는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검사가 필요하며 아직 **미구현·(확인 필요)**. "랜덤"은 활성 풀에서의 **랜덤 선정**을 뜻하고 동적 생성이 아니다 **(확인 필요)**.
 
 **값 객체(VO):**
 
 | 이름 | 속성 | 타입 | 설명 |
 | --- | --- | --- | --- |
-| `QuizChoice` | `key` | enum `ChoiceKey` | 4지선다 보기 키(A~D). 동일 `Quiz` 내 유일 |
-| | `text` | String | 보기 텍스트(비어 있지 않음) |
+| `QuizChoice` | `key` | enum `ChoiceKey` | 4지선다 보기 키(A~D). 동일 `Quiz` 내 유일, **언어 무관**(채점 기준) |
+| | `text` | 인라인 언어-키 맵 | 보기 텍스트 — `{ "en": .., "ja": .. }` 언어-키 맵(각 언어 값 비어 있지 않음). 서버가 `getLanguage` 표시 언어 키로 선택(부재 시 `en` 폴백) |
 
 **상태(enum):**
 
 | enum | 값 | 의미 |
 | --- | --- | --- |
-| `ChoiceKey` | `A` | 4지선다 첫 번째 보기 |
+| `ChoiceKey` | `A` | 4지선다 첫 번째 보기(코드는 언어 무관) |
 | | `B` | 두 번째 보기 |
 | | `C` | 세 번째 보기 |
 | | `D` | 네 번째 보기 |
-| `PointReason` | `QUIZ_CORRECT` | 퀴즈 정답 적립(현재 범위의 유일 사유) |
 
-**협력 / 이벤트:** 제출·적립 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 포인트 합계·내역은 인증 주체 `userId`로 필터링한 본 모듈 내부 집계로 제공한다. 외부 모듈이 포인트 적립을 알아야 하면 공개 쿼리 또는 적립 도메인 이벤트로 협력한다.
+> 퀴즈 콘텐츠는 `Quiz` 애그리거트를 **MongoDB `quizzes` 컬렉션**(`diagnosisQuestions`와 동종의 문서 카탈로그, ADR-0005 폴리글랏 — 퀴즈=콘텐츠/문서 → MongoDB)에 보유한다. 표시 문자열(`question`·`choices[].text`·`explanation`)은 분리 컬렉션 없이 **같은 도큐먼트 안에 인라인 언어-키 맵으로 임베드**하고(언어 코드 키), 보기 키 `A`~`D`(`ChoiceKey`)는 언어 무관 불변으로 채점 기준이다. `active` 불리언이 랜덤 풀을 게이트하며, 시드는 Mongock `@ChangeUnit`으로 적재한다. 제출 테이블·포인트 테이블은 없다(무상태 채점).
+
+**협력 / 이벤트:** 채점 귀속 주체는 `user`를 식별자(`userId`)로만 참조한다(ADR-0002). 번역에 쓸 **표시 언어는 `user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출, 부재 시 영어(`en`) 폴백) — `user`를 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다(ADR-0002 Decision 5). 이로써 **모듈 의존 `gamification → user`를 추가**한다(위 `allowedDependencies` 항목). 퀴즈 콘텐츠는 **MongoDB 문서 카탈로그**(`diagnosisQuestions`와 동종, ADR-0005)로 제공하며, 채점은 **무상태**라 제출·적립·이벤트를 남기지 않는다.
 
 ---
 

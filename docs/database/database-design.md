@@ -20,7 +20,7 @@
 | [`booking`](#4-5-booking) | **저장소(추후 결정)** | `bookings` | ✅ |
 | [`chat`](#4-6-chat) | **저장소(추후 결정)** | `chat_rooms`·`messages`·`chat_room_members` | ✅ |
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
-| [`gamification`](#4-8-gamification) | **저장소(추후 결정)** | `quizzes`(+`quiz_choices`)·`quiz_submissions`·`point_histories` | 이후 |
+| [`gamification`](#4-8-gamification) | **MongoDB** | `quizzes`(문항·선택지 카탈로그 — 인라인 언어-키 맵·무상태 채점) | 이후 |
 | [`report`](#4-9-report) | **저장소(추후 결정)** | `reports` | 이후 |
 
 > `access` 토큰은 무상태 JWT라 저장소에 없다. `common`은 공유 커널(스키마 없음).
@@ -57,18 +57,18 @@
 | 날짜(시각 없음) | `DATE` | ISODate(date) | `date` |
 | 시각(UTC) | `DATETIME(6)` | ISODate | `datetime` |
 | 불리언 | `BOOLEAN`(`TINYINT(1)`) | `bool` | `bool` |
-| 금액(KRW)·카운트·포인트 | `INT`/`BIGINT` | `int` | `int` |
+| 금액(KRW)·카운트 | `INT`/`BIGINT` | `int` | `int` |
 | 값 객체(VO) | 컬럼 묶음으로 평탄화 | 임베드 객체 | 임베드/평탄화 |
 | 좌표 | — | GeoJSON `Point`(`[lng,lat]`) + `2dsphere` | — |
 
 - **enum**: 문자열 **UPPER_SNAKE** 저장. MySQL 네이티브 `ENUM` 미사용(값 추가 진화 용이). 값 카탈로그는 [domain-model](../architecture/domain-model.md) 각 모듈 "상태(enum)". 회원 역할 `UserType`은 `TENANT`(세입자/외국인)·`LANDLORD`(임대인) 두 값이며 `users.user_type`에 `VARCHAR(16)`로 저장한다(DEFAULT `TENANT`, 온보딩 제출로 확정·불변).
-- **금액**: 원(KRW) 정수, 소수점 없음. **포인트**(`gamification`)는 정수이되 KRW 금액이 아니다.
+- **금액**: 원(KRW) 정수, 소수점 없음.
 - **시각**: UTC ISO-8601, 저장도 UTC([api-design-guide §6](../api/api-design-guide.md)).
 
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `post_likes(post_id,user_id)` · `quiz_submissions(user_id,quiz_date)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `users(nickname)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -311,6 +311,22 @@
 - `availableCount=0`이어도 매물/방 상품은 유지하며, 다음 입주 가능일을 알 수 있으면 `nextAvailableFrom`에 저장한다.
 - 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 참고용으로 둔다.
 
+`searchPlaces`
+
+키워드 검색용 POI(Point Of Interest) 사전 컬렉션이다. 사용자가 학교명·지역명·지하철역명을 입력하면 서버가 `name`과 `aliases`를 비교해
+가장 적절한 장소 1개를 찾고, 해당 좌표 기준 3km 이내 매물을 조회한다.
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · 사람이 읽기 쉬운 고정 코드(예: `UNIV_YONSEI`) |
+| `type` | string (enum `SearchPlaceType`) | `UNIVERSITY`/`SUBWAY_STATION`/`REGION` |
+| `name` | string | 공식 장소명. 응답의 `matchedPlace.name` |
+| `aliases` | string[] | 사용자가 입력할 수 있는 별칭(예: `연세`, `연세대`, `yonsei`) |
+| `lat` | double | 대표 위도(WGS84) |
+| `lng` | double | 대표 경도(WGS84) |
+| `active` | boolean | false면 검색 후보에서 제외 |
+| `priority` | int | 같은 점수로 매칭될 때 대표 장소 우선순위 |
+
 `favorites`
 
 | 필드 | 타입 | 키/제약 |
@@ -339,6 +355,7 @@
 | `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |
 | `listings_status_room_available_count` | `status, roomOffers.inventory.availableCount` | 복합/multikey | 현재 계약 가능한 방 상품이 있는 매물 검색 |
 | `listings_status_arc_required` | `status, propertyPolicies.arcRequired` | 복합 | ARC 미보유 사용자 추천/필터 |
+| `search_places_active_priority_name` | `active, priority desc, name` | 복합 | 활성 POI 후보 목록 조회 |
 | `favorites_user_listing` | `userId, listingId` | UNIQUE | 중복 찜 불가·토글 멱등 |
 | `favorites_user_favoritedAt` | `userId, favoritedAt` | 복합(desc) | 내 찜 목록 |
 | `recentListings_user_listing` | `userId, listingId` | UNIQUE | 재조회 upsert |
@@ -530,17 +547,29 @@
 
 ### 4-8. `gamification`
 
-> 스토어: **저장소(추후 결정)** — **논리 스키마**. **1차 MVP 이후**. domain-model `Quiz`(+VO `QuizChoice`)·`QuizSubmission`·`PointHistory`.
+> 스토어: **MongoDB** (문서형 카탈로그·인라인 언어-키 맵·무상태 채점). **1차 MVP 이후**. domain-model `Quiz`(+VO `QuizChoice`).
 
-`quizzes`: `id` PK / `quiz_date` **UNIQUE**(날짜별 1개·조회키) / `question` text / `correct_choice`(enum `ChoiceKey`, 제출자 공개) / `explanation` text(제출자 공개). 보기 `choices`(VO `QuizChoice`)는 **임베드**(`[{key,text}]`) 또는 별도 테이블 `quiz_choices`로 매핑(store 확정 시).
-`quiz_submissions`: `id` PK / `user_id`(값 참조) / `quiz_id` FK→quizzes / `quiz_date` / `selected_choice`(enum `ChoiceKey`) / `correct` / `earned_point`(≥0, 오답 0) / `submitted_at`. **UNIQUE `(user_id,quiz_date)`**.
-`point_histories`: `id` PK / `user_id`(값 참조) / `amount`(>0, 포인트≠KRW) / `reason`(enum `PointReason`) / `created_at`(append-only).
+#### 학습 퀴즈 카탈로그 — `quizzes`
 
-**인덱스**: UNIQUE `quizzes(quiz_date)` / (별도 테이블 시) INDEX `quiz_choices(quiz_id)` / UNIQUE `quiz_submissions(user_id,quiz_date)`(하루 1회·멱등) + INDEX `(user_id,quiz_id)`(제출 조회) / INDEX `point_histories(user_id,created_at)`(내역·합계).
+외국인 세입자(`userType=TENANT`·`status=ACTIVE`) 전용 학습 퀴즈의 문항·선택지·정답·오답 사유를 영속하는 카탈로그 컬렉션이다(US-6-1·US-6-2·US-6-3). 매 요청은 활성 문항 중 **무작위 4지선다** 1개를 서빙하고, 사용자가 보기를 클릭하면 서버가 채점한다 — **무제한 반복·무상태 채점**(제출·포인트 비영속, 멱등·재플레이). 표시 문자열(번역)은 별도 컬렉션 없이 도큐먼트 내부 `question`·`choices[].text`·`explanation`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 시드/마이그레이션으로 적재, 운영 중 `active`로 가변.
 
-- **하루 1회 멱등**: `(user_id,quiz_date)` 유니크 + 채점·적립 단일 트랜잭션(`correct=true`만 `point_histories` 1행 append). Mongo로 결정 시 단일 트랜잭션 보장 재검토.
-- **교차 모듈 no-FK**(`user_id`→user) / 같은 모듈 `quiz_id`→quizzes FK.
-- **합계**: `totalPoint`는 `SUM(amount)` 집계(별도 잔액 컬럼 없음). 차감은 범위 밖.
+`quizzes`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | Long | PK · 명시 시드값(예: `4001`~) · `quizId`로 노출·채점 경로에 사용 |
+| `question` | object | NOT NULL · 문항 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 서버가 `getLanguage` 표시 언어 키 선택, 없으면 `en` 폴백 |
+| `choices` | object[] | NOT NULL · 선택지 배열 · 각 항목은 `key`(`A`\|`B`\|`C`\|`D`, 언어 불변·채점 키)와 `text`(표시 문자열의 **인라인 언어-키 맵**)를 보유 |
+| `correctChoice` | string | NOT NULL · enum `ChoiceKey`(`A`~`D`) · 서버 채점용 · `GET /quizzes/random` 비노출 |
+| `explanation` | object | NOT NULL · 오답 사유 표시 문자열의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`) — 오답 시 노출 |
+| `active` | bool | NOT NULL DEFAULT true · 비활성 문항은 랜덤 풀에서 제외 |
+
+**인덱스**: PK `_id` / INDEX `(active)`(활성 문항 랜덤 풀 선택).
+
+- **무상태 채점**: 제출·포인트를 영속하지 않는다(멱등·재플레이 가능). `GET /api/v1/quizzes/random`이 활성 문서 1개를 무작위로 골라 `{ quizId, question, choices:[{key,text}] }`(번역)로 내려주고(`correctChoice`·`explanation` 비노출), `POST /api/v1/quizzes/{quizId}/answer`가 `selectedChoice`를 저장된 `correctChoice`와 대조해 채점한다 — 정답 `{ correct:true }`, 오답 `{ correct:false, correctChoice, explanation }`(오답 사유 번역). 제출 기록·포인트·`201 Created`/`Location` 없음.
+- **교차 모듈 no-FK**: 표시 언어는 **user 모듈 공개 query(`getLanguage(userId)`)로 취득**하고 `user`가 등록 국가→언어(`countries.lang`)로 도출한다(값 참조, 없으면 `en` 폴백) → 모듈 의존 `gamification`→`user`.
+- **대상자 게이트**: 외국인 세입자(`TENANT`·`ACTIVE`) 전용. `SecurityConfig`의 `/api/v1/quizzes/**`를 `hasRole("USER")`(ACTIVE)로 게이팅하고, 응용 계층(`GamificationService`)에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`(`TenantOnlyException`).
+- **`QUIZ_NOT_FOUND`(404)**: `quizId`가 없거나(잘못된 식별자) 활성 풀이 공백일 때. (**확인 필요**) 정답 시 `explanation` 반환 여부(현재 미반환), `random`=활성 풀 무작위 **SELECTION**(동적 생성 아님).
 
 ### 4-9. `report`
 
@@ -575,7 +604,7 @@
 
 영속 물리화 전 닫아야 할 **저장소·인프라 결정**(도메인 설계는 [domain-model](../architecture/domain-model.md)에서 확정됨).
 
-1. **저장소 ADR 4건**: `booking`·`chat`·`gamification`·`report`의 스토어(MySQL vs MongoDB) 미결정 → 식별자(BIGINT vs ObjectId)·임베드 VO(`booking_card`/`listing_snapshot`/`choices`) 표현·단일 트랜잭션 보장이 이에 종속.
+1. **저장소 ADR 3건**: `booking`·`chat`·`report`의 스토어(MySQL vs MongoDB) 미결정 → 식별자(BIGINT vs ObjectId)·임베드 VO(`booking_card`/`listing_snapshot`) 표현·단일 트랜잭션 보장이 이에 종속.
 2. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
 3. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
 4. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.

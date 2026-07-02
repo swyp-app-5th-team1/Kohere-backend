@@ -35,6 +35,7 @@ import org.springframework.stereotype.Repository;
 public class ListingRepositoryImpl implements ListingRepository {
 
   private static final int MAX_PAGE_SIZE = 100;
+  private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
   private final ListingMongoRepository mongoRepository;
   private final MongoTemplate mongoTemplate;
@@ -296,11 +297,13 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (condition.sort() == ListingSort.DISTANCE) {
       return mongoTemplate.find(query, ListingDocument.class).stream()
           .map(ListingMongoMapper::toDomain)
+          .filter(listing -> withinRadius(listing, condition))
           .sorted(Comparator.comparingDouble(listing -> distanceSquared(listing, condition)))
           .toList();
     }
     return mongoTemplate.find(query.with(defaultSort()), ListingDocument.class).stream()
         .map(ListingMongoMapper::toDomain)
+        .filter(listing -> withinRadius(listing, condition))
         .toList();
   }
 
@@ -359,6 +362,29 @@ public class ListingRepositoryImpl implements ListingRepository {
     double lat = listing.getLocation().latitude() - condition.centerLat();
     double lng = listing.getLocation().longitude() - condition.centerLng();
     return lat * lat + lng * lng;
+  }
+
+  /**
+   * 키워드 검색처럼 중심 좌표와 반경이 있는 조회에서 실제 반경 안의 매물만 남긴다.
+   *
+   * <p>MongoDB에는 먼저 bbox 조건으로 후보를 줄이고, 이 메서드에서 하버사인 거리로 3km 이내 여부를 정확히 한 번 더 확인한다. 일반 목록·지도 조회처럼
+   * 반경이 없는 조건은 그대로 통과한다.
+   */
+  private static boolean withinRadius(Listing listing, ListingSearchCondition condition) {
+    return !condition.hasRadius() || distanceMeters(listing, condition) <= condition.radiusMeters();
+  }
+
+  /** 두 WGS84 좌표 사이의 직선 거리를 미터 단위로 계산한다. */
+  private static double distanceMeters(Listing listing, ListingSearchCondition condition) {
+    double lat1 = Math.toRadians(condition.centerLat());
+    double lat2 = Math.toRadians(listing.getLocation().latitude());
+    double latDelta = lat2 - lat1;
+    double lngDelta = Math.toRadians(listing.getLocation().longitude() - condition.centerLng());
+    double a =
+        Math.sin(latDelta / 2.0) * Math.sin(latDelta / 2.0)
+            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2.0) * Math.sin(lngDelta / 2.0);
+    double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
+    return EARTH_RADIUS_METERS * c;
   }
 
   /**

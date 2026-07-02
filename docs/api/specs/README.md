@@ -11,5 +11,5 @@
 | 3 | 매물 탐색 · 찜 | [03-listings-favorites](03-listings-favorites.md) |
 | 4 | 신청 · 문의 (인앱 채팅) | [04-booking-inquiry-chat](04-booking-inquiry-chat.md) |
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community](05-community.md) |
-| 6 | 게이미피케이션 (퀴즈 · 포인트) | [06-gamification](06-gamification.md) |
+| 6 | 게이미피케이션 (퀴즈) | [06-gamification](06-gamification.md) |
 | 7 | 신고 처리 | [07-reports](07-reports.md) |

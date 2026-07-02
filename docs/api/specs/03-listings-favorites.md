@@ -168,6 +168,9 @@ Request Body: 없음
 
 - 설명: 학교명·지역명·지하철역명을 키워드로 매칭해 해당 위치와 주변 매물을 오프셋 페이지로 반환한다.
 - 인증: 선택
+- MVP 구현: 검색 가능한 장소는 MongoDB `searchPlaces` POI 사전으로 관리한다. 서버는 `name`/`aliases`를 비교해
+  `정확히 일치 > 별칭 일치 > 앞부분 일치 > 포함 일치` 순으로 가장 적절한 장소 1개를 고른다.
+- MVP 구현: 매칭된 장소 좌표 기준 **3km 이내** 공개 방 상품 카드를 반환하며, 기본 정렬은 거리순이다.
 
 Query 파라미터:
 
@@ -207,6 +210,8 @@ Request Body: 없음
 
 - `matchedPlace.type`은 `MatchedPlaceType`(`UNIVERSITY`/`REGION`/`SUBWAY_STATION`) 중 하나다.
 - 매칭 결과가 없으면 `matchedPlace=null`, `content=[]`로 `200 OK`(404 아님).
+- `matchedPlace=null`이면 프론트는 "검색된 장소가 없어요" 상태를 표시할 수 있다. `matchedPlace`가 있고 `content=[]`이면
+  장소는 찾았지만 3km 이내 매물이 없는 상태다.
 
 발생 가능한 에러:
 

@@ -1,47 +1,87 @@
 package com.kohere.gamification.application;
 
-import com.kohere.common.response.PageResponse;
-import com.kohere.gamification.application.dto.PointHistoryResponse;
-import com.kohere.gamification.application.dto.PointSummaryResponse;
-import com.kohere.gamification.application.dto.QuizSubmissionResponse;
-import com.kohere.gamification.application.dto.TodayQuizResponse;
-import com.kohere.gamification.domain.PointHistoryRepository;
+import com.kohere.gamification.application.dto.AnswerResultResponse;
+import com.kohere.gamification.application.dto.RandomQuizResponse;
+import com.kohere.gamification.domain.ChoiceKey;
+import com.kohere.gamification.domain.Quiz;
+import com.kohere.gamification.domain.QuizNotFoundException;
 import com.kohere.gamification.domain.QuizRepository;
-import com.kohere.gamification.domain.QuizSubmissionRepository;
-import com.kohere.gamification.presentation.dto.SubmitQuizRequest;
+import com.kohere.gamification.domain.TenantOnlyException;
+import com.kohere.gamification.presentation.dto.AnswerQuizRequest;
+import com.kohere.user.api.UserAccountService;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 게이미피케이션(퀴즈·포인트) 유스케이스 조율. 도메인(포트)을 호출하고 흐름만 조율한다. 정답 판정·적립 같은 도메인 규칙은 엔티티/도메인 서비스에
- * 둔다(docs/convention/code-style.md §3-3).
+ * 게이미피케이션(학습 퀴즈) 유스케이스. 무상태 — 요청마다 활성 퀴즈 풀에서 무작위 1개를 사용자 언어로 번역해 조회하고, 제출한 보기를 저장된 정답과 대조해 즉시
+ * 채점한다(제출 기록·포인트 없음, ADR-0035). 대상은 외국인 세입자(userType=TENANT, ACTIVE)다.
  *
- * <p>의존성은 생성자 주입({@code @RequiredArgsConstructor})으로 받는다(§3-4). 인증 주체(userId)는 SecurityContext에서
- * 가져온다(TODO: 보안 설정 후 연동). 조회·제출은 인증 주체로만 필터링되어 타인 데이터를 다루지 않는다.
- *
- * <p>TODO: 영속 계층(JPA) 도입 시 유스케이스에 트랜잭션 경계({@code @Transactional})를 추가한다(채점·적립은 단일 트랜잭션).
+ * <p>표시 언어는 {@code user} 공개 query {@code getLanguage}로 취득하며(등록 국가 → {@code countries.lang}), 해당 언어
+ * 번역이 없으면 영어({@code en})로 폴백한다(ADR-0029). 보기 키 A~D는 언어와 무관하고 채점은 키로 수행한다. 의존성은 생성자 주입으로 받는다(§3-4).
  */
 @Service
 @RequiredArgsConstructor
 public class GamificationService {
 
+  /** 표시 문자열 언어-키 맵에서 사용자 언어 값이 없을 때의 폴백 언어(ADR-0029). */
+  private static final String DEFAULT_LANGUAGE = "en";
+
+  /** 세입자 전용 게이트 기준 userType(ADR-0035). */
+  private static final String USER_TYPE_TENANT = "TENANT";
+
   private final QuizRepository quizRepository;
-  private final QuizSubmissionRepository quizSubmissionRepository;
-  private final PointHistoryRepository pointHistoryRepository;
+  private final UserAccountService userAccountService;
 
-  public TodayQuizResponse getToday() {
-    throw new UnsupportedOperationException("TODO: 오늘의 퀴즈 조회(제출 여부·결과 포함)");
+  /** 활성 퀴즈 풀에서 무작위 1개를 사용자 언어로 번역해 조회한다(정답·해설 제외). */
+  public RandomQuizResponse getRandomQuiz(long userId) {
+    assertTenant(userId);
+    Quiz quiz = quizRepository.findRandomActive().orElseThrow(QuizNotFoundException::new);
+    String language = resolveLanguage(userId);
+    List<RandomQuizResponse.Choice> choices =
+        quiz.choices().stream()
+            .map(c -> new RandomQuizResponse.Choice(c.key().name(), pickLabel(c.text(), language)))
+            .toList();
+    return new RandomQuizResponse(quiz.id(), pickLabel(quiz.question(), language), choices);
   }
 
-  public QuizSubmissionResponse submit(Long quizId, SubmitQuizRequest request) {
-    throw new UnsupportedOperationException("TODO: 정답 제출·즉시 채점·적립(하루 1회 제한)");
+  /** 제출한 보기를 저장된 정답과 대조해 채점한다(무상태). 오답이면 정답 키·해설(번역)을 반환한다. */
+  public AnswerResultResponse gradeAnswer(long userId, long quizId, AnswerQuizRequest request) {
+    assertTenant(userId);
+    Quiz quiz = quizRepository.findById(quizId).orElseThrow(QuizNotFoundException::new);
+    ChoiceKey selected = ChoiceKey.valueOf(request.selectedChoice());
+    if (quiz.isCorrect(selected)) {
+      return new AnswerResultResponse(quiz.id(), selected.name(), true, null, null);
+    }
+    String language = resolveLanguage(userId);
+    return new AnswerResultResponse(
+        quiz.id(),
+        selected.name(),
+        false,
+        quiz.correctChoice().name(),
+        pickLabel(quiz.explanation(), language));
   }
 
-  public PointSummaryResponse getSummary() {
-    throw new UnsupportedOperationException("TODO: 내 포인트 합계 조회");
+  /** 외국인 세입자(userType=TENANT) 전용 게이트. 임대인 등은 403(FORBIDDEN)으로 거부한다. */
+  private void assertTenant(long userId) {
+    if (!USER_TYPE_TENANT.equals(userAccountService.getUserType(userId))) {
+      throw new TenantOnlyException();
+    }
   }
 
-  public PageResponse<PointHistoryResponse> getHistories(int page, int size) {
-    throw new UnsupportedOperationException("TODO: 내 포인트 적립 내역 조회(오프셋 페이지)");
+  private String resolveLanguage(long userId) {
+    return userAccountService.getLanguage(userId);
+  }
+
+  private static String pickLabel(Map<String, String> labels, String language) {
+    if (labels == null) {
+      return null;
+    }
+    String value = labels.get(language);
+    if (value != null) {
+      return value;
+    }
+    return labels.getOrDefault(DEFAULT_LANGUAGE, labels.values().stream().findFirst().orElse(null));
   }
 }

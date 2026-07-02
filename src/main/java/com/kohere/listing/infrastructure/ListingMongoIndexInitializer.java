@@ -65,6 +65,16 @@ class ListingMongoIndexInitializer implements InitializingBean {
             .on("propertyPolicies.arcRequired", ASC)
             .named("listings_status_arc_required"));
 
+    var searchPlaceIndexOperations = mongoTemplate.indexOps(SearchPlaceDocument.class);
+
+    // 키워드 검색은 MVP에서 활성 POI를 우선순위 높은 순으로 읽어 애플리케이션에서 점수화한다.
+    searchPlaceIndexOperations.createIndex(
+        new Index()
+            .on("active", ASC)
+            .on("priority", DESC)
+            .on("name", ASC)
+            .named("search_places_active_priority_name"));
+
     var favoriteIndexOperations = mongoTemplate.indexOps(FavoriteDocument.class);
 
     // 사용자 한 명이 같은 매물을 여러 번 찜할 수 없게 DB 레벨에서 보장한다.

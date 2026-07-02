@@ -18,7 +18,7 @@ Accepted
 - 아키텍처는 **모듈러 모놀리식(Spring Modulith)** 이며, 모듈 내부는 DDD 계층으로 구성한다([code-style §3](../convention/code-style.md)). 따라서 "**모듈 경계 = Bounded Context**"를 무엇을 기준으로 어떻게 그을지 정해야 한다.
 - 결정에 쓸 수 있는 입력은 세 가지다.
   - **기능 단위**: 도메인별 [API 스펙 7건](../api/specs/README.md)(소셜 로그인·온보딩 / 진단·추천 / 매물·찜 / 신청·문의(채팅) / 커뮤니티 / 게이미피케이션 / 신고).
-  - **에러코드 prefix 표**: [error-response-guide §4](../api/error-response-guide.md)가 모듈별 prefix를 명시한다(`AUTH`/`USER`, `DIAGNOSIS`, `LISTING`, `BOOKING`/`CHAT`, `POST`/`COMMENT`, `QUIZ`/`POINT`, `REPORT`).
+  - **에러코드 prefix 표**: [error-response-guide §4](../api/error-response-guide.md)가 모듈별 prefix를 명시한다(`AUTH`/`USER`, `DIAGNOSIS`, `LISTING`, `BOOKING`/`CHAT`, `POST`/`COMMENT`, `QUIZ`, `REPORT`).
   - **계층/주입 규약**: [code-style §3](../convention/code-style.md)(package-by-module, 도메인 우선 분해, 엔티티 모듈 간 비공유, 이벤트/공개 API 통신, `allowedDependencies` 화이트리스트).
 - 제약: 현 단계는 **스켈레톤**이며 DB 설계는 아직 템플릿이다([database-design](../database/database-design.md)). 모듈 경계는 영속 모델보다 **도메인 책임**을 기준으로 먼저 확정해야 한다.
 - 목표: 응집도 높은 모듈, 빌드 시점에 강제 가능한 명확한 경계, 병렬 개발 가능성, 에러코드/스펙 문서와의 1:1 추적성.
@@ -37,7 +37,7 @@ Accepted
 | `booking`       | 신청(예약)                  | `Booking`                  | `BOOKING`          |
 | `chat`          | 인앱 채팅·문의             | `ChatRoom`, `Message`    | `CHAT`             |
 | `community`     | 커뮤니티(게시판·댓글)      | `Post`, `Comment`        | `POST`/`COMMENT` |
-| `gamification`  | 퀴즈·포인트                | `Quiz`, `PointHistory`   | `QUIZ`/`POINT`   |
+| `gamification`  | 퀴즈                        | `Quiz`                     | `QUIZ`             |
 | `report`        | 신고                        | `Report`                   | `REPORT`           |
 
 경계를 그은 **판단 기준(우선순위 순)** 은 다음과 같다.

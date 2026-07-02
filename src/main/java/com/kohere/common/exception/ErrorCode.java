@@ -68,8 +68,6 @@ public enum ErrorCode {
 
   // --- 게이미피케이션 (gamification) — docs/api/specs/06-gamification.md ---
   QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "퀴즈를 찾을 수 없습니다."),
-  QUIZ_NOT_TODAY(HttpStatus.UNPROCESSABLE_ENTITY, "오늘의 퀴즈가 아닙니다."),
-  QUIZ_ALREADY_SUBMITTED(HttpStatus.CONFLICT, "이미 제출한 퀴즈입니다."),
 
   // --- 신고 (report) — docs/api/specs/07-reports.md ---
   REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "신고 대상을 찾을 수 없습니다."),

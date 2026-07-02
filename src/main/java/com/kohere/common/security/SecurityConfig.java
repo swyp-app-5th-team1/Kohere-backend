@@ -63,6 +63,9 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/business/verify", "/api/v1/auth/logout")
                     .hasRole("USER")
+                    // 학습 퀴즈 — 온보딩 완료(ACTIVE=ROLE_USER) 전용. 세입자 한정은 응용 계층에서 검증(ADR-0035)
+                    .requestMatchers("/api/v1/quizzes/**")
+                    .hasRole("USER")
                     .anyRequest()
                     .authenticated())
         .exceptionHandling(
