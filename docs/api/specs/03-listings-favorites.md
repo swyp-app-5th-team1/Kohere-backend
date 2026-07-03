@@ -75,7 +75,6 @@ Request Body: 없음
         "maxDeposit": 200000,
         "minMaintenanceFee": 20000,
         "maxMaintenanceFee": 20000,
-        "availableCount": 5,
         "minStayMonths": 1,
         "maxStayMonths": 12,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
@@ -103,7 +102,7 @@ Request Body: 없음
 - 목록의 각 항목은 매물/건물 단위 카드다. 같은 매물에 조건을 만족하는 `roomOffer`가 여러 개 있어도 같은 `listingId`는 한 번만 내려간다.
 - 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 집계한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 방 상품만 집계한다.
 - `minMonthlyRent`/`maxMonthlyRent`, `minDeposit`/`maxDeposit`, `minMaintenanceFee`/`maxMaintenanceFee`, `minStayMonths`/`maxStayMonths`는 조건을 통과한 `roomOffer`들의 최저~최고 범위다. 프론트는 이 값으로 `₩380~400K/mo`, `Dep.`, `Maint.`, `1 mo~` 같은 카드 문구를 만들 수 있다.
-- `availableCount`는 조건을 통과한 `roomOffer`들의 현재 계약 가능 수량 합계다. `conditions=IMMEDIATE_MOVE_IN`이면 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
+- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=IMMEDIATE_MOVE_IN` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
 - `conditions`는 조건을 통과한 `roomOffer`들이 가진 태그의 합집합이다.
 - `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 최저 월세 오름차순으로 매물 카드를 정렬한다.
 - `sort=DISTANCE`는 프론트가 별도 중심 좌표를 보내지 않는다. 서버가 요청 bbox(`swLat`·`swLng`·`neLat`·`neLng`)의 원본 중심점을 계산해 가까운 Listing 순으로 정렬한다. 따라서 `sort=DISTANCE`를 쓰려면 bbox 네 좌표가 모두 필요하다.

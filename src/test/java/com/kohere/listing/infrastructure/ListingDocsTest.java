@@ -77,7 +77,7 @@ class ListingDocsTest {
           + "응답 content[]의 1개 항목은 roomOffer가 아니라 Listing(고시원/건물/숙소 매물) 1개다. "
           + "필터가 없으면 해당 매물의 active roomOffer 전체를 집계하고, "
           + "필터가 있으면 조건을 만족하는 active roomOffer만 집계한다. "
-          + "월세·보증금·관리비·계약기간은 집계 대상 roomOffer의 최저~최고 범위로 내려가며, availableCount는 계약 가능 수량 합계다. "
+          + "월세·보증금·관리비·계약기간은 집계 대상 roomOffer의 최저~최고 범위로 내려간다. "
           + "월세·보증금·조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·ARC·지도 범위는 Listing 기준으로 적용한다. "
           + "전입신고 가능 여부는 별도 파라미터가 아니라 conditions=RESIDENT_REGISTRATION으로 필터링한다. "
           + "arcRequired=true는 ARC 필수 매물만 조회하고, false 또는 미전달은 ARC 조건을 적용하지 않는다. "
@@ -191,6 +191,7 @@ class ListingDocsTest {
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].minMonthlyRent").value(300000))
         .andExpect(jsonPath("$.data.content[0].maxMonthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.content[0].availableCount").doesNotExist())
         .andDo(
             document(
                 "listings-list",
@@ -213,6 +214,7 @@ class ListingDocsTest {
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.content[0].minMonthlyRent").value(300000))
         .andExpect(jsonPath("$.data.content[0].maxMonthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.content[0].availableCount").doesNotExist())
         .andDo(
             document(
                 "listings-search",
@@ -815,10 +817,6 @@ class ListingDocsTest {
             JsonFieldType.NUMBER,
             "조건을 통과한 active roomOffers 중 최고 관리비(KRW)"),
         field(
-            "data.content[].availableCount",
-            JsonFieldType.NUMBER,
-            "조건을 통과한 active roomOffers의 현재 계약 가능 수량 합계. IMMEDIATE_MOVE_IN 필터는 availableCount가 1 이상인 roomOffer만 집계"),
-        field(
             "data.content[].minStayMonths",
             JsonFieldType.NUMBER,
             "조건을 통과한 active roomOffers 중 가장 짧은 최소 계약 개월 수. 예: 1이면 프론트에서 1 mo~ 표시 가능"),
@@ -895,10 +893,6 @@ class ListingDocsTest {
             "data.content[].maxMaintenanceFee",
             JsonFieldType.NUMBER,
             "검색 조건을 통과한 active roomOffers 중 최고 관리비(KRW)"),
-        field(
-            "data.content[].availableCount",
-            JsonFieldType.NUMBER,
-            "검색 조건을 통과한 active roomOffers의 현재 계약 가능 수량 합계"),
         field(
             "data.content[].minStayMonths",
             JsonFieldType.NUMBER,

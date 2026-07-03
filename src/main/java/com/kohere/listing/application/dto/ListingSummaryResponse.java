@@ -1,5 +1,6 @@
 package com.kohere.listing.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.ListingType;
 import java.util.List;
@@ -20,7 +21,7 @@ import java.util.List;
  * @param maxDeposit 조건을 통과한 방 상품 중 최고 보증금
  * @param minMaintenanceFee 조건을 통과한 방 상품 중 최저 관리비
  * @param maxMaintenanceFee 조건을 통과한 방 상품 중 최고 관리비
- * @param availableCount 조건을 통과한 방 상품들의 현재 계약 가능 수량 합계
+ * @param availableCount 조건을 통과한 방 상품들의 현재 계약 가능 수량 합계. MVP 이후 재고 표시 정책이 정해지면 API 응답에 노출할 내부 계산값
  * @param minStayMonths 조건을 통과한 방 상품 중 가장 짧은 최소 계약 개월 수
  * @param maxStayMonths 조건을 통과한 방 상품 중 가장 긴 최대 계약 개월 수
  * @param thumbnailUrl 목록 카드 이미지 URL
@@ -42,7 +43,7 @@ public record ListingSummaryResponse(
     int maxDeposit,
     int minMaintenanceFee,
     int maxMaintenanceFee,
-    int availableCount,
+    @JsonIgnore int availableCount,
     int minStayMonths,
     int maxStayMonths,
     String thumbnailUrl,
