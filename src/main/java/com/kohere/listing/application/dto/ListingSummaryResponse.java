@@ -21,7 +21,8 @@ import java.util.List;
  * @param maxDeposit 조건을 통과한 방 상품 중 최고 보증금
  * @param minMaintenanceFee 조건을 통과한 방 상품 중 최저 관리비
  * @param maxMaintenanceFee 조건을 통과한 방 상품 중 최고 관리비
- * @param availableCount 조건을 통과한 방 상품들의 현재 계약 가능 수량 합계. MVP 이후 재고 표시 정책이 정해지면 API 응답에 노출할 내부 계산값
+ * @param availableCount 조건을 통과한 방 상품들의 현재 계약 가능 수량 합계. MVP에서는 응답에 노출하지 않고, 추후 재고 표시/입주 가능성 고도화 때
+ *     사용할 내부 계산값
  * @param minStayMonths 조건을 통과한 방 상품 중 가장 짧은 최소 계약 개월 수
  * @param maxStayMonths 조건을 통과한 방 상품 중 가장 긴 최대 계약 개월 수
  * @param thumbnailUrl 목록 카드 이미지 URL
@@ -43,6 +44,10 @@ public record ListingSummaryResponse(
     int maxDeposit,
     int minMaintenanceFee,
     int maxMaintenanceFee,
+    /*
+     * MVP에서는 목록/검색 카드 응답에 재고 수량을 노출하지 않는다.
+     * 추후 재고 표시 또는 입주 가능성 고도화 정책이 정해지면 @JsonIgnore를 제거해 응답 필드로 재사용한다.
+     */
     @JsonIgnore int availableCount,
     int minStayMonths,
     int maxStayMonths,
