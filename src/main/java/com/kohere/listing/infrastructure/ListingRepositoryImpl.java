@@ -61,30 +61,29 @@ public class ListingRepositoryImpl implements ListingRepository {
   }
 
   /**
-   * 지도 범위·가격·보증금·매물종류·옵션 조건을 적용해 목록 카드 후보를 조회한다.
+   * 지도 범위·가격·보증금·매물종류·옵션 조건을 적용해 매물 카드 후보를 조회한다.
    *
    * <p>MongoDB 쿼리는 먼저 조건에 맞는 방 상품을 하나 이상 가진 Listing 문서만 좁혀 온다. 그 다음 Java 코드에서 해당 Listing의 {@code
-   * roomOffers}를 다시 순회하면서 실제로 조건에 맞는 방 상품을 모두 {@link ListingSearchResult}로 펼친다. 이렇게 해야 같은 고시원 안에
-   * 조건을 만족하는 Green Zone이 여러 개 있을 때 목록 카드도 여러 개 만들 수 있다.
+   * roomOffers}를 다시 순회하면서 실제로 조건에 맞는 방 상품만 골라 {@link ListingSearchResult}에 담는다. 최종 응답은 Listing
+   * 기준이므로 같은 고시원 안에 조건을 만족하는 방 상품이 여러 개 있어도 검색 결과는 매물당 1개만 생성된다.
    */
   @Override
   public PageResponse<ListingSearchResult> search(ListingSearchCondition condition) {
     Criteria criteria = searchCriteria(condition);
     List<Listing> listings = findSearchCandidateListings(criteria, condition);
-    List<ListingSearchResult> roomOfferResults = matchingRoomOfferResults(listings, condition);
+    List<ListingSearchResult> listingResults = matchingListingResults(listings, condition);
 
     if (condition.sort() == ListingSort.PRICE_ASC) {
-      roomOfferResults =
-          roomOfferResults.stream()
+      listingResults =
+          listingResults.stream()
               .sorted(
                   Comparator.<ListingSearchResult>comparingInt(
-                          result -> result.roomOffer().pricing().monthlyRent())
-                      .thenComparingInt(result -> result.roomOffer().pricing().deposit())
-                      .thenComparing(result -> result.listing().getId())
-                      .thenComparing(result -> result.roomOffer().roomOfferId()))
+                          ListingRepositoryImpl::minMonthlyRent)
+                      .thenComparingInt(ListingRepositoryImpl::minDeposit)
+                      .thenComparing(result -> result.listing().getId()))
               .toList();
     }
-    return pageFrom(roomOfferResults, condition.page(), condition.size());
+    return pageFrom(listingResults, condition.page(), condition.size());
   }
 
   /** 지도 SDK가 클러스터링할 수 있도록 필터된 개별 매물 좌표 후보를 상한까지만 조회한다. */
@@ -245,7 +244,7 @@ public class ListingRepositoryImpl implements ListingRepository {
    * 방 상품 배열 안에서 같은 방 상품이 가격·보증금·옵션을 모두 만족하게 만드는 MongoDB 조건이다.
    *
    * <p>이 조건은 Listing 문서를 빠르게 좁히기 위한 1차 필터다. 목록 응답은 이후 {@link #matchesRoomOffer}로 다시 한 번 같은 기준을 적용해서
-   * 조건에 맞는 방 상품만 카드로 펼친다.
+   * 범위 계산에 포함할 방 상품만 남긴다.
    */
   private static Criteria roomOfferCriteria(ListingSearchCondition condition) {
     List<Criteria> criteria = new ArrayList<>();
@@ -288,8 +287,8 @@ public class ListingRepositoryImpl implements ListingRepository {
   /**
    * 목록 조회의 1차 후보 Listing을 가져온다.
    *
-   * <p>거리순은 Listing 위치 기준이므로 Listing을 먼저 거리순으로 정렬한다. 가격순은 방 상품 기준으로 다시 정렬해야 정확하므로 여기서는 기본 추천순으로 후보를
-   * 가져오고, {@link #search(ListingSearchCondition)}에서 펼친 방 상품 결과를 월세 기준으로 다시 정렬한다.
+   * <p>거리순은 Listing 위치 기준이므로 Listing을 먼저 거리순으로 정렬한다. 가격순은 조건을 통과한 방 상품들의 최저 월세 기준으로 정렬해야 하므로 여기서는
+   * 기본 추천순으로 후보를 가져오고, {@link #search(ListingSearchCondition)}에서 매물별 최저 월세 기준으로 다시 정렬한다.
    */
   private List<Listing> findSearchCandidateListings(
       Criteria criteria, ListingSearchCondition condition) {
@@ -308,18 +307,34 @@ public class ListingRepositoryImpl implements ListingRepository {
   }
 
   /**
-   * Listing 문서 안의 roomOffers를 목록 카드 단위 결과로 펼친다.
+   * Listing 문서 안에서 조건을 만족하는 roomOffers만 모아 매물 카드 단위 결과로 만든다.
    *
-   * <p>필터가 없으면 활성 방 상품이 모두 카드가 되고, 필터가 있으면 가격·보증금·옵션·재고 조건을 모두 만족하는 활성 방 상품만 카드가 된다.
+   * <p>필터가 없으면 활성 방 상품 전체가 해당 매물 카드의 가격 범위 계산 대상이 되고, 필터가 있으면 가격·보증금·옵션·재고 조건을 모두 만족하는 활성 방 상품만 계산
+   * 대상이 된다. 방 상품이 여러 개 매칭되어도 {@link ListingSearchResult}는 Listing당 하나만 만든다.
    */
-  private static List<ListingSearchResult> matchingRoomOfferResults(
+  private static List<ListingSearchResult> matchingListingResults(
       List<Listing> listings, ListingSearchCondition condition) {
     return listings.stream()
-        .flatMap(
-            listing ->
-                listing.getRoomOffers().stream()
-                    .filter(roomOffer -> matchesRoomOffer(roomOffer, condition))
-                    .map(roomOffer -> new ListingSearchResult(listing, roomOffer)))
+        .map(listing -> matchingListingResult(listing, condition))
+        .flatMap(Optional::stream)
+        .toList();
+  }
+
+  /** Mongo 1차 필터를 통과했더라도 Java 재검증 결과가 비면 목록 카드에서 제외한다. */
+  private static Optional<ListingSearchResult> matchingListingResult(
+      Listing listing, ListingSearchCondition condition) {
+    List<Listing.RoomOffer> roomOffers = matchingRoomOffers(listing, condition);
+    if (roomOffers.isEmpty()) {
+      return Optional.empty();
+    }
+    return Optional.of(new ListingSearchResult(listing, roomOffers));
+  }
+
+  /** 매물 안의 방 상품 중 목록 필터를 실제로 만족하는 활성 방 상품만 추린다. */
+  private static List<Listing.RoomOffer> matchingRoomOffers(
+      Listing listing, ListingSearchCondition condition) {
+    return listing.getRoomOffers().stream()
+        .filter(roomOffer -> matchesRoomOffer(roomOffer, condition))
         .toList();
   }
 
@@ -390,8 +405,8 @@ public class ListingRepositoryImpl implements ListingRepository {
   /**
    * 이미 메모리에 있는 결과를 공통 PageResponse 형태로 자른다.
    *
-   * <p>목록 조회에서는 Listing 문서 개수가 아니라 펼쳐진 방 상품 카드 개수가 {@code totalElements}가 되어야 한다. 그래서 MongoDB count
-   * 결과를 그대로 쓰지 않고, Java에서 펼친 결과 목록을 기준으로 페이지 메타를 만든다.
+   * <p>목록 조회에서는 MongoDB의 1차 후보 count가 아니라, Java에서 조건을 다시 적용하고 Listing 기준으로 묶은 최종 카드 개수가 {@code
+   * totalElements}가 되어야 한다. 그래서 MongoDB count 결과를 그대로 쓰지 않고, 최종 결과 목록을 기준으로 페이지 메타를 만든다.
    */
   private static <T> PageResponse<T> pageFrom(List<T> content, int page, int size) {
     int safePage = Math.max(page, 0);
@@ -422,5 +437,21 @@ public class ListingRepositoryImpl implements ListingRepository {
   private static Sort defaultSort() {
     return Sort.by(Sort.Direction.DESC, "favoriteCount")
         .and(Sort.by(Sort.Direction.DESC, "updatedAt"));
+  }
+
+  /** 가격순 목록 정렬에서 사용할 매물 카드의 최저 월세다. */
+  private static int minMonthlyRent(ListingSearchResult result) {
+    return result.roomOffers().stream()
+        .mapToInt(roomOffer -> roomOffer.pricing().monthlyRent())
+        .min()
+        .orElseThrow();
+  }
+
+  /** 최저 월세가 같은 매물끼리는 최저 보증금을 보조 정렬 키로 사용한다. */
+  private static int minDeposit(ListingSearchResult result) {
+    return result.roomOffers().stream()
+        .mapToInt(roomOffer -> roomOffer.pricing().deposit())
+        .min()
+        .orElseThrow();
   }
 }

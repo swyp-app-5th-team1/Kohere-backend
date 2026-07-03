@@ -206,7 +206,7 @@ class ListingMongoIntegrationTest {
     assertThat(found.getString("title")).isEqualTo("고시원001");
   }
 
-  /** 키워드 검색은 POI를 찾은 뒤 해당 좌표 3km 안의 roomOffer 카드만 반환한다. */
+  /** 키워드 검색은 POI를 찾은 뒤 해당 좌표 3km 안의 매물 카드를 반환한다. */
   @Test
   void searchListings_대학키워드로_POI와_주변매물을_반환한다() {
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
@@ -219,8 +219,8 @@ class ListingMongoIntegrationTest {
     assertThat(response.content()).hasSize(1);
     assertThat(response.content().getFirst().listingId())
         .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
-    assertThat(response.content().getFirst().roomOfferId())
-        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID);
+    assertThat(response.content().getFirst().minMonthlyRent()).isEqualTo(300000);
+    assertThat(response.content().getFirst().maxMonthlyRent()).isEqualTo(300000);
     assertThat(response.content().getFirst().distanceMeters()).isLessThan(500);
     assertThat(response.page().totalElements()).isEqualTo(1);
   }
@@ -274,7 +274,7 @@ class ListingMongoIntegrationTest {
         .hasMessageContaining("size");
   }
 
-  /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품 카드만 반환한다. */
+  /** 목록 검색은 지도 범위와 필터를 모두 만족하는 방 상품을 가진 매물 카드를 반환한다. */
   @Test
   void search_지도범위와_필터로_매물을_조회한다() {
     new ListingSeedRunner(listingRepository).run(null);
@@ -300,13 +300,14 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().listing().getId())
         .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
-    assertThat(result.content().getFirst().roomOffer().roomOfferId())
-        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID);
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(Listing.RoomOffer::roomOfferId)
+        .containsExactly(ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID);
   }
 
-  /** 필터가 없으면 공개 매물 안의 모든 active roomOffer가 각각 목록 카드가 된다. */
+  /** 필터가 없으면 공개 매물 안의 모든 active roomOffer가 매물 카드의 범위 계산 대상이 된다. */
   @Test
-  void search_필터가_없으면_active_방상품을_모두_반환한다() {
+  void search_필터가_없으면_active_방상품을_모두_묶어_매물_카드로_반환한다() {
     listingRepository.save(
         sampleListingBuilder()
             .roomOffers(
@@ -360,15 +361,16 @@ class ListingMongoIntegrationTest {
                 0,
                 20));
 
-    assertThat(result.page().totalElements()).isEqualTo(3);
-    assertThat(result.content())
-        .extracting(searchResult -> searchResult.roomOffer().name())
+    assertThat(result.page().totalElements()).isEqualTo(1);
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(Listing.RoomOffer::name)
         .containsExactly("Green Zone 1", "Green Zone 2", "Green Zone 3");
   }
 
-  /** 필터가 있으면 조건에 맞는 active roomOffer만 남기고, PRICE_ASC는 그 방 상품들의 월세 기준으로 정렬한다. */
+  /** 필터가 있으면 조건에 맞는 active roomOffer만 매물 카드의 범위 계산 대상에 남긴다. */
   @Test
-  void search_필터에_맞는_방상품을_월세순으로_반환한다() {
+  void search_필터에_맞는_방상품만_매물_카드에_포함한다() {
     listingRepository.save(
         sampleListingBuilder()
             .roomOffers(
@@ -414,38 +416,58 @@ class ListingMongoIntegrationTest {
                 0,
                 20));
 
-    assertThat(result.page().totalElements()).isEqualTo(2);
-    assertThat(result.content())
-        .extracting(searchResult -> searchResult.roomOffer().name())
+    assertThat(result.page().totalElements()).isEqualTo(1);
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(Listing.RoomOffer::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
-    assertThat(result.content())
-        .extracting(searchResult -> searchResult.roomOffer().pricing().monthlyRent())
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(roomOffer -> roomOffer.pricing().monthlyRent())
         .containsExactly(490000, 550000);
   }
 
-  /** 목록 페이지 정보는 Listing 문서 수가 아니라 펼쳐진 roomOffer 카드 수를 기준으로 계산한다. */
+  /** 목록 페이지 정보는 roomOffer 수가 아니라 최종 매물 카드 수를 기준으로 계산한다. */
   @Test
-  void search_페이지네이션은_방상품_카드_기준으로_계산한다() {
+  void search_페이지네이션은_매물_카드_기준으로_계산한다() {
+    String firstListingId = "6858e2000000000000000401";
+    String secondListingId = "6858e2000000000000000402";
+    String thirdListingId = "6858e2000000000000000403";
     listingRepository.save(
         sampleListingBuilder()
+            .id(firstListingId)
+            .favoriteCount(3)
             .roomOffers(
                 List.of(
                     roomOffer(
-                        "6858e2000000000000000401",
+                        "6858e2000000000000000411",
                         "Green Zone 1",
                         490000,
                         1000000,
                         3,
-                        Set.of(ConditionTag.FEMALE_ONLY)),
+                        Set.of(ConditionTag.FEMALE_ONLY))))
+            .build());
+    listingRepository.save(
+        sampleListingBuilder()
+            .id(secondListingId)
+            .favoriteCount(2)
+            .roomOffers(
+                List.of(
                     roomOffer(
-                        "6858e2000000000000000402",
+                        "6858e2000000000000000421",
                         "Green Zone 2",
                         550000,
                         1000000,
                         2,
-                        Set.of(ConditionTag.PRIVATE_BATH)),
+                        Set.of(ConditionTag.PRIVATE_BATH))))
+            .build());
+    listingRepository.save(
+        sampleListingBuilder()
+            .id(thirdListingId)
+            .favoriteCount(1)
+            .roomOffers(
+                List.of(
                     roomOffer(
-                        "6858e2000000000000000403",
+                        "6858e2000000000000000431",
                         "Green Zone 3",
                         600000,
                         1000000,
@@ -493,12 +515,12 @@ class ListingMongoIntegrationTest {
     assertThat(firstPage.page().totalPages()).isEqualTo(2);
     assertThat(firstPage.page().hasNext()).isTrue();
     assertThat(firstPage.content())
-        .extracting(searchResult -> searchResult.roomOffer().name())
-        .containsExactly("Green Zone 1", "Green Zone 2");
+        .extracting(searchResult -> searchResult.listing().getId())
+        .containsExactly(firstListingId, secondListingId);
     assertThat(secondPage.page().hasNext()).isFalse();
     assertThat(secondPage.content())
-        .extracting(searchResult -> searchResult.roomOffer().name())
-        .containsExactly("Green Zone 3");
+        .extracting(searchResult -> searchResult.listing().getId())
+        .containsExactly(thirdListingId);
   }
 
   /** 즉시입주 조건은 태그만으로 충분하지 않고, 같은 roomOffer의 availableCount가 1 이상이어야 한다. */
@@ -543,8 +565,11 @@ class ListingMongoIntegrationTest {
                 20));
 
     assertThat(result.content()).hasSize(1);
-    assertThat(result.content().getFirst().roomOffer().name()).isEqualTo("Move In Now Zone");
-    assertThat(result.content().getFirst().roomOffer().inventory().availableCount()).isEqualTo(2);
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(Listing.RoomOffer::name)
+        .containsExactly("Move In Now Zone");
+    assertThat(result.content().getFirst().roomOffers().getFirst().inventory().availableCount())
+        .isEqualTo(2);
   }
 
   /** 전입신고 가능 여부는 별도 boolean 파라미터가 아니라 conditions 태그로 필터링한다. */
@@ -589,7 +614,9 @@ class ListingMongoIntegrationTest {
                 20));
 
     assertThat(result.content()).hasSize(1);
-    assertThat(result.content().getFirst().roomOffer().name()).isEqualTo("Registration Zone");
+    assertThat(result.content().getFirst().roomOffers())
+        .extracting(Listing.RoomOffer::name)
+        .containsExactly("Registration Zone");
   }
 
   /** ARC 필터는 true일 때만 적용하고, false는 ARC 여부와 상관없이 조회한다. */
@@ -658,9 +685,9 @@ class ListingMongoIntegrationTest {
         .containsExactly(arcRequiredListingId);
   }
 
-  /** 서비스 응답은 목록 카드가 어떤 roomOffer를 의미하는지 프론트가 알 수 있게 식별자와 재고를 함께 내려준다. */
+  /** 서비스 응답은 조건에 맞는 방 상품들을 매물 단위로 집계해 범위 필드와 재고 합계를 내려준다. */
   @Test
-  void getListings_방상품_카드_응답에_roomOffer_정보를_포함한다() {
+  void getListings_매물_카드_응답에_가격과_계약기간_범위를_포함한다() {
     listingRepository.save(
         sampleListingBuilder()
             .roomOffers(
@@ -670,8 +697,31 @@ class ListingMongoIntegrationTest {
                         "Green Zone 1",
                         490000,
                         1000000,
+                        20000,
+                        1,
+                        6,
                         3,
-                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH))))
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH)),
+                    roomOffer(
+                        "6858e2000000000000000602",
+                        "Green Zone 2",
+                        550000,
+                        1500000,
+                        30000,
+                        3,
+                        12,
+                        2,
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_AVAILABLE)),
+                    roomOffer(
+                        "6858e2000000000000000603",
+                        "Filtered Out Zone",
+                        450000,
+                        500000,
+                        10000,
+                        2,
+                        6,
+                        1,
+                        Set.of(ConditionTag.RESIDENT_REGISTRATION))))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.45);
@@ -686,11 +736,18 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).hasSize(1);
     ListingSummaryResponse card = result.content().getFirst();
     assertThat(card.listingId()).isEqualTo(LISTING_ID);
-    assertThat(card.roomOfferId()).isEqualTo("6858e2000000000000000601");
-    assertThat(card.roomOfferName()).isEqualTo("Green Zone 1");
-    assertThat(card.monthlyRent()).isEqualTo(490000);
-    assertThat(card.availableCount()).isEqualTo(3);
-    assertThat(card.conditions()).contains(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH);
+    assertThat(card.minMonthlyRent()).isEqualTo(490000);
+    assertThat(card.maxMonthlyRent()).isEqualTo(550000);
+    assertThat(card.minDeposit()).isEqualTo(1000000);
+    assertThat(card.maxDeposit()).isEqualTo(1500000);
+    assertThat(card.minMaintenanceFee()).isEqualTo(20000);
+    assertThat(card.maxMaintenanceFee()).isEqualTo(30000);
+    assertThat(card.availableCount()).isEqualTo(5);
+    assertThat(card.minStayMonths()).isEqualTo(1);
+    assertThat(card.maxStayMonths()).isEqualTo(12);
+    assertThat(card.conditions())
+        .containsExactly(
+            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_AVAILABLE);
   }
 
   /** DISTANCE 정렬은 프론트가 보낸 중심 좌표가 아니라 bbox의 원본 중심점을 기준으로 계산한다. */
@@ -1091,12 +1148,33 @@ class ListingMongoIntegrationTest {
       int deposit,
       int availableCount,
       Set<ConditionTag> filterTags) {
+    return roomOffer(roomOfferId, name, monthlyRent, deposit, 0, 2, 6, availableCount, filterTags);
+  }
+
+  /**
+   * 목록 응답 집계 테스트에서 사용할 방 상품 묶음을 만든다.
+   *
+   * <p>월세·보증금뿐 아니라 관리비와 계약기간을 방 상품별로 다르게 지정해, 목록 카드의 범위 필드가 저장된 roomOffer 데이터에서 계산되는지 확인한다.
+   */
+  private static Listing.RoomOffer roomOffer(
+      String roomOfferId,
+      String name,
+      int monthlyRent,
+      int deposit,
+      int maintenanceFee,
+      int minStayMonths,
+      int maxStayMonths,
+      int availableCount,
+      Set<ConditionTag> filterTags) {
     return roomOffer(
         roomOfferId,
         name,
         Listing.RoomOfferStatus.ACTIVE,
         monthlyRent,
         deposit,
+        maintenanceFee,
+        minStayMonths,
+        maxStayMonths,
         availableCount,
         filterTags);
   }
@@ -1114,15 +1192,31 @@ class ListingMongoIntegrationTest {
       int deposit,
       int availableCount,
       Set<ConditionTag> filterTags) {
+    return roomOffer(
+        roomOfferId, name, status, monthlyRent, deposit, 0, 2, 6, availableCount, filterTags);
+  }
+
+  /** 상태·가격·계약기간까지 모두 지정할 수 있는 가장 상세한 방 상품 테스트 헬퍼다. */
+  private static Listing.RoomOffer roomOffer(
+      String roomOfferId,
+      String name,
+      Listing.RoomOfferStatus status,
+      int monthlyRent,
+      int deposit,
+      int maintenanceFee,
+      int minStayMonths,
+      int maxStayMonths,
+      int availableCount,
+      Set<ConditionTag> filterTags) {
     return new Listing.RoomOffer(
         roomOfferId,
         name,
         status,
         Listing.RentalType.MONTHLY_RENT,
-        new Listing.Pricing(monthlyRent, deposit, 0, Listing.Currency.KRW),
+        new Listing.Pricing(monthlyRent, deposit, maintenanceFee, Listing.Currency.KRW),
         new Listing.Contract(
-            2,
-            6,
+            minStayMonths,
+            maxStayMonths,
             new Listing.RefundPolicy(
                 Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불")),
         new Listing.Inventory(10, availableCount, null),

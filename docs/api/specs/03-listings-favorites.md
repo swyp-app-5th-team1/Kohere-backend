@@ -34,7 +34,7 @@
 
 ### GET /api/v1/listings — 매물 리스트
 
-- 설명: 필터·정렬을 적용한 방 상품 카드 목록을 오프셋 페이지로 반환한다. 카드 1개는 `Listing + roomOffer` 조합이다.
+- 설명: 필터·정렬을 적용한 매물/건물 단위 카드 목록을 오프셋 페이지로 반환한다. 카드 1개는 `Listing` 1개다.
 - 인증: 선택 (로그인 시 각 항목 `favorited` 채움)
 
 Query 파라미터:
@@ -45,14 +45,14 @@ Query 파라미터:
 | `swLng` | number | 선택 | — | 지도 화면 남서쪽 경도 |
 | `neLat` | number | 선택 | — | 지도 화면 북동쪽 위도. `swLat`보다 커야 함 |
 | `neLng` | number | 선택 | — | 지도 화면 북동쪽 경도. `swLng`보다 커야 함 |
-| `minBudget` | integer(KRW) | 선택 | — | roomOffer 월세 하한. 같은 roomOffer의 `pricing.monthlyRent`가 이 값 이상인 카드만 반환 |
-| `maxBudget` | integer(KRW) | 선택 | — | roomOffer 월세 상한. 같은 roomOffer의 `pricing.monthlyRent`가 이 값 이하인 카드만 반환 |
-| `minDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 하한. 같은 roomOffer의 `pricing.deposit`이 이 값 이상인 카드만 반환 |
-| `maxDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 상한. 같은 roomOffer의 `pricing.deposit`이 이 값 이하인 카드만 반환 |
+| `minBudget` | integer(KRW) | 선택 | — | roomOffer 월세 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
+| `maxBudget` | integer(KRW) | 선택 | — | roomOffer 월세 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
+| `minDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
+| `maxDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
 | `type` | `ListingType` | 선택 | — | Listing 기준 매물 유형. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
 | `conditions` | `ConditionTag[]` | 선택 | — | roomOffer 기준 조건 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 같은 roomOffer가 모두 만족해야 하며, 전입신고 가능 필터는 `RESIDENT_REGISTRATION`을 포함해 요청 |
 | `arcRequired` | boolean | 선택 | — | Listing 기준 ARC 필수 매물 필터. `true`면 ARC가 필수인 매물만 조회하고, `false` 또는 미전달이면 ARC 조건을 적용하지 않음 |
-| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `RECOMMENDED`는 기본 추천순, `PRICE_ASC`는 roomOffer 월세 낮은 순, `DISTANCE`는 요청 bbox의 원본 중심점에서 가까운 Listing 순 |
+| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `RECOMMENDED`는 기본 추천순, `PRICE_ASC`는 조건을 통과한 roomOffer들의 최저 월세 낮은 순, `DISTANCE`는 요청 bbox의 원본 중심점에서 가까운 Listing 순 |
 | `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
 | `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
 
@@ -67,14 +67,17 @@ Request Body: 없음
     "content": [
       {
         "listingId": "6858e2000000000000000001",
-        "roomOfferId": "6858e2000000000000000101",
-        "roomOfferName": "Green Zone 1",
         "title": "신촌 도보 5분 1인실 고시원",
         "type": "GOSIWON",
-        "monthlyRent": 450000,
-        "deposit": 0,
-        "maintenanceFee": 0,
-        "availableCount": 3,
+        "minMonthlyRent": 380000,
+        "maxMonthlyRent": 400000,
+        "minDeposit": 200000,
+        "maxDeposit": 200000,
+        "minMaintenanceFee": 20000,
+        "maxMaintenanceFee": 20000,
+        "availableCount": 5,
+        "minStayMonths": 1,
+        "maxStayMonths": 12,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "lat": 37.555134,
         "lng": 126.936893,
@@ -97,13 +100,15 @@ Request Body: 없음
 }
 ```
 
-- 목록의 각 항목은 매물 자체가 아니라 해당 매물 안의 활성 `roomOffer` 카드다. 같은 매물에 조건을 만족하는 `roomOffer`가 여러 개 있으면 같은 `listingId`가 여러 번 내려갈 수 있고, 각 항목은 서로 다른 `roomOfferId`를 가진다.
-- 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 반환한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 항목만 반환한다.
-- `monthlyRent`·`deposit`·`maintenanceFee`·`availableCount`·`conditions`는 모두 해당 `roomOffer` 기준 값이다. 상세 화면에서는 `roomOffers[]`에서 같은 `roomOfferId`를 찾아 방 상품 상세를 표시할 수 있다.
-- `availableCount`는 같은 조건의 실제 방 묶음 중 현재 계약 가능한 수량이다. `conditions=IMMEDIATE_MOVE_IN`이면 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
-- `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 월세 오름차순으로 정렬한다.
+- 목록의 각 항목은 매물/건물 단위 카드다. 같은 매물에 조건을 만족하는 `roomOffer`가 여러 개 있어도 같은 `listingId`는 한 번만 내려간다.
+- 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 집계한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 방 상품만 집계한다.
+- `minMonthlyRent`/`maxMonthlyRent`, `minDeposit`/`maxDeposit`, `minMaintenanceFee`/`maxMaintenanceFee`, `minStayMonths`/`maxStayMonths`는 조건을 통과한 `roomOffer`들의 최저~최고 범위다. 프론트는 이 값으로 `₩380~400K/mo`, `Dep.`, `Maint.`, `1 mo~` 같은 카드 문구를 만들 수 있다.
+- `availableCount`는 조건을 통과한 `roomOffer`들의 현재 계약 가능 수량 합계다. `conditions=IMMEDIATE_MOVE_IN`이면 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
+- `conditions`는 조건을 통과한 `roomOffer`들이 가진 태그의 합집합이다.
+- `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 최저 월세 오름차순으로 매물 카드를 정렬한다.
 - `sort=DISTANCE`는 프론트가 별도 중심 좌표를 보내지 않는다. 서버가 요청 bbox(`swLat`·`swLng`·`neLat`·`neLng`)의 원본 중심점을 계산해 가까운 Listing 순으로 정렬한다. 따라서 `sort=DISTANCE`를 쓰려면 bbox 네 좌표가 모두 필요하다.
 - `distanceMeters`는 bbox가 제공된 경우 서버가 계산한 원본 bbox 중심점 기준 직선 거리다. bbox 없이 조회하면 `null`이다.
+- 방 상품별 상세 정보가 필요하면 카드의 `listingId`로 `GET /api/v1/listings/{listingId}`를 호출해 응답의 `roomOffers[]`를 표시한다.
 - 전입신고 가능 여부는 별도 boolean 파라미터가 아니라 `conditions=RESIDENT_REGISTRATION`으로 요청한다.
 - `arcRequired=false`는 "ARC 불필요 매물만"이 아니라 "ARC 조건을 적용하지 않음"이다.
 - 비로그인 시 `favorited`는 `false`로 고정한다.
@@ -129,7 +134,7 @@ Query 파라미터:
 | `swLng` | number | bbox 모드 필수 | 남서 경도 |
 | `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
 | `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
-| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions`/`arcRequired` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 조건에 맞는 roomOffer 카드 수가 아니라 매물 마커 수 기준 |
+| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions`/`arcRequired` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
 
 > 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 서버는 `/listings` 목록 조회와 동일하게 요청 bbox를 20% 확장해 조회한다.
 > 한 Listing 안에 조건을 만족하는 roomOffer가 여러 개 있어도 지도 마커는 해당 Listing 위치에 1개만 반환한다.
@@ -170,7 +175,7 @@ Request Body: 없음
 - 인증: 선택
 - MVP 구현: 검색 가능한 장소는 MongoDB `searchPlaces` POI 사전으로 관리한다. 서버는 `name`/`aliases`를 비교해
   `정확히 일치 > 별칭 일치 > 앞부분 일치 > 포함 일치` 순으로 가장 적절한 장소 1개를 고른다.
-- MVP 구현: 매칭된 장소 좌표 기준 **3km 이내** 공개 방 상품 카드를 반환하며, 기본 정렬은 거리순이다.
+- MVP 구현: 매칭된 장소 좌표 기준 **3km 이내** 공개 매물 카드를 반환하며, 기본 정렬은 거리순이다.
 
 Query 파라미터:
 
@@ -195,7 +200,7 @@ Request Body: 없음
       "lat": 37.565784,
       "lng": 126.938572
     },
-    "content": [ /* 리스트 항목과 동일 스키마 */ ],
+    "content": [ /* 리스트 항목과 동일한 매물 카드 스키마 */ ],
     "page": {
       "number": 0,
       "size": 20,
@@ -209,6 +214,7 @@ Request Body: 없음
 ```
 
 - `matchedPlace.type`은 `MatchedPlaceType`(`UNIVERSITY`/`REGION`/`SUBWAY_STATION`) 중 하나다.
+- `content[]`는 `/api/v1/listings`와 같은 Listing 단위 카드다. 같은 매물 안에서 검색 조건을 통과한 `roomOffer`가 여러 개 있어도 매물은 한 번만 내려가며, 가격·보증금·관리비·계약기간은 조건을 통과한 방 상품들의 범위로 내려간다.
 - 매칭 결과가 없으면 `matchedPlace=null`, `content=[]`로 `200 OK`(404 아님).
 - `matchedPlace=null`이면 프론트는 "검색된 장소가 없어요" 상태를 표시할 수 있다. `matchedPlace`가 있고 `content=[]`이면
   장소는 찾았지만 3km 이내 매물이 없는 상태다.

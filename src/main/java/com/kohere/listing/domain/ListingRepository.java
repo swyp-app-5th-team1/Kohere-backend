@@ -21,8 +21,8 @@ public interface ListingRepository {
   /**
    * 지도 범위와 필터 조건을 적용해 목록 카드 후보를 조회한다.
    *
-   * <p>목록 화면은 건물 하나가 아니라 방 상품 하나를 카드 1개로 보여준다. 그래서 반환값도 {@link Listing}만 단독으로 넘기지 않고, 카드에 필요한 건물
-   * 정보와 방 상품 정보를 함께 담은 {@link ListingSearchResult}를 페이지 단위로 반환한다.
+   * <p>목록 화면은 매물/건물 1개를 카드 1개로 보여준다. 다만 가격·보증금·관리비·계약기간·재고는 방 상품별로 달라질 수 있으므로, 반환값은 {@link
+   * Listing}과 검색 조건을 통과한 방 상품 목록을 함께 담은 {@link ListingSearchResult}를 페이지 단위로 반환한다.
    */
   PageResponse<ListingSearchResult> search(ListingSearchCondition condition);
 

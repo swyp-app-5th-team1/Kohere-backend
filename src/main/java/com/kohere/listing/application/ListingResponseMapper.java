@@ -6,45 +6,47 @@ import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingSearchResult;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
-/** Listing 도메인 모델을 외부 응답 DTO와 published view로 변환한다. */
+/** Listing 도메인 모델을 클라이언트 응답 DTO와 모듈 간 published view로 변환한다. */
 final class ListingResponseMapper {
 
   private ListingResponseMapper() {}
 
   /**
-   * 목록 화면의 카드 응답을 만든다.
+   * 목록/키워드 검색 화면의 매물 카드 응답을 만든다.
    *
-   * <p>목록 조회는 이미 저장소에서 조건에 맞는 {@code roomOffer}를 모두 펼쳐 {@link ListingSearchResult}로 넘겨준다. 따라서 여기서는
-   * 추가로 대표 방을 고르지 않고, 전달받은 방 상품의 가격·조건·재고를 그대로 카드에 담는다.
+   * <p>저장소는 이미 Listing 단위로 중복을 제거하고, 그 매물 안에서 검색 조건을 통과한 활성 {@code roomOffers}만 담아 넘긴다. 이 메서드는 프론트
+   * 카드가 바로 범위 문구(예: 38~40만원/mo)를 그릴 수 있도록 그 방 상품 목록의 가격·보증금·관리비·계약기간을 집계한다.
    */
   static ListingSummaryResponse toSummary(ListingSearchResult result, Integer distanceMeters) {
-    return toSummary(result.listing(), result.roomOffer(), distanceMeters);
-  }
-
-  /** 이미 고른 방 상품으로 목록 응답을 조립한다. */
-  private static ListingSummaryResponse toSummary(
-      Listing listing, Listing.RoomOffer offer, Integer distanceMeters) {
+    Listing listing = result.listing();
+    List<Listing.RoomOffer> offers = result.roomOffers();
     return new ListingSummaryResponse(
         listing.getId(),
-        offer.roomOfferId(),
-        offer.name(),
         listing.getTitle(),
         listing.getType(),
-        offer.pricing().monthlyRent(),
-        offer.pricing().deposit(),
-        offer.pricing().maintenanceFee(),
-        offer.inventory().availableCount(),
+        minMonthlyRent(offers),
+        maxMonthlyRent(offers),
+        minDeposit(offers),
+        maxDeposit(offers),
+        minMaintenanceFee(offers),
+        maxMaintenanceFee(offers),
+        totalAvailableCount(offers),
+        minStayMonths(offers),
+        maxStayMonths(offers),
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
         listing.getAddress().fullAddress(),
-        List.copyOf(offer.filterTags()),
+        aggregateConditionTags(offers),
         distanceMeters,
         false,
         listing.getFavoriteCount());
@@ -175,6 +177,62 @@ final class ListingResponseMapper {
         .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
         .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
         .orElseGet(() -> listing.getRoomOffers().getFirst());
+  }
+
+  /** 조건을 통과한 방 상품 중 가장 낮은 월세를 카드의 월세 범위 시작값으로 쓴다. */
+  private static int minMonthlyRent(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().monthlyRent()).min().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품 중 가장 높은 월세를 카드의 월세 범위 끝값으로 쓴다. */
+  private static int maxMonthlyRent(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().monthlyRent()).max().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품들의 보증금 최저값이다. */
+  private static int minDeposit(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().deposit()).min().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품들의 보증금 최고값이다. */
+  private static int maxDeposit(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().deposit()).max().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품들의 관리비 최저값이다. */
+  private static int minMaintenanceFee(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().maintenanceFee()).min().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품들의 관리비 최고값이다. */
+  private static int maxMaintenanceFee(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.pricing().maintenanceFee()).max().orElseThrow();
+  }
+
+  /** 목록 카드의 계약 가능 수량은 조건을 통과한 모든 방 상품 묶음의 availableCount 합계다. */
+  private static int totalAvailableCount(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.inventory().availableCount()).sum();
+  }
+
+  /** 조건을 통과한 방 상품 중 가장 짧은 최소 계약기간이다. */
+  private static int minStayMonths(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.contract().minStayMonths()).min().orElseThrow();
+  }
+
+  /** 조건을 통과한 방 상품 중 가장 긴 최대 계약기간이다. */
+  private static int maxStayMonths(List<Listing.RoomOffer> offers) {
+    return offers.stream().mapToInt(offer -> offer.contract().maxStayMonths()).max().orElseThrow();
+  }
+
+  /**
+   * 매물 카드의 조건 태그는 조건을 통과한 방 상품들의 합집합이다.
+   *
+   * <p>{@link EnumSet}을 사용해 enum 선언 순서를 유지하므로, 같은 데이터는 항상 같은 순서로 직렬화된다.
+   */
+  private static List<ConditionTag> aggregateConditionTags(List<Listing.RoomOffer> offers) {
+    Set<ConditionTag> tags = EnumSet.noneOf(ConditionTag.class);
+    offers.forEach(offer -> tags.addAll(offer.filterTags()));
+    return List.copyOf(tags);
   }
 
   /** 건물 이미지 중 첫 번째 이미지를 썸네일로 사용하고, 없으면 null을 반환한다. */

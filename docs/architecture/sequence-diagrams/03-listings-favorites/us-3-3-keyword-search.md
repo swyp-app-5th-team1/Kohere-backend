@@ -27,5 +27,6 @@ sequenceDiagram
 ## 흐름 요약
 
 - `GET /api/v1/listings/search?keyword=...`로 `listing` 모듈이 학교/지역/역 키워드를 POI 사전에 매칭해 매칭 위치 기준으로 MongoDB에서 주변 매물을 조회하고 `data.matchedPlace`와 `data.content[]`(오프셋 페이지)를 반환한다.
+- 검색 결과의 `content[]`는 `/api/v1/listings`와 같은 매물 카드 스키마다. 같은 매물 안에 조건을 만족하는 roomOffer가 여러 개 있어도 `listingId`는 한 번만 내려가며, 가격·보증금·관리비·계약기간은 조건을 통과한 roomOffer들의 범위로 내려간다.
 - 키워드 누락/공백/길이(1~50자) 위반은 `listing` 모듈이 `400 INVALID_INPUT`으로 거부한다(검증 실패 분기는 MongoDB 접근 없음).
 - POI 매칭이 없으면 에러가 아니라 `200 OK` + `matchedPlace=null`·`content=[]`로 응답한다.

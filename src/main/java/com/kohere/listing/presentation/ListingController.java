@@ -37,7 +37,7 @@ public class ListingController {
 
   private final ListingService listingService;
 
-  /** 지도 바텀시트에서 사용할 매물 카드 목록을 지도 범위와 필터 조건으로 조회한다. */
+  /** 지도 바텀시트에서 사용할 매물/건물 단위 카드 목록을 지도 범위와 필터 조건으로 조회한다. */
   @GetMapping
   public PageResponse<ListingSummaryResponse> getListings(
       @ModelAttribute ListingSearchRequest request) {
@@ -51,7 +51,7 @@ public class ListingController {
   }
 
   /**
-   * 학교명·지역명·지하철역명 키워드로 검색된 장소 주변의 방 상품 카드 목록을 조회한다.
+   * 학교명·지역명·지하철역명 키워드로 검색된 장소 주변의 매물/건물 단위 카드 목록을 조회한다.
    *
    * <p>검색어가 POI 사전에 없으면 에러가 아니라 {@code matchedPlace=null}, {@code content=[]}로 반환해 프론트가 "검색된 장소가
    * 없어요" 상태를 표시할 수 있게 한다.

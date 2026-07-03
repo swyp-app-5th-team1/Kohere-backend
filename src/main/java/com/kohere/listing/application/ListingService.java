@@ -67,8 +67,8 @@ public class ListingService {
   /**
    * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
    *
-   * <p>목록 카드 1개는 건물 Listing 하나가 아니라 "Listing + roomOffer" 조합이다. 같은 고시원 안에 조건에 맞는 방 상품이 여러 개 있으면 같은
-   * listingId를 가진 카드가 여러 개 내려갈 수 있다.
+   * <p>목록 카드 1개는 건물/숙소 매물({@code Listing}) 1개다. 같은 고시원 안에 조건에 맞는 방 상품이 여러 개 있어도 {@code listingId}는
+   * 한 번만 내려가며, 가격·보증금·관리비·계약기간·재고는 조건을 통과한 방 상품들의 범위와 합계로 내려간다.
    */
   public PageResponse<ListingSummaryResponse> getListings(ListingSearchRequest request) {
     ListingSearchCondition condition = buildSearchCondition(request);
@@ -85,7 +85,7 @@ public class ListingService {
   }
 
   /**
-   * 학교명·지역명·지하철역명 키워드를 POI로 매칭하고, 그 장소 주변의 방 상품 카드 목록을 반환한다.
+   * 학교명·지역명·지하철역명 키워드를 POI로 매칭하고, 그 장소 주변의 매물 카드 목록을 반환한다.
    *
    * <p>검색어가 POI에 없다는 것은 서버 오류가 아니므로 404를 던지지 않는다. 프론트가 "검색된 장소가 없어요" 상태를 쉽게 구분할 수 있도록 {@code
    * matchedPlace=null}, {@code content=[]}, {@code totalElements=0}으로 200 OK를 반환한다.
@@ -271,8 +271,7 @@ public class ListingService {
   /**
    * POI 주변 검색 결과를 응답 DTO로 조립한다.
    *
-   * <p>목록 API와 같은 {@link ListingSummaryResponse} 카드 구조를 재사용하되, {@code distanceMeters}는 요청 bbox 중심이
-   * 아니라 검색된 POI 좌표를 기준으로 계산된다.
+   * <p>목록 API와 같은 매물 카드 구조를 재사용하되, {@code distanceMeters}는 요청 bbox 중심이 아니라 검색된 POI 좌표를 기준으로 계산된다.
    */
   private ListingKeywordSearchResponse searchListingsAround(
       SearchPlace place, ListingKeywordSearchRequest request) {
