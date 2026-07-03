@@ -14,7 +14,7 @@ import java.util.Set;
  *
  * @param region 진단 ① 지역(단일, 예: {@code "SEOUL"})
  * @param monthlyBudgetMax 진단 ⑤ 월 예산 상한(KRW 정수)
- * @param conditions 진단 ④ 주거 조건 이름 집합(0~다수, 예: {@code "PRIVATE_TOILET"})
+ * @param conditions 진단 ④ 주거 조건 이름 집합(0~다수, 예: {@code "PRIVATE_BATH"})
  * @param university 진단 ③ 대학(STUDY일 때, 그 외 {@code null}, 예: {@code "SNU"})
  * @param district 진단 ③ 지역(구)(NON_STUDY일 때, 그 외 {@code null}, 예: {@code "GURO_GU"})
  * @param page 0-base 페이지 번호(오프셋 페이지네이션)

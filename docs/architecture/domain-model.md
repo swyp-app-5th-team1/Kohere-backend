@@ -390,7 +390,6 @@
 | | `GENDER_SEPARATED` | 층/공간 분리 |
 | `ConditionTag` | `IMMEDIATE_MOVE_IN` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
-| | `PRIVATE_TOILET` | 개인 화장실 |
 | | `PRIVATE_BATH` | 개인 욕실 |
 | | `ENGLISH_AVAILABLE` | 영어 소통 가능 |
 | | `RESIDENT_REGISTRATION` | 전입신고 가능 |
@@ -399,7 +398,6 @@
 | | `DOUBLE_ROOM` | 2인실 |
 | `RoomFeature` | `SINGLE_ROOM` | 1인실 |
 | | `DOUBLE_ROOM` | 2인실 |
-| | `PRIVATE_TOILET` | 개인 화장실 |
 | | `PRIVATE_BATH` | 개인 욕실 |
 | | `PRIVATE_REFRIGERATOR` | 개인 냉장고 |
 | | `MICROWAVE` | 전자레인지 |
@@ -487,7 +485,6 @@
 | | `ETC` | 기타 |
 | `DiagnosisCondition` | `IMMEDIATE_MOVE_IN` | 즉시입주 |
 | | `FEMALE_ONLY` | 여성전용 |
-| | `PRIVATE_TOILET` | 개인화장실 |
 | | `PRIVATE_BATH` | 개인욕실 |
 | | `ENGLISH_AVAILABLE` | 영어가능 |
 | | `RESIDENT_REGISTRATION` | 전입신고가능 |

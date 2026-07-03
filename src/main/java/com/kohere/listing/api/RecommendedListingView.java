@@ -17,7 +17,7 @@ import java.util.List;
  * @param thumbnailUrl 대표 이미지 URL
  * @param lat 위도(지도 마커)
  * @param lng 경도(지도 마커)
- * @param conditions 주거 조건 태그 이름 목록(예: {@code "PRIVATE_TOILET"})
+ * @param conditions 주거 조건 태그 이름 목록(예: {@code "PRIVATE_BATH"})
  */
 public record RecommendedListingView(
     String listingId,

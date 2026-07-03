@@ -9,7 +9,7 @@
 
 - `ListingType`: `GOSIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
-- `ConditionTag`(주거 환경 조건 9종, 필터 칩·편의시설 태그 공용): `IMMEDIATE_MOVE_IN`(즉시 입주), `FEMALE_ONLY`(여성 전용), `PRIVATE_TOILET`(개인 화장실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_AVAILABLE`(영어 소통 가능), `RESIDENT_REGISTRATION`(전입신고 가능), `NO_MAINTENANCE_FEE`(관리비 없음), `MEALS_PROVIDED`(식사 제공), `DOUBLE_ROOM`(2인실)
+- `ConditionTag`(주거 환경 조건 8종, 필터 칩·편의시설 태그 공용): `IMMEDIATE_MOVE_IN`(즉시 입주), `FEMALE_ONLY`(여성 전용), `PRIVATE_BATH`(개인 욕실), `ENGLISH_AVAILABLE`(영어 소통 가능), `RESIDENT_REGISTRATION`(전입신고 가능), `NO_MAINTENANCE_FEE`(관리비 없음), `MEALS_PROVIDED`(식사 제공), `DOUBLE_ROOM`(2인실)
 - `ContractTerm`(계약기간, 개월): `ONE_MONTH`, `THREE_MONTHS`, `SIX_MONTHS`, `TWELVE_MONTHS`
 - `MatchedPlaceType`(키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 

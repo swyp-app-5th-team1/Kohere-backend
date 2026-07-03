@@ -23,7 +23,7 @@ Accepted
   - ② 입국 목적은 **단일 enum** `purpose`(`Purpose: STUDY | NON_STUDY`)다. 기존 `purposes[]`(배열) 모델을 단일 `purpose`로 교체한다.
   - ③ 대학·지역은 두 필드 `university`(enum `UniversityGroup`: 개별 대학 15값을 6개 그룹으로 묶은 `HUFS_KHU_KOREA,SKKU_SUNGSHIN,SNU_CAU_SOONGSIL,HONGIK_YONSEI_EWHA,KONKUK_SEJONG_HYU,ETC`) / `district`(enum `District`: `GURO_GU,YEONGDEUNGPO_GU,GEUMCHEON_GU,GWANAK_GU,DONGDAEMUN_GU,ETC`)다. **조건부 필수**: `purpose=STUDY` → `university` 필수·`district` 없음 / `NON_STUDY` → `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`. (필드 키는 `university` 유지, enum 타입/값만 그룹으로 교체.)
   - ⑤ 월세는 단일 상한 `monthlyBudgetMax`가 아니라 최소-최대 범위 `monthlyRentMin`·`monthlyRentMax`(KRW 정수, 둘 다 필수·각 0 이상·`min<=max`)다. 답 제출은 `codes[]`가 아니라 필드 키 `monthlyRent`로 `min`/`max` 두 숫자 필드를 본문에 담는다(`{ "field": "monthlyRent", "min": 300000, "max": 600000 }`).
-  - ④ 주거 조건 enum은 `listing`의 `ConditionTag` 이름으로 통일한다: `IMMEDIATE_MOVE_IN, FEMALE_ONLY, PRIVATE_TOILET, PRIVATE_BATH, ENGLISH_AVAILABLE, RESIDENT_REGISTRATION, NO_MAINTENANCE_FEE, MEALS_PROVIDED, DOUBLE_ROOM`(기존 `INSTANT_MOVE_IN/ENGLISH_SPEAKING/TWIN_ROOM` 교체).
+  - ④ 주거 조건 enum은 `listing`의 `ConditionTag` 이름으로 통일한다: `IMMEDIATE_MOVE_IN, FEMALE_ONLY, PRIVATE_BATH, ENGLISH_AVAILABLE, RESIDENT_REGISTRATION, NO_MAINTENANCE_FEE, MEALS_PROVIDED, DOUBLE_ROOM`(기존 `INSTANT_MOVE_IN/ENGLISH_SPEAKING/TWIN_ROOM` 교체).
 - ③의 분기(`STUDY`→대학 / `NON_STUDY`→지역구)는 **비즈니스 로직(서비스)이 저장된 답 `purpose`로 결정**해 알맞은 질문 하나만 내려준다(클라이언트 로컬 분기 아님, 카탈로그 분기 메타 아님). 카탈로그에는 대학 질문·지역 질문이 **각각 별도 데이터**로 존재하고, 어느 것을 노출할지는 서비스가 고른다.
 - 제약: MongoDB 실구현은 [#34](../requirements/user-stories.md)(로컬 MongoDB 미설치)에 막혀 있다. 현 단계 코드는 컨트롤러 + 응답 DTO + stub 서비스(`UnsupportedOperationException`) 스켈레톤까지만 두고, 실 카탈로그 적재·조립은 기존 진단 스텁과 동일하게 TODO로 남긴다.
 - 따라서 "카탈로그를 코드 enum 직렬화로 만들지, 정적 리소스로 둘지, DB에 영속할지"를 결정해야 한다.

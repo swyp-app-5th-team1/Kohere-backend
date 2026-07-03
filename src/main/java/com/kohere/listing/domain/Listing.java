@@ -91,7 +91,6 @@ public class Listing {
   public enum RoomFeature {
     SINGLE_ROOM,
     DOUBLE_ROOM,
-    PRIVATE_TOILET,
     PRIVATE_BATH,
     PRIVATE_REFRIGERATOR,
     MICROWAVE,

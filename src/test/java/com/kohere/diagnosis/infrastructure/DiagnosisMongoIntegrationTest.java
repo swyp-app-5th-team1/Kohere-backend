@@ -214,7 +214,7 @@ class DiagnosisMongoIntegrationTest {
                 answerCodes(
                     16L,
                     "conditions",
-                    Set.of("FEMALE_ONLY", "PRIVATE_BATH", "PRIVATE_TOILET", "MEALS_PROVIDED")))
+                    Set.of("FEMALE_ONLY", "PRIVATE_BATH", "ENGLISH_AVAILABLE", "MEALS_PROVIDED")))
         .isInstanceOf(InvalidInputException.class);
 
     long userId = 17L;

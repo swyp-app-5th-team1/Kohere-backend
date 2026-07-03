@@ -83,7 +83,6 @@ public class DiagnosisCatalogSeedChangeUnit {
             List.of(
                 opt("IMMEDIATE_MOVE_IN", "즉시 입주", "Immediate move-in"),
                 opt("FEMALE_ONLY", "여성 전용", "Female only"),
-                opt("PRIVATE_TOILET", "개인 화장실", "Private toilet"),
                 opt("PRIVATE_BATH", "개인 욕실", "Private bath"),
                 opt("ENGLISH_AVAILABLE", "영어 가능", "English available"),
                 opt("RESIDENT_REGISTRATION", "전입신고 가능", "Resident registration"),

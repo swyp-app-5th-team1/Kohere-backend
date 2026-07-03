@@ -331,7 +331,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.PRIVATE_TOILET)),
+                        Set.of(ConditionTag.ENGLISH_AVAILABLE)),
                     roomOffer(
                         "6858e2000000000000000204",
                         "Inactive Zone",
@@ -393,7 +393,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.PRIVATE_TOILET))))
+                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
             .build());
 
     PageResponse<ListingSearchResult> result =
@@ -450,7 +450,7 @@ class ListingMongoIntegrationTest {
                         600000,
                         1000000,
                         1,
-                        Set.of(ConditionTag.PRIVATE_TOILET))))
+                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
             .build());
 
     ListingSearchCondition firstPageCondition =
