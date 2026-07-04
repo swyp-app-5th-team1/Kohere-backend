@@ -1,0 +1,59 @@
+# Kohere — 테스트 마스터 로그인 (dev·local 전용). 실제 Apple/Google 로그인 없이 미리 시드된 마스터 계정으로 토큰을 받는다.
+# 운영(prod)에는 이 우회가 존재하지 않는다(빈 미등록).
+#
+# 동작 원리:
+#   - 시더(MasterAccountSeedRunner)가 세입자·임대인 마스터를 ACTIVE로 시드 + social_accounts 매핑 생성.
+#   - 가짜 검증기(TestLoginOidcTokenVerifier)가 idToken="master:<role>:<secret>" + 시크릿 일치 시 그 마스터 신원을 반환,
+#     그 외 토큰은 실제 검증기에 위임(진짜 소셜 로그인 유지).
+#   - 이후는 실제 /auth/social-login 파이프라인 그대로 → 정식 access/refresh 발급.
+#
+# 사용법 (VS Code "REST Client" — humao.rest-client):
+#   1) 앱을 local 프로파일로 기동(기본): ./gradlew bootRun  (인프라: docker compose up -d mysql mongo redis)
+#      로컬은 app.auth.test-login.enabled=true 가 기본(이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다).
+#   2) 아래 @secret 을 설정값과 맞춘다.
+#      - local: application-local.yml 폴백 = local-dev-test-login-secret (아래 기본값 그대로면 됨)
+#      - dev:   SSM(TEST_LOGIN_SECRET) 주입값 — 서버 로그/SSM에서 확인해 붙여넣고 @baseUrl 을 dev 도메인으로 바꾼다.
+#   3) 각 요청의 "Send Request" 클릭. onboardingRequired=false, status=ACTIVE, access/refresh 발급이면 성공.
+
+@baseUrl = http://localhost:8080
+@secret = local-dev-test-login-secret
+
+### 0. 헬스 체크
+GET {{baseUrl}}/actuator/health
+
+### 1. 세입자(TENANT) 마스터 로그인 → 정식 토큰
+# @name tenantLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:tenant:{{secret}}"
+}
+
+### 2. 세입자 토큰으로 보호 자원 접근(ROLE_USER) → 내 프로필
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 3. 임대인(LANDLORD) 마스터 로그인 → 정식 토큰
+# @name landlordLogin
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:landlord:{{secret}}"
+}
+
+### 4. 임대인 토큰으로 보호 자원 접근 → 내 프로필
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 5. (음성 확인) 잘못된 시크릿 → 401 AUTH_INVALID_SOCIAL_TOKEN (진짜 검증기로 위임되어 실패)
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:tenant:wrong-secret"
+}

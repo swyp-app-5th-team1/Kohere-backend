@@ -1069,13 +1069,18 @@ class AuthOnboardingDocsTest {
 
   private static List<FieldDescriptor> patchRequestFields() {
     return List.of(
-        optField("firstName", JsonFieldType.STRING, "이름(선택)"),
-        optField("lastName", JsonFieldType.STRING, "성(선택)"),
-        optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(선택)"),
-        optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(선택)"),
-        optField("country", JsonFieldType.STRING, "국적 ISO 코드(선택)"),
-        optField("occupation", JsonFieldType.STRING, "직업 enum(선택)"),
-        optField("visaType", JsonFieldType.STRING, "비자유형 enum(선택)"),
+        optField("firstName", JsonFieldType.STRING, "이름(세입자·선택)"),
+        optField("lastName", JsonFieldType.STRING, "성(세입자·선택)"),
+        optField("gender", JsonFieldType.STRING, "성별 MALE|FEMALE(세입자·선택)"),
+        optField("birthDate", JsonFieldType.STRING, "생년월일 YYYY-MM-DD, 과거만(세입자·선택)"),
+        optField("country", JsonFieldType.STRING, "국적 ISO 코드(세입자·선택)"),
+        optField("occupation", JsonFieldType.STRING, "직업 enum(세입자·선택)"),
+        optField("visaType", JsonFieldType.STRING, "비자유형 enum(세입자·선택)"),
+        optField("name", JsonFieldType.STRING, "이름(임대인 전체 이름·선택)"),
+        optField(
+            "phoneNumber",
+            JsonFieldType.STRING,
+            "연락처(임대인·선택) — 새 번호는 SMS 재인증(§4-1·§4-2) 후에만 반영(미인증 422)"),
         optField("marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의(선택)"));
   }
 
@@ -1109,8 +1114,10 @@ class AuthOnboardingDocsTest {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.firstName", JsonFieldType.STRING, "이름"),
-        field("data.lastName", JsonFieldType.STRING, "성"),
+        field("data.userType", JsonFieldType.STRING, "회원 역할(TENANT|LANDLORD) — 응답 필드가 이에 따라 갈린다"),
+        field("data.firstName", JsonFieldType.STRING, "이름(세입자)"),
+        field("data.lastName", JsonFieldType.STRING, "성(세입자)"),
+        optField("data.name", JsonFieldType.STRING, "전체 이름(임대인만 — 세입자는 생략)"),
         field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정, 형용사+사물)"),
         field("data.gender", JsonFieldType.STRING, "성별(MALE|FEMALE)"),
         field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
@@ -1120,6 +1127,7 @@ class AuthOnboardingDocsTest {
         field("data.occupation", JsonFieldType.STRING, "직업 enum"),
         field("data.email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field("data.visaType", JsonFieldType.STRING, "비자유형 enum"),
+        optField("data.phoneNumber", JsonFieldType.STRING, "연락처(임대인만·본인 조회 평문 — 세입자는 생략)"),
         field("data.status", JsonFieldType.STRING, "회원 상태(PENDING|TERMS_AGREED|ACTIVE|WITHDRAWN)"),
         field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),
         field("data.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보처리방침 동의 여부"),

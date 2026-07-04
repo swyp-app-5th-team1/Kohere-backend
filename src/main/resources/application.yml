@@ -38,6 +38,10 @@ app:
     onboarding-ttl-seconds: 1800 # 온보딩 임시 토큰 30분 (ADR-0011)
   auth:
     refresh-ttl-seconds: 1209600 # refresh 14일 (ADR-0011)
+    test-login:
+      # dev·local 테스트 마스터 로그인 우회(운영 미사용). 기본 비활성 — 프로파일(local·dev) + 이 토글 이중 게이트.
+      # 활성화·시크릿은 프로파일별 파일에서만 주입한다(base엔 운영-위험 기본값을 두지 않음).
+      enabled: false
   terms:
     version: v1.0 # 약관 버전 정본 — 약관 동의 시 서버가 기록 (ADR-0012)
   email:

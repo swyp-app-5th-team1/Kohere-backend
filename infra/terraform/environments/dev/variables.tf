@@ -211,6 +211,13 @@ variable "bizno_api_key" {
   sensitive   = true
 }
 
+# ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
+variable "test_login_enabled" {
+  description = "dev 테스트 마스터 로그인 기능(앱 app.auth.test-login.enabled) — 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 기본 false"
+  type        = bool
+  default     = false
+}
+
 # ----- 알람 / 이미지 -----
 variable "discord_webhook_url" {
   description = "Discord 웹훅 URL — 채우면 CloudWatch 알람을 Discord로 통보(SNS→Lambda). 빈 값이면 미구성"

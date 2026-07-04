@@ -50,6 +50,12 @@ mail_from     = "noreply@kohere.app"
 # bizno_enabled = true
 # bizno_api_key = ""  # sensitive — SSM SecureString
 
+# ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
+# 기본 비활성. 우회 시크릿 TEST_LOGIN_SECRET 은 Terraform이 자동 생성한다(SSM SecureString) — 채우지 않는다.
+# 이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 필요할 때만 켠다:
+# test_login_enabled = true   # 마스터 계정 시드 + idToken="master:<role>:<secret>" 우회 로그인 허용
+# 반영: apply → (refresh-env.sh 최초 변경이면 EC2 재생성 1회) → 배포(gh workflow run deploy.yml, ADR-0024). 시크릿은 SSM에서 확인.
+
 # ----- DB 자격증명 (SSM SecureString) + 외부 접속 (dev 한정) -----
 # 비우면 기본 "kohere". 외부 노출(db_ingress_cidrs) 시 반드시 강한 값으로 바꾼다.
 # 변경 반영: 최초 init 후의 username·비번 변경은 배포 시 reconcile-db.sh가 live DB에 회전 적용한다(데이터 보존, ADR-0025).

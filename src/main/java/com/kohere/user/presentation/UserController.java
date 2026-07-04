@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 보호 경로 인가(ROLE_USER, PENDING 차단)는 보안 계층이 담당한다(ADR-0010). 도메인 DTO만 반환하고, 공통 래퍼는 {@link
  * com.kohere.common.response.ApiResponseWrapper}가 자동 적용한다(ADR-0013).
  *
- * <p>스펙: docs/api/specs/01-auth-onboarding.md §5~7.
+ * <p>스펙: docs/api/specs/01-auth-onboarding.md §8~10.
  */
 @RestController
 @RequestMapping("/api/v1/users/me")

@@ -234,14 +234,14 @@ public class AuthService {
   }
 
   /**
-   * 임대인 연락처 인증번호 발송. 약관 동의(TERMS_AGREED)가 선행되어야 하므로 미동의(PENDING)는 422
-   * AUTH_TERMS_AGREEMENT_REQUIRED로, 이미 완료(ACTIVE)된 사용자의 요청은 409로 거절한다(이메일 인증 §3과 대칭, 시퀀스 US-1-10).
-   * 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
+   * 연락처 인증번호 발송. 약관 동의(TERMS_AGREED) 이상이면 진행한다 — 온보딩(US-1-10, TERMS_AGREED)과 프로필 연락처 변경(US-1-5,
+   * ACTIVE) 두 컨텍스트 모두 허용하고, 약관 미동의(PENDING)만 422 AUTH_TERMS_AGREEMENT_REQUIRED로 거절한다(세입자 이메일 인증 §3과
+   * 대칭이나, 정식 토큰 재인증을 허용해 프로필 연락처 변경을 지원 — ADR-0034 §6·§8). 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
    */
   @Transactional(readOnly = true)
   public PhoneVerificationCodeResponse sendPhoneVerificationCode(
       long userId, PhoneVerificationCodeRequest request) {
-    assertTermsAgreed(userId);
+    assertPhoneVerificationAllowed(userId);
     long expiresIn = phoneVerificationService.sendCode(userId, request.phoneNumber());
     return new PhoneVerificationCodeResponse(maskPhone(request.phoneNumber()), expiresIn);
   }
@@ -331,6 +331,18 @@ public class AuthService {
       throw new OnboardingAlreadyCompletedException();
     }
     if (STATUS_PENDING.equals(status)) {
+      throw new TermsAgreementRequiredException();
+    }
+  }
+
+  /**
+   * 연락처 인증 선행 게이트 — 약관 동의(TERMS_AGREED) 이상이면 통과한다. 온보딩(US-1-10, TERMS_AGREED)과 프로필 연락처 변경(US-1-5,
+   * ACTIVE) 두 컨텍스트 모두 허용하고, 약관 미동의(PENDING)만 422 AUTH_TERMS_AGREEMENT_REQUIRED로 막는다 — 세입자 이메일
+   * 인증(온보딩 전용, ACTIVE는 409)과 달리 정식 토큰(ACTIVE) 재인증을 허용한다(ADR-0034 §6·§8). 상태 소유자는 user이므로 공개 API로
+   * 조회만 한다.
+   */
+  private void assertPhoneVerificationAllowed(long userId) {
+    if (STATUS_PENDING.equals(userAccountService.getAccount(userId).status())) {
       throw new TermsAgreementRequiredException();
     }
   }

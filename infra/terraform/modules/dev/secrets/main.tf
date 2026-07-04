@@ -17,16 +17,22 @@ resource "random_password" "phone_pepper" {
   length  = 32
   special = false
 }
+# dev·local 테스트 마스터 로그인 우회 시크릿(app.auth.test-login.secret). 항상 생성해 두고, 활성화는 TEST_LOGIN_ENABLED 토글로 별도 제어한다.
+resource "random_password" "test_login_secret" {
+  length  = 48
+  special = false
+}
 
 locals {
   ssm_prefix = "/${var.name_prefix}"
 
   # 자동 생성 시크릿 — 항상 존재(빈 값 불가). random 값은 plan 시점 미정이라 무조건 생성(필터 X).
   generated_params = {
-    JWT_SECRET     = random_password.jwt_secret.result
-    REFRESH_PEPPER = random_password.refresh_pepper.result
-    EMAIL_PEPPER   = random_password.email_pepper.result
-    PHONE_PEPPER   = random_password.phone_pepper.result
+    JWT_SECRET        = random_password.jwt_secret.result
+    REFRESH_PEPPER    = random_password.refresh_pepper.result
+    EMAIL_PEPPER      = random_password.email_pepper.result
+    PHONE_PEPPER      = random_password.phone_pepper.result
+    TEST_LOGIN_SECRET = random_password.test_login_secret.result
   }
 
   # 외부 발급(OIDC·SMTP) + DB 자격증명 — vars라 plan 시점 known. 빈 값은 SSM이 거부(길이 ≥ 1)하므로 생성 제외.
@@ -56,9 +62,10 @@ locals {
   # compose(부팅 1회 렌더)가 아닌 SSM 경유로 옮겨 재배포(refresh-env 재실행)만으로 반영되게 한다(ADR-0024). 빈 값은 SSM이 거부하므로 제외.
   config_params = {
     for k, v in {
-      SOLAPI_ENABLED = tostring(var.solapi_enabled)
-      SOLAPI_FROM    = var.solapi_from
-      BIZNO_ENABLED  = tostring(var.bizno_enabled)
+      SOLAPI_ENABLED     = tostring(var.solapi_enabled)
+      SOLAPI_FROM        = var.solapi_from
+      BIZNO_ENABLED      = tostring(var.bizno_enabled)
+      TEST_LOGIN_ENABLED = tostring(var.test_login_enabled)
     } : k => v if v != ""
   }
 }

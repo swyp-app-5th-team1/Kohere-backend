@@ -96,6 +96,8 @@ module "secrets" {
   solapi_enabled = var.solapi_enabled
   solapi_from    = var.solapi_from
   bizno_enabled  = var.bizno_enabled
+  # dev 테스트 마스터 로그인 토글(비밀 아님) — 시드+우회 로그인을 함께 켠다. 시크릿(TEST_LOGIN_SECRET)은 secrets 모듈이 자동 생성한다.
+  test_login_enabled = var.test_login_enabled
 }
 
 # ===== 데이터 EBS (mysql/mongo 영속) =====

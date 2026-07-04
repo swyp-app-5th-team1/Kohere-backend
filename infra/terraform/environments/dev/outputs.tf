@@ -27,3 +27,9 @@ output "github_deploy_role_arn" {
   description = "GitHub Actions가 assume할 배포 역할 ARN(리포 Variables AWS_DEPLOY_ROLE_ARN 에 설정)"
   value       = aws_iam_role.github_deploy.arn
 }
+
+output "test_login_secret" {
+  description = "dev 테스트 마스터 로그인 우회 시크릿(자동 생성) — 조회: terraform output -raw test_login_secret"
+  value       = module.secrets.test_login_secret
+  sensitive   = true
+}

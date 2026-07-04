@@ -481,16 +481,16 @@ class AuthServiceTest {
   }
 
   @Test
-  void sendPhoneVerificationCode_activeUser_throwsAlreadyCompletedAndDoesNotSend() {
+  void sendPhoneVerificationCode_activeUser_allowedForProfileChange() {
+    // US-1-5: 정식 회원(ACTIVE)도 프로필 연락처 변경을 위해 인증번호를 받을 수 있다(온보딩 전용 아님, ADR-0034 §6·§8).
     when(userAccountService.getAccount(40L)).thenReturn(new UserAccountView(40L, "ACTIVE"));
+    when(phoneVerificationService.sendCode(40L, "01012345678")).thenReturn(300L);
 
-    assertThatThrownBy(
-            () ->
-                authService.sendPhoneVerificationCode(
-                    40L, new PhoneVerificationCodeRequest("01012345678")))
-        .isInstanceOf(OnboardingAlreadyCompletedException.class);
+    PhoneVerificationCodeResponse response =
+        authService.sendPhoneVerificationCode(40L, new PhoneVerificationCodeRequest("01012345678"));
 
-    verify(phoneVerificationService, never()).sendCode(anyLong(), any());
+    assertThat(response.phoneNumber()).isEqualTo("010-****-5678");
+    verify(phoneVerificationService).sendCode(40L, "01012345678");
   }
 
   @Test
@@ -623,6 +623,7 @@ class AuthServiceTest {
         id,
         "Gil",
         "Hong",
+        null,
         "BraveOtter",
         "MALE",
         LocalDate.of(1990, 1, 1),
@@ -632,8 +633,8 @@ class AuthServiceTest {
         "UNDERGRADUATE_STUDENT",
         "gil@example.com",
         "SHORT_TERM_VISIT_C-2_C-3",
-        "TENANT",
         null,
+        "TENANT",
         "ACTIVE",
         false,
         Instant.now());
@@ -651,12 +652,16 @@ class AuthServiceTest {
         "SHORT_TERM_VISIT_C-2_C-3");
   }
 
-  /** 임대인 온보딩 응답 프로필 — 성별·국적·직업·비자·생년월일·이메일 미수집(null), userType=LANDLORD. */
+  /**
+   * 임대인 온보딩 응답 프로필 — 성별·국적·직업·비자·생년월일·이메일 미수집(null), 전체 이름은 {@code name}에, 마스킹된 연락처를 {@code
+   * phoneNumber}에, userType=LANDLORD.
+   */
   private static UserProfileView landlordProfileView(long id) {
     return new UserProfileView(
         id,
-        "Kim Imdae",
         null,
+        null,
+        "Kim Imdae",
         "CalmFox",
         null,
         null,
@@ -666,8 +671,8 @@ class AuthServiceTest {
         null,
         null,
         null,
+        "010-****-5678",
         "LANDLORD",
-        "01012345678",
         "ACTIVE",
         false,
         Instant.now());

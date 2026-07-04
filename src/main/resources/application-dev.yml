@@ -34,6 +34,12 @@ app:
     refresh-pepper: ${REFRESH_PEPPER} # ADR-0006
     email-pepper: ${EMAIL_PEPPER} # 이메일 인증번호 해시 pepper
     phone-pepper: ${PHONE_PEPPER} # 연락처 인증번호 해시 pepper(Terraform 자동생성·SSM, ADR-0023)
+    test-login:
+      # 테스트 마스터 로그인 기능(공유 EC2). 이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다.
+      # 옵션 기능이라 기본 off + 시크릿 빈 값(폴백) — 미주입이어도 dev는 정상 기동.
+      # 켜려면 SSM(TEST_LOGIN_ENABLED=true·TEST_LOGIN_SECRET=<랜덤>)을 refresh-env로 주입한다(ADR-0024). secret 정본은 repo에 없다.
+      enabled: ${TEST_LOGIN_ENABLED:false}
+      secret: ${TEST_LOGIN_SECRET:}
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID}

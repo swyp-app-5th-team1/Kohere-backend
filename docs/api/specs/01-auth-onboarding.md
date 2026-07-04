@@ -312,7 +312,7 @@ provider별로 **자격 필드 하나**를 채운다 — Google은 `idToken`, Ap
 
 ### 4-1. POST `/api/v1/auth/phone/verification-code` — 연락처 인증번호 발송(임대인 전용)
 
-**임대인 온보딩** 중 입력한 연락처(휴대폰)로 SMS 인증번호를 발송한다(세입자 이메일 인증 §3과 대칭 — 임대인 트랙의 본인 확인, [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **약관 동의(§2, `TERMS_AGREED`)가 선행**되어야 한다 — 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절하고 약관 동의(§2)를 먼저 유도한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. **인증번호 정책은 이메일 인증(§3·§4)과 동일하다** — 인증번호 6자리, 서버에 **해시로만 보관**하고 코드 TTL 5분 후 만료, 검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료), 검증 시도 상한 5회, 재발송 간격 60초로 보호한다.
+**임대인 온보딩(US-1-10)** 또는 **정식 회원의 프로필 연락처 변경(US-1-5)** 시 입력한 연락처(휴대폰)로 SMS 인증번호를 발송한다(세입자 이메일 인증 §3과 대칭 — 임대인 트랙의 본인 확인, [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **약관 동의(§2, `TERMS_AGREED`) 이상**이면 진행한다 — 온보딩(`TERMS_AGREED`)·프로필 변경(`ACTIVE`) 두 컨텍스트 모두 허용하고, 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`로 거절하고 약관 동의(§2)를 먼저 유도한다. 같은 사용자에 미검증 인증 시도가 남아 있으면 새 인증번호로 대체한다. **인증번호 정책은 이메일 인증(§3·§4)과 동일하다** — 인증번호 6자리, 서버에 **해시로만 보관**하고 코드 TTL 5분 후 만료, 검증 마커(VERIFIED) TTL 30분(온보딩 토큰 만료), 검증 시도 상한 5회, 재발송 간격 60초로 보호한다.
 
 SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS API — 구체 provider는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))로 **동기 발송**하며, **발송에 성공한 뒤에만** 인증번호 챌린지를 저장한다. provider 장애·타임아웃 등 발송 실패 시 챌린지를 만들지 않고 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(인증번호 생성·해시·검증은 서버가 보유해 이메일 인증과 대칭 — 어댑터는 발송만 담당. 동기/비동기 정책·문자 템플릿은 확인 필요).
 
@@ -352,9 +352,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `phoneNumber` 누락/빈값/형식 위반 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩 토큰 누락/위조 / 만료 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 온보딩/정식 토큰 누락/위조 / 만료 |
 | 422 | `AUTH_TERMS_AGREEMENT_REQUIRED` | 약관 미동의(`PENDING`) 상태의 요청(약관 동의 §2 선행 필요) |
-| 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 온보딩 완료(ACTIVE)된 사용자의 요청(연락처 인증은 온보딩 단계 전용) |
 | 429 | `TOO_MANY_REQUESTS` | 재발송 레이트리밋 초과(이메일 인증과 동일 — 재발송 간격 60초) |
 | 502 | `UPSTREAM_ERROR` | SMS 발송 실패(provider 장애·타임아웃). 챌린지 미저장, 클라이언트 재시도 유도(공통 코드 — [error-response-guide](../error-response-guide.md) §3) |
 
@@ -464,6 +463,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "occupation": "UNDERGRADUATE_STUDENT",
       "email": "minh@example.com",
       "visaType": "STUDY_D-2",
+      "userType": "TENANT",
       "status": "ACTIVE",
       "marketingAgreed": false,
       "createdAt": "2026-06-15T08:30:00Z"
@@ -577,6 +577,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "phoneNumber": "010-****-5678",
       "userType": "LANDLORD",
       "status": "ACTIVE",
+      "marketingAgreed": false,
       "createdAt": "2026-06-15T08:30:00Z"
     },
     "tokenType": "Bearer",
@@ -588,7 +589,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹 대상이다(마스킹 형식 확인 필요). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`birthDate`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 

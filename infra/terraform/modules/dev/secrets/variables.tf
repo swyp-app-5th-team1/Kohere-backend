@@ -118,3 +118,9 @@ variable "bizno_enabled" {
   type        = bool
   default     = false
 }
+
+variable "test_login_enabled" {
+  description = "dev 테스트 마스터 로그인 기능(앱 app.auth.test-login.enabled) — 마스터 계정 시드 + 우회 로그인을 함께 켠다. 기본 false(공유 EC2 백도어)"
+  type        = bool
+  default     = false
+}

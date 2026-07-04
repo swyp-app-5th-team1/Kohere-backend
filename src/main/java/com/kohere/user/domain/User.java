@@ -188,6 +188,26 @@ public class User {
   }
 
   /**
+   * 임대인 프로필 부분 수정. 전송한(=null 아님) 필드만 변경한다 — {@code name}(전체 이름)은 {@code firstName}에 보관하고({@code
+   * lastName} 미사용), {@code phoneNumber}·{@code marketingAgreed}를 갱신한다. 연락처 변경 시 SMS 재인증 완료 확인은
+   * 호출자(user 응용)가 선행한다(ADR-0034). 세입자 전용 필드(성별·국적·직업·비자정보)는 임대인 경로에서 다루지 않는다.
+   */
+  public User updateLandlordProfile(
+      String name, String phoneNumber, Boolean marketingAgreed, Instant now) {
+    var builder = toBuilder();
+    if (name != null) {
+      builder.firstName(name);
+    }
+    if (phoneNumber != null) {
+      builder.phoneNumber(phoneNumber);
+    }
+    if (marketingAgreed != null) {
+      builder.marketingAgreed(marketingAgreed);
+    }
+    return builder.updatedAt(now).build();
+  }
+
+  /**
    * 회원 탈퇴(→WITHDRAWN). 식별 PII(이름·닉네임·생년월일·국적·직업·이메일·비자)를 즉시 익명화(제거)하고 탈퇴 시각을 기록한다(ADR-0014). 행 자체는
    * 보존한다. 닉네임도 NULL로 비워 유니크 슬롯을 회수한다. 동의 메타데이터(약관 동의 여부·termsVersion·agreedAt)는 식별 PII가 아니므로 동의 증빙을
    * 위해 보존한다.

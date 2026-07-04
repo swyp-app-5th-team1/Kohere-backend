@@ -43,6 +43,11 @@ app:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
     email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper
     phone-pepper: ${PHONE_PEPPER:local-dev-phone-pepper} # 연락처 인증번호 해시 pepper
+    test-login:
+      # 테스트 마스터 로그인 기능 — 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다.
+      # localhost 전용이라 폴백 시크릿 무해(JWT_SECRET 로컬 폴백과 동일 논리).
+      enabled: ${TEST_LOGIN_ENABLED:true}
+      secret: ${TEST_LOGIN_SECRET:local-dev-test-login-secret}
   oidc:
     google:
       audience: ${GOOGLE_CLIENT_ID:}

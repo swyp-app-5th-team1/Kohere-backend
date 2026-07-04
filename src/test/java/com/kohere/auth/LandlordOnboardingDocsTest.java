@@ -324,15 +324,14 @@ class LandlordOnboardingDocsTest {
         "auth-phone-verification-code-dispatch-failed",
         "연락처 인증번호 발송 — SMS 발송 실패 (502 UPSTREAM_ERROR): 챌린지 미저장");
 
-    perform(
-        post("/api/v1/auth/phone/verification-code")
-            .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"phoneNumber\":\"" + PHONE + "\"}"),
-        status().isConflict(),
-        "AUTH_ONBOARDING_ALREADY_COMPLETED",
-        "auth-phone-verification-code-already-completed",
-        "연락처 인증번호 발송 — 이미 온보딩 완료(ACTIVE) 사용자의 요청 (409 AUTH_ONBOARDING_ALREADY_COMPLETED)");
+    // US-1-5: 정식(ACTIVE) 임대인도 프로필 연락처 변경을 위해 인증번호를 받을 수 있다(온보딩 전용 아님 — 409 아님, ADR-0034 §6·§8).
+    mockMvc
+        .perform(
+            post("/api/v1/auth/phone/verification-code")
+                .header(HttpHeaders.AUTHORIZATION, bearer(activeAccess))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"phoneNumber\":\"" + PHONE + "\"}"))
+        .andExpect(status().isOk());
 
     // ===== phone/verify =====
     perform(
@@ -689,23 +688,19 @@ class LandlordOnboardingDocsTest {
         field("phoneNumber", JsonFieldType.STRING, "사전 SMS 인증된 연락처와 일치(필수)"));
   }
 
+  /**
+   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·birthDate·country·countryName·countryFlag·
+   * occupation·email·visaType)는 {@code null}이라 응답에서 생략된다(UserProfileView
+   * {@code @JsonInclude(NON_NULL)}). 임대인은 단일 {@code name}·마스킹된 {@code phoneNumber}를 받는다(spec §5-2).
+   */
   private static List<FieldDescriptor> landlordOnboardingResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.user.id", JsonFieldType.NUMBER, "회원 ID"),
-        field("data.user.firstName", JsonFieldType.STRING, "임대인 이름(요청 name 보관)"),
-        optField("data.user.lastName", JsonFieldType.STRING, "임대인은 미사용(null)"),
+        field("data.user.name", JsonFieldType.STRING, "임대인 이름(요청 name — 성·이름 합친 전체 이름)"),
         field("data.user.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
-        optField("data.user.gender", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.birthDate", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.country", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.countryName", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.countryFlag", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.occupation", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.email", JsonFieldType.STRING, "임대인 미수집(null)"),
-        optField("data.user.visaType", JsonFieldType.STRING, "임대인 미수집(null)"),
+        field("data.user.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
         field("data.user.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
-        field("data.user.phoneNumber", JsonFieldType.STRING, "인증된 연락처"),
         field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
         field("data.user.marketingAgreed", JsonFieldType.BOOLEAN, "마케팅 수신 동의 여부"),
         field("data.user.createdAt", JsonFieldType.STRING, "가입 시각(ISO-8601 UTC)"),
