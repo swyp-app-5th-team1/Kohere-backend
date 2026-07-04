@@ -195,8 +195,7 @@ class ListingMongoIntegrationTest {
         new Document("status", "ACTIVE")
             .append("pricing.monthlyRent", new Document("$lte", 500000))
             .append(
-                "filterTags",
-                new Document("$all", List.of("FEMALE_ONLY", "RESIDENT_REGISTRATION")));
+                "filterTags", new Document("$all", List.of("FEMALE_ONLY", "ADDRESS_REGISTRATION")));
     Document query =
         new Document("status", "PUBLISHED")
             .append("roomOffers", new Document("$elemMatch", roomOfferCondition));
@@ -304,7 +303,6 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -346,7 +344,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE)),
+                        Set.of(ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000204",
                         "Inactive Zone",
@@ -368,7 +366,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(),
-                null,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -409,7 +406,7 @@ class ListingMongoIntegrationTest {
                         450000,
                         500000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
+                        Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
     PageResponse<ListingSearchResult> result =
@@ -423,7 +420,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
-                null,
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -486,7 +482,7 @@ class ListingMongoIntegrationTest {
                         600000,
                         1000000,
                         1,
-                        Set.of(ConditionTag.ENGLISH_AVAILABLE))))
+                        Set.of(ConditionTag.ENGLISH_OK))))
             .build());
 
     ListingSearchCondition firstPageCondition =
@@ -499,7 +495,6 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            null,
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -515,7 +510,6 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            null,
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -550,14 +544,14 @@ class ListingMongoIntegrationTest {
                         490000,
                         1000000,
                         0,
-                        Set.of(ConditionTag.IMMEDIATE_MOVE_IN, ConditionTag.FEMALE_ONLY)),
+                        Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY)),
                     roomOffer(
                         "6858e2000000000000000502",
                         "Move In Now Zone",
                         550000,
                         1000000,
                         2,
-                        Set.of(ConditionTag.IMMEDIATE_MOVE_IN, ConditionTag.FEMALE_ONLY))))
+                        Set.of(ConditionTag.MOVE_IN_NOW, ConditionTag.FEMALE_ONLY))))
             .build());
 
     PageResponse<ListingSearchResult> result =
@@ -570,8 +564,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 Set.of(ListingType.GOSIWON),
-                Set.of(ConditionTag.IMMEDIATE_MOVE_IN),
-                null,
+                Set.of(ConditionTag.MOVE_IN_NOW),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -599,7 +592,7 @@ class ListingMongoIntegrationTest {
                         490000,
                         1000000,
                         3,
-                        Set.of(ConditionTag.RESIDENT_REGISTRATION)),
+                        Set.of(ConditionTag.ADDRESS_REGISTRATION)),
                     roomOffer(
                         "6858e2000000000000000802",
                         "No Registration Zone",
@@ -619,8 +612,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 Set.of(ListingType.GOSIWON),
-                Set.of(ConditionTag.RESIDENT_REGISTRATION),
-                null,
+                Set.of(ConditionTag.ADDRESS_REGISTRATION),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -633,9 +625,9 @@ class ListingMongoIntegrationTest {
         .containsExactly("Registration Zone");
   }
 
-  /** ARC 필터는 true일 때만 적용하고, false는 ARC 여부와 상관없이 조회한다. */
+  /** NO_ARC 필터를 선택하면 ARC 없이 가능한 매물만 조회하고, 미선택이면 ARC 조건을 적용하지 않는다. */
   @Test
-  void search_arcRequired_false는_ARC_조건을_적용하지_않고_true만_필터링한다() {
+  void search_NO_ARC는_arcRequired_false_매물만_필터링한다() {
     String arcOptionalListingId = "6858e2000000000000000007";
     String arcRequiredListingId = "6858e2000000000000000008";
     listingRepository.save(
@@ -665,13 +657,12 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSIWON),
             Set.of(),
-            false,
             ListingSort.RECOMMENDED,
             null,
             null,
             0,
             20);
-    ListingSearchCondition onlyArcRequired =
+    ListingSearchCondition onlyNoArc =
         new ListingSearchCondition(
             withoutArcFilter.bounds(),
             null,
@@ -680,8 +671,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             Set.of(ListingType.GOSIWON),
-            Set.of(),
-            true,
+            Set.of(ConditionTag.NO_ARC),
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -689,14 +679,14 @@ class ListingMongoIntegrationTest {
             20);
 
     PageResponse<ListingSearchResult> unfiltered = listingRepository.search(withoutArcFilter);
-    PageResponse<ListingSearchResult> requiredOnly = listingRepository.search(onlyArcRequired);
+    PageResponse<ListingSearchResult> noArcOnly = listingRepository.search(onlyNoArc);
 
     assertThat(unfiltered.content())
         .extracting(searchResult -> searchResult.listing().getId())
         .containsExactlyInAnyOrder(arcOptionalListingId, arcRequiredListingId);
-    assertThat(requiredOnly.content())
+    assertThat(noArcOnly.content())
         .extracting(searchResult -> searchResult.listing().getId())
-        .containsExactly(arcRequiredListingId);
+        .containsExactly(arcOptionalListingId);
   }
 
   /** 서비스 응답은 조건에 맞는 방 상품들을 매물 단위로 집계해 범위 필드와 재고 합계를 내려준다. */
@@ -725,7 +715,7 @@ class ListingMongoIntegrationTest {
                         3,
                         12,
                         2,
-                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_AVAILABLE)),
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ENGLISH_OK)),
                     roomOffer(
                         "6858e2000000000000000603",
                         "Filtered Out Zone",
@@ -735,7 +725,7 @@ class ListingMongoIntegrationTest {
                         2,
                         6,
                         1,
-                        Set.of(ConditionTag.RESIDENT_REGISTRATION))))
+                        Set.of(ConditionTag.ADDRESS_REGISTRATION))))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.45);
@@ -765,7 +755,7 @@ class ListingMongoIntegrationTest {
                 Listing.TransitType.SUBWAY, "서울대입구역", 5));
     assertThat(card.conditions())
         .containsExactly(
-            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_AVAILABLE);
+            ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_OK);
   }
 
   /** DISTANCE 정렬은 프론트가 보낸 중심 좌표가 아니라 bbox의 원본 중심점을 기준으로 계산한다. */
@@ -828,7 +818,6 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -875,7 +864,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
-                null,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -1178,7 +1166,6 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
-                false,
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -1188,9 +1175,9 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).isEmpty();
   }
 
-  /** diagnosis 추천 조건이 listing 추천 서비스와 Mongo 조회로 연결되는지 확인한다. */
+  /** diagnosis가 아직 쓰는 기존 조건 이름도 listing 추천 서비스가 새 필터 코드로 해석한다. */
   @Test
-  void recommendByCriteria_진단조건으로_매물요약을_반환한다() {
+  void recommendByCriteria_진단_레거시조건으로_매물요약을_반환한다() {
     new ListingSeedRunner(listingRepository).run(null);
 
     PageResponse<RecommendedListingView> result =
@@ -1211,7 +1198,7 @@ class ListingMongoIntegrationTest {
     assertThat(listing.monthlyRent()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
-    assertThat(listing.conditions()).contains("FEMALE_ONLY", "RESIDENT_REGISTRATION");
+    assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
   }
 
   /** 즉시입주 조건은 active 방 상품의 availableCount가 있을 때만 매칭되는지 확인한다. */
@@ -1289,7 +1276,7 @@ class ListingMongoIntegrationTest {
                     1,
                     6,
                     1,
-                    Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION))))
+                    Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION))))
         .favoriteCount(index)
         .build();
   }
@@ -1337,7 +1324,7 @@ class ListingMongoIntegrationTest {
         300000,
         300000,
         1,
-        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION));
+        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION));
   }
 
   /**

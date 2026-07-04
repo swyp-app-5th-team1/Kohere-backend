@@ -10,7 +10,7 @@ sequenceDiagram
     participant DB as MongoDB
 
     U->>C: 예산·조건 칩 선택, 정렬/페이지 설정
-    C->>LIST: GET /api/v1/listings<br/>minBudget=300000&maxBudget=700000<br/>&conditions=ENGLISH_AVAILABLE<br/>&sort=PRICE_ASC&page=0&size=20<br/>(Authorization 선택)
+    C->>LIST: GET /api/v1/listings<br/>minBudget=300000&maxBudget=700000<br/>&conditions=ENGLISH_OK<br/>&sort=PRICE_ASC&page=0&size=20<br/>(Authorization 선택)
     Note over LIST: 필터를 MongoDB 질의 조건으로 변환<br/>가격·조건·재고는 같은 roomOffer에 $elemMatch<br/>sort=DISTANCE면 bbox 중심점 기준<br/>로그인 시 본인 찜 여부로 favorited 채움
     alt 정상 (필터/정렬 유효)
         LIST->>DB: status=PUBLISHED + roomOffers $elemMatch<br/>+ 2dsphere/정렬로 매물 목록 조회

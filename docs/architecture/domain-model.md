@@ -400,14 +400,15 @@
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
 | | `GENDER_SEPARATED` | 층/공간 분리 |
-| `ConditionTag` | `IMMEDIATE_MOVE_IN` | 즉시 입주 |
+| `ConditionTag` | `MOVE_IN_NOW` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
-| | `PRIVATE_BATH` | 개인 욕실 |
-| | `ENGLISH_AVAILABLE` | 영어 소통 가능 |
-| | `RESIDENT_REGISTRATION` | 전입신고 가능 |
-| | `NO_MAINTENANCE_FEE` | 관리비 없음 |
-| | `MEALS_PROVIDED` | 식사 제공 |
+| | `MEALS_INCLUDED` | 식사 제공 |
 | | `DOUBLE_ROOM` | 2인실 |
+| | `PRIVATE_BATH` | 개인 욕실 |
+| | `ENGLISH_OK` | 영어 소통 가능 |
+| | `ADDRESS_REGISTRATION` | 전입신고 가능 |
+| | `NO_MAINT_FEE` | 관리비 없음 |
+| | `NO_ARC` | ARC 없이 가능(검색용 가상 필터) |
 | `RoomFeature` | `SINGLE_ROOM` | 1인실 |
 | | `DOUBLE_ROOM` | 2인실 |
 | | `PRIVATE_BATH` | 개인 욕실 |

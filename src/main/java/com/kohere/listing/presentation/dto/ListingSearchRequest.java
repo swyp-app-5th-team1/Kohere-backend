@@ -22,7 +22,6 @@ public class ListingSearchRequest {
   private Integer maxDeposit;
   private Set<ListingType> type;
   private Set<ConditionTag> conditions;
-  private Boolean arcRequired;
   private ListingSort sort = ListingSort.RECOMMENDED;
   private int page = 0;
   private int size = 20;

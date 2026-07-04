@@ -1,6 +1,7 @@
 package com.kohere.listing.domain;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 매물 검색에 쓰는 내부 조건이다.
@@ -17,7 +18,6 @@ public record ListingSearchCondition(
     Integer maxDeposit,
     Set<ListingType> types,
     Set<ConditionTag> conditions,
-    Boolean arcRequired,
     ListingSort sort,
     Double centerLat,
     Double centerLng,
@@ -34,9 +34,16 @@ public record ListingSearchCondition(
     }
   }
 
-  /** roomOffer가 모두 만족해야 하는 최종 조건 태그 묶음이다. */
-  public Set<ConditionTag> effectiveConditions() {
-    return conditions;
+  /** NO_ARC 필터가 켜졌는지 알려준다. 이 조건은 roomOffer가 아니라 Listing 정책에서 검사한다. */
+  public boolean requiresNoArc() {
+    return conditions.contains(ConditionTag.NO_ARC);
+  }
+
+  /** roomOffers.filterTags에 실제 저장되는 조건만 반환한다. */
+  public Set<ConditionTag> roomOfferConditions() {
+    return conditions.stream()
+        .filter(ConditionTag::storedInRoomOfferFilterTags)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   /** 거리 계산에 필요한 기준 좌표가 둘 다 있는지 알려준다. */

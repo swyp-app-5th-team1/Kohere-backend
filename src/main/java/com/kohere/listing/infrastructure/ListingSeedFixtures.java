@@ -43,9 +43,9 @@ final class ListingSeedFixtures {
                 Listing.RoomFeature.ELECTRIC_KETTLE),
             Set.of(
                 ConditionTag.FEMALE_ONLY,
-                ConditionTag.RESIDENT_REGISTRATION,
-                ConditionTag.NO_MAINTENANCE_FEE,
-                ConditionTag.MEALS_PROVIDED),
+                ConditionTag.ADDRESS_REGISTRATION,
+                ConditionTag.NO_MAINT_FEE,
+                ConditionTag.MEALS_INCLUDED),
             List.of());
 
     return Listing.builder()
@@ -79,9 +79,9 @@ final class ListingSeedFixtures {
         .featureSummary(
             Set.of(
                 ConditionTag.FEMALE_ONLY,
-                ConditionTag.RESIDENT_REGISTRATION,
-                ConditionTag.NO_MAINTENANCE_FEE,
-                ConditionTag.MEALS_PROVIDED))
+                ConditionTag.ADDRESS_REGISTRATION,
+                ConditionTag.NO_MAINT_FEE,
+                ConditionTag.MEALS_INCLUDED))
         .descriptions(
             new Listing.Descriptions(
                 "지하철역 도보 5분 이내, 교통이 편리한 위치의 코리빙 하우스입니다.",

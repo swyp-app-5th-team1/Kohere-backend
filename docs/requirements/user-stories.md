@@ -695,7 +695,7 @@
 
 - 시나리오: 정상 목록 조회
   Given 활성 매물이 N건 존재하고
-  When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_AVAILABLE&sort=PRICE_ASC&page=0&size=20`을 호출하면
+  When 비로그인 사용자가 `GET /api/v1/listings?minBudget=300000&maxBudget=700000&conditions=ENGLISH_OK&sort=PRICE_ASC&page=0&size=20`을 호출하면
   Then `200 OK`로 공통 래퍼의 `data.content[]`에 가격 오름차순으로 매물 요약이 담기고 `data.page`에 `number/size/totalElements/totalPages/hasNext`가 포함된다
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가

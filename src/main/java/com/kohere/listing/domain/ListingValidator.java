@@ -24,6 +24,7 @@ public final class ListingValidator {
     validateFacilities(listing.getFacilities());
     validateRoomOffers(listing.getRoomOffers());
     requireCollection(listing.getFeatureSummary(), "featureSummary");
+    validateStoredConditionTags(listing.getFeatureSummary(), "featureSummary");
     requireCollection(listing.getNearbyUniversityCodes(), "nearbyUniversityCodes");
     requireNonNull(listing.getDescriptions(), "descriptions가 필요합니다.");
     requireCollection(listing.getImageUrls(), "imageUrls");
@@ -89,7 +90,12 @@ public final class ListingValidator {
     requireNonNull(roomOffer.genderPolicy(), "roomOffers.genderPolicy가 필요합니다.");
     requireCollection(roomOffer.features(), "roomOffers.features");
     requireCollection(roomOffer.filterTags(), "roomOffers.filterTags");
+    validateStoredConditionTags(roomOffer.filterTags(), "roomOffers.filterTags");
     requireCollection(roomOffer.roomImageUrls(), "roomOffers.roomImageUrls");
+  }
+
+  private static void validateStoredConditionTags(Collection<ConditionTag> tags, String field) {
+    require(!tags.contains(ConditionTag.NO_ARC), field + "에는 검색용 NO_ARC 태그를 저장할 수 없습니다.");
   }
 
   private static void validatePricing(Listing.Pricing pricing) {

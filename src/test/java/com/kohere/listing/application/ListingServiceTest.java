@@ -140,7 +140,7 @@ class ListingServiceTest {
         new Listing.Inventory(1, 1, LocalDate.parse("2026-07-01")),
         Listing.GenderPolicy.FEMALE_ONLY,
         Set.of(Listing.RoomFeature.SINGLE_ROOM),
-        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION),
+        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION),
         List.of());
   }
 }

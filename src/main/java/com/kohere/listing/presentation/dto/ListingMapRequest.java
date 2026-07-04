@@ -21,5 +21,4 @@ public class ListingMapRequest {
   private Integer maxDeposit;
   private Set<ListingType> type;
   private Set<ConditionTag> conditions;
-  private Boolean arcRequired;
 }

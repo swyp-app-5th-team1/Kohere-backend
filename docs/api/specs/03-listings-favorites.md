@@ -9,7 +9,7 @@
 
 - `ListingType`: `GOSIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
-- `ConditionTag`(주거 환경 조건 8종, 필터 칩·편의시설 태그 공용): `IMMEDIATE_MOVE_IN`(즉시 입주), `FEMALE_ONLY`(여성 전용), `PRIVATE_BATH`(개인 욕실), `ENGLISH_AVAILABLE`(영어 소통 가능), `RESIDENT_REGISTRATION`(전입신고 가능), `NO_MAINTENANCE_FEE`(관리비 없음), `MEALS_PROVIDED`(식사 제공), `DOUBLE_ROOM`(2인실)
+- `ConditionTag`(매물 옵션 필터 9종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음), `NO_ARC`(ARC 없이 가능)
 - `ContractTerm`(계약기간, 개월): `ONE_MONTH`, `THREE_MONTHS`, `SIX_MONTHS`, `TWELVE_MONTHS`
 - `MatchedPlaceType`(키워드 검색 매칭 분류): `UNIVERSITY`, `REGION`, `SUBWAY_STATION`
 
@@ -50,8 +50,7 @@ Query 파라미터:
 | `minDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
 | `maxDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
 | `type` | `ListingType` | 선택 | — | Listing 기준 매물 유형. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
-| `conditions` | `ConditionTag[]` | 선택 | — | roomOffer 기준 조건 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 같은 roomOffer가 모두 만족해야 하며, 전입신고 가능 필터는 `RESIDENT_REGISTRATION`을 포함해 요청 |
-| `arcRequired` | boolean | 선택 | — | Listing 기준 ARC 필수 매물 필터. `true`면 ARC가 필수인 매물만 조회하고, `false` 또는 미전달이면 ARC 조건을 적용하지 않음 |
+| `conditions` | `ConditionTag[]` | 선택 | — | 필터 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 일반 조건은 같은 active roomOffer가 모두 만족해야 한다. `MOVE_IN_NOW`는 같은 roomOffer의 `availableCount > 0`도 필요하다. `NO_ARC`는 roomOffer 태그가 아니라 Listing 정책 필터로 처리되어 `propertyPolicies.arcRequired=false` 매물만 반환한다. |
 | `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `RECOMMENDED`는 기본 추천순, `PRICE_ASC`는 조건을 통과한 roomOffer들의 최저 월세 낮은 순, `DISTANCE`는 요청 bbox의 원본 중심점에서 가까운 Listing 순 |
 | `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
 | `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
@@ -82,7 +81,7 @@ Request Body: 없음
         "lng": 126.936893,
         "address": "서울 서대문구 ...",
         "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-        "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
         "distanceMeters": 320,
         "favorited": true,
         "favoriteCount": 12
@@ -104,14 +103,15 @@ Request Body: 없음
 - 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 집계한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 방 상품만 집계한다.
 - `minMonthlyRent`/`maxMonthlyRent`, `minDeposit`/`maxDeposit`, `minMaintenanceFee`/`maxMaintenanceFee`, `minStayMonths`/`maxStayMonths`는 조건을 통과한 `roomOffer`들의 최저~최고 범위다. 프론트는 이 값으로 `₩380~400K/mo`, `Dep.`, `Maint.`, `1 mo~` 같은 카드 문구를 만들 수 있다.
 - `nearestTransit`는 카드에 표시할 가까운 교통수단 요약이며, 없으면 `null`이다.
-- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=IMMEDIATE_MOVE_IN` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
+- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=MOVE_IN_NOW` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
 - `conditions`는 조건을 통과한 `roomOffer`들이 가진 태그의 합집합이다.
 - `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 최저 월세 오름차순으로 매물 카드를 정렬한다.
 - `sort=DISTANCE`는 프론트가 별도 중심 좌표를 보내지 않는다. 서버가 요청 bbox(`swLat`·`swLng`·`neLat`·`neLng`)의 원본 중심점을 계산해 가까운 Listing 순으로 정렬한다. 따라서 `sort=DISTANCE`를 쓰려면 bbox 네 좌표가 모두 필요하다.
 - `distanceMeters`는 bbox가 제공된 경우 서버가 계산한 원본 bbox 중심점 기준 직선 거리다. bbox 없이 조회하면 `null`이다.
 - 방 상품별 상세 정보가 필요하면 카드의 `listingId`로 `GET /api/v1/listings/{listingId}`를 호출해 응답의 `roomOffers[]`를 표시한다.
-- 전입신고 가능 여부는 별도 boolean 파라미터가 아니라 `conditions=RESIDENT_REGISTRATION`으로 요청한다.
-- `arcRequired=false`는 "ARC 불필요 매물만"이 아니라 "ARC 조건을 적용하지 않음"이다.
+- 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 요청한다.
+- ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`로 요청한다. 이 필터는 `propertyPolicies.arcRequired=false`인 매물만 반환한다.
+- `conditions`에 `NO_ARC`를 넣지 않으면 ARC 조건은 적용하지 않으며, ARC가 필요한 매물과 필요 없는 매물이 모두 조회될 수 있다.
 - 비로그인 시 `favorited`는 `false`로 고정한다.
 
 발생 가능한 에러:
@@ -135,11 +135,11 @@ Query 파라미터:
 | `swLng` | number | bbox 모드 필수 | 남서 경도 |
 | `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
 | `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
-| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions`/`arcRequired` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
+| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
 
 > 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 서버는 `/listings` 목록 조회와 동일하게 요청 bbox를 20% 확장해 조회한다.
 > 한 Listing 안에 조건을 만족하는 roomOffer가 여러 개 있어도 지도 마커는 해당 Listing 위치에 1개만 반환한다.
-> 전입신고 가능 여부는 `conditions=RESIDENT_REGISTRATION`으로 필터링하며, `arcRequired=true`일 때만 ARC 필수 매물로 좁힌다.
+> 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 필터링한다. ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`를 함께 보낸다.
 
 Request Body: 없음
 
@@ -260,7 +260,7 @@ Request Body: 없음
     },
     "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
     "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
-    "featureSummary": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"],
+    "featureSummary": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
     "propertyPolicies": {
       "arcRequired": false,
       "residentRegistrationAvailable": true,
@@ -288,7 +288,7 @@ Request Body: 없음
           "nextAvailableFrom": null
         },
         "genderPolicy": "FEMALE_ONLY",
-        "filterTags": ["FEMALE_ONLY", "RESIDENT_REGISTRATION", "NO_MAINTENANCE_FEE"]
+        "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"]
       }
     ],
     "landlordId": 77,
@@ -410,7 +410,7 @@ Request Body: 없음
         "deposit": 0,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
         "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
-        "conditions": ["ENGLISH_AVAILABLE"],
+        "conditions": ["ENGLISH_OK"],
         "favorited": true,
         "favoriteCount": 13,
         "favoritedAt": "2026-06-10T11:20:00Z"
@@ -464,7 +464,7 @@ Request Body: 없음
         "lng": 126.9245,
         "address": "서울 마포구 ...",
         "nearestTransit": { "type": "SUBWAY", "name": "Hongdae Sta.", "walkMinutes": 8 },
-        "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
         "distanceMeters": null,
         "favorited": false,
         "favoriteCount": 13,

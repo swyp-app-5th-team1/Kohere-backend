@@ -78,9 +78,10 @@ class ListingDocsTest {
           + "필터가 없으면 해당 매물의 active roomOffer 전체를 집계하고, "
           + "필터가 있으면 조건을 만족하는 active roomOffer만 집계한다. "
           + "월세·보증금·관리비·계약기간은 집계 대상 roomOffer의 최저~최고 범위로 내려간다. "
-          + "월세·보증금·조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·ARC·지도 범위는 Listing 기준으로 적용한다. "
-          + "전입신고 가능 여부는 별도 파라미터가 아니라 conditions=RESIDENT_REGISTRATION으로 필터링한다. "
-          + "arcRequired=true는 ARC 필수 매물만 조회하고, false 또는 미전달은 ARC 조건을 적용하지 않는다. "
+          + "월세·보증금·일반 조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·NO_ARC·지도 범위는 Listing 기준으로 적용한다. "
+          + "전입신고 가능 여부는 conditions=ADDRESS_REGISTRATION으로 필터링한다. "
+          + "No ARC 필터는 별도 파라미터가 아니라 conditions=NO_ARC로 요청하며, ARC 없이 가능한 매물(propertyPolicies.arcRequired=false)만 반환한다. "
+          + "conditions에 NO_ARC를 넣지 않으면 ARC 조건은 적용하지 않는다. "
           + "같은 매물에 조건에 맞는 roomOffer가 여러 개 있어도 같은 listingId는 한 번만 내려간다. "
           + "프론트는 minMonthlyRent~maxMonthlyRent, minDeposit~maxDeposit, minMaintenanceFee~maxMaintenanceFee, "
           + "minStayMonths~maxStayMonths로 목록 카드의 범위 문구를 만들고, 카드 선택 시 listingId로 상세 API를 호출하면 된다. "
@@ -90,8 +91,8 @@ class ListingDocsTest {
       "현재 지도 화면의 bbox(swLat, swLng, neLat, neLng)에 포함되는 공개 매물의 개별 마커 좌표를 조회한다. "
           + "bbox 네 좌표는 모두 필수이며, 서버가 전체 범위를 20% 확장해 조회한다. "
           + "필터 적용 기준은 리스트 API와 같지만, 응답은 매물 카드가 아니라 Listing 마커 단위다. "
-          + "전입신고 가능 여부는 conditions=RESIDENT_REGISTRATION으로 필터링하고, "
-          + "arcRequired=true일 때만 ARC 필수 매물로 좁힌다. "
+          + "전입신고 가능 여부는 conditions=ADDRESS_REGISTRATION으로 필터링하고, "
+          + "No ARC 필터는 conditions=NO_ARC로 요청해 ARC 없이 가능한 매물만 조회한다. "
           + "한 매물 안의 roomOffer가 여러 개 매칭되어도 지도 마커는 해당 listingId로 1개만 내려간다. "
           + "서버는 클러스터링하지 않고 listingId·lat·lng만 내려주며, 프론트 지도 SDK가 화면 기준으로 마커를 묶는다.";
   private static final String LISTINGS_SEARCH_SUMMARY = "키워드 장소 검색과 주변 매물 조회";
@@ -192,8 +193,8 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("conditions", "RESIDENT_REGISTRATION")
-                .param("arcRequired", "false")
+                .param("conditions", "ADDRESS_REGISTRATION")
+                .param("conditions", "NO_ARC")
                 .param("sort", "PRICE_ASC")
                 .param("page", "0")
                 .param("size", "20"))
@@ -265,8 +266,8 @@ class ListingDocsTest {
                 .param("maxDeposit", "500000")
                 .param("type", "GOSIWON")
                 .param("conditions", "FEMALE_ONLY")
-                .param("conditions", "RESIDENT_REGISTRATION")
-                .param("arcRequired", "false"))
+                .param("conditions", "ADDRESS_REGISTRATION")
+                .param("conditions", "NO_ARC"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.markers[0].listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.total").value(1))
@@ -683,12 +684,11 @@ class ListingDocsTest {
       parameterWithName("conditions")
           .optional()
           .description(
-              "roomOffer 기준 조건 태그. 여러 값을 보내면 같은 roomOffer가 모든 태그를 가진 매물만 반환. "
-                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
-      parameterWithName("arcRequired")
-          .optional()
-          .description(
-              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음"),
+              "필터 칩 코드. FEMALE_ONLY, PRIVATE_BATH 같은 일반 조건은 같은 active roomOffer가 모두 만족해야 한다. "
+                  + "MOVE_IN_NOW는 같은 roomOffer의 availableCount가 1 이상이어야 하며, "
+                  + "ADDRESS_REGISTRATION은 전입신고 가능 필터다. "
+                  + "NO_ARC는 roomOffer 태그가 아니라 Listing 정책 필터로 처리되어 propertyPolicies.arcRequired=false 매물만 반환한다. "
+                  + "반복 파라미터 또는 콤마 구분 전송을 지원"),
       parameterWithName("sort")
           .optional()
           .description(
@@ -724,12 +724,9 @@ class ListingDocsTest {
       parameterWithName("conditions")
           .optional()
           .description(
-              "roomOffer 기준 조건 태그. 여러 값은 같은 roomOffer가 모두 만족해야 매물 마커가 반환됨. "
-                  + "전입신고 가능 필터는 RESIDENT_REGISTRATION을 이 값에 포함해 요청"),
-      parameterWithName("arcRequired")
-          .optional()
-          .description(
-              "Listing 기준 ARC 필수 매물 필터. true면 ARC가 필수인 매물만 조회하고, false 또는 미전달이면 ARC 조건을 적용하지 않음")
+              "필터 칩 코드. 일반 조건은 같은 active roomOffer가 모두 만족해야 하고, "
+                  + "NO_ARC는 Listing 정책 필터로 처리되어 propertyPolicies.arcRequired=false 매물 마커만 반환한다. "
+                  + "ADDRESS_REGISTRATION은 전입신고 가능 필터다")
     };
   }
 

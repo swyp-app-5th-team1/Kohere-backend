@@ -265,7 +265,6 @@ public class ListingService {
         request.getMaxDeposit(),
         request.getType(),
         request.getConditions(),
-        request.getArcRequired(),
         request.getSort(),
         centerLat(viewportBounds),
         centerLng(viewportBounds),
@@ -292,7 +291,6 @@ public class ListingService {
         request.getMaxDeposit(),
         request.getType(),
         request.getConditions(),
-        request.getArcRequired(),
         ListingSort.RECOMMENDED,
         null,
         null,
@@ -308,7 +306,6 @@ public class ListingService {
     return new ListingSearchCondition(
         bounds,
         KEYWORD_SEARCH_RADIUS_METERS,
-        null,
         null,
         null,
         null,

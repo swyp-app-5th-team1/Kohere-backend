@@ -83,18 +83,18 @@
         ],
         "filterTags": [
           "FEMALE_ONLY",
-          "RESIDENT_REGISTRATION",
-          "NO_MAINTENANCE_FEE",
-          "MEALS_PROVIDED"
+          "ADDRESS_REGISTRATION",
+          "NO_MAINT_FEE",
+          "MEALS_INCLUDED"
         ],
         "roomImageUrls": []
       }
     ],
     "featureSummary": [
       "FEMALE_ONLY",
-      "RESIDENT_REGISTRATION",
-      "NO_MAINTENANCE_FEE",
-      "MEALS_PROVIDED"
+      "ADDRESS_REGISTRATION",
+      "NO_MAINT_FEE",
+      "MEALS_INCLUDED"
     ],
     "descriptions": {
       "ko": "지하철역 도보 5분 이내, 교통이 편리한 위치의 코리빙 하우스입니다.",

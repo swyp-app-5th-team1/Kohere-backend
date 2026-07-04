@@ -16,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.PageRequest;
@@ -133,10 +134,18 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (monthlyBudgetMax > 0) {
       roomOfferCriteria = roomOfferCriteria.and("pricing.monthlyRent").lte(monthlyBudgetMax);
     }
-    if (conditions != null && !conditions.isEmpty()) {
+    Set<ConditionTag> requestedConditions = conditions == null ? Set.of() : conditions;
+    if (requestedConditions.contains(ConditionTag.NO_ARC)) {
+      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
+    }
+
+    Set<ConditionTag> roomOfferConditions = roomOfferConditions(requestedConditions);
+    if (!roomOfferConditions.isEmpty()) {
       roomOfferCriteria =
-          roomOfferCriteria.and("filterTags").all(conditions.stream().map(Enum::name).toList());
-      if (conditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)) {
+          roomOfferCriteria
+              .and("filterTags")
+              .all(roomOfferConditions.stream().map(Enum::name).toList());
+      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
         roomOfferCriteria = roomOfferCriteria.and("inventory.availableCount").gt(0);
       }
     }
@@ -232,8 +241,8 @@ public class ListingRepositoryImpl implements ListingRepository {
       rootCriteria.add(
           Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
     }
-    if (Boolean.TRUE.equals(condition.arcRequired())) {
-      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(true));
+    if (condition.requiresNoArc()) {
+      rootCriteria.add(Criteria.where("propertyPolicies.arcRequired").is(false));
     }
 
     rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
@@ -262,11 +271,11 @@ public class ListingRepositoryImpl implements ListingRepository {
       criteria.add(Criteria.where("pricing.deposit").lte(condition.maxDeposit()));
     }
 
-    Set<ConditionTag> effectiveConditions = condition.effectiveConditions();
-    if (!effectiveConditions.isEmpty()) {
+    Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
+    if (!roomOfferConditions.isEmpty()) {
       criteria.add(
-          Criteria.where("filterTags").all(effectiveConditions.stream().map(Enum::name).toList()));
-      if (effectiveConditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)) {
+          Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
+      if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
         criteria.add(Criteria.where("inventory.availableCount").gt(0));
       }
     }
@@ -364,12 +373,19 @@ public class ListingRepositoryImpl implements ListingRepository {
       return false;
     }
 
-    Set<ConditionTag> effectiveConditions = condition.effectiveConditions();
-    if (!roomOffer.filterTags().containsAll(effectiveConditions)) {
+    Set<ConditionTag> roomOfferConditions = condition.roomOfferConditions();
+    if (!roomOffer.filterTags().containsAll(roomOfferConditions)) {
       return false;
     }
-    return !effectiveConditions.contains(ConditionTag.IMMEDIATE_MOVE_IN)
+    return !roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)
         || roomOffer.inventory().availableCount() > 0;
+  }
+
+  /** 추천 조건에서 NO_ARC 같은 매물 정책 필터를 제외하고 roomOffer 태그 조건만 남긴다. */
+  private static Set<ConditionTag> roomOfferConditions(Set<ConditionTag> conditions) {
+    return conditions.stream()
+        .filter(ConditionTag::storedInRoomOfferFilterTags)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   /** 가까운 순서 비교에만 쓰는 간단한 거리값이다. 실제 표시 거리는 application 계층에서 미터로 계산한다. */
