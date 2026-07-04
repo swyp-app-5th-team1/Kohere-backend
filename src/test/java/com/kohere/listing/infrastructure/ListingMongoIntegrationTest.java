@@ -745,6 +745,10 @@ class ListingMongoIntegrationTest {
     assertThat(card.availableCount()).isEqualTo(5);
     assertThat(card.minStayMonths()).isEqualTo(1);
     assertThat(card.maxStayMonths()).isEqualTo(12);
+    assertThat(card.nearestTransit())
+        .isEqualTo(
+            new ListingSummaryResponse.NearestTransitSummary(
+                Listing.TransitType.SUBWAY, "서울대입구역", 5));
     assertThat(card.conditions())
         .containsExactly(
             ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH, ConditionTag.ENGLISH_AVAILABLE);

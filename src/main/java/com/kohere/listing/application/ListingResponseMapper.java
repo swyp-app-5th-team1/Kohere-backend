@@ -46,6 +46,7 @@ final class ListingResponseMapper {
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
         listing.getAddress().fullAddress(),
+        toNearestTransitSummary(listing.getNearestTransit()),
         aggregateConditionTags(offers),
         distanceMeters,
         false,
@@ -238,5 +239,15 @@ final class ListingResponseMapper {
   /** 건물 이미지 중 첫 번째 이미지를 썸네일로 사용하고, 없으면 null을 반환한다. */
   private static String thumbnailUrl(Listing listing) {
     return listing.getImageUrls().isEmpty() ? null : listing.getImageUrls().getFirst();
+  }
+
+  /** 목록 카드에서 사용할 가까운 교통수단 요약을 만든다. */
+  private static ListingSummaryResponse.NearestTransitSummary toNearestTransitSummary(
+      Listing.NearestTransit transit) {
+    if (transit == null) {
+      return null;
+    }
+    return new ListingSummaryResponse.NearestTransitSummary(
+        transit.type(), transit.name(), transit.walkMinutes());
   }
 }

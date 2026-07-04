@@ -828,6 +828,13 @@ class ListingDocsTest {
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
         field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통수단 요약(없으면 null)"),
+        field("data.content[].nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
+        field("data.content[].nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
+        field(
+            "data.content[].nearestTransit.walkMinutes",
+            JsonFieldType.NUMBER,
+            "가까운 교통수단까지의 도보 시간(분)"),
         field(
             "data.content[].conditions",
             JsonFieldType.ARRAY,
@@ -905,6 +912,13 @@ class ListingDocsTest {
         field("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
         field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통수단 요약(없으면 null)"),
+        field("data.content[].nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
+        field("data.content[].nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
+        field(
+            "data.content[].nearestTransit.walkMinutes",
+            JsonFieldType.NUMBER,
+            "가까운 교통수단까지의 도보 시간(분)"),
         field(
             "data.content[].conditions",
             JsonFieldType.ARRAY,

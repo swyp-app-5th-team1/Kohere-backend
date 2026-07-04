@@ -2,6 +2,7 @@ package com.kohere.listing.application.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kohere.listing.domain.ConditionTag;
+import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingType;
 import java.util.List;
 
@@ -29,6 +30,7 @@ import java.util.List;
  * @param lat 매물 위도
  * @param lng 매물 경도
  * @param address 카드에 표시할 주소
+ * @param nearestTransit 가까운 교통수단 요약. 없으면 null
  * @param conditions 조건을 통과한 방 상품들이 가진 필터 태그의 합집합
  * @param distanceMeters 요청 bbox의 원본 중심점이 있을 때 계산한 직선 거리
  * @param favorited 현재 사용자 찜 여부
@@ -55,7 +57,12 @@ public record ListingSummaryResponse(
     double lat,
     double lng,
     String address,
+    NearestTransitSummary nearestTransit,
     List<ConditionTag> conditions,
     Integer distanceMeters,
     boolean favorited,
-    int favoriteCount) {}
+    int favoriteCount) {
+
+  /** 목록·검색 카드에서 쓰는 가까운 교통수단 요약이다. */
+  public record NearestTransitSummary(Listing.TransitType type, String name, int walkMinutes) {}
+}
