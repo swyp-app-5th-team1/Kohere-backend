@@ -219,16 +219,24 @@ public class ListingService {
   }
 
   /**
-   * 공개 중인 매물만 사용자 액션 대상으로 취급한다.
+   * 공개 중이고 실제로 노출 가능한 활성 방 상품이 있는 매물만 사용자 액션 대상으로 취급한다.
    *
-   * <p>존재하지 않는 매물, 잘못된 ObjectId, {@code DRAFT}/{@code PAUSED}/{@code DELETED} 매물은 모두 사용자에게 구분하지 않고
-   * {@code LISTING_NOT_FOUND}로 응답한다. 비공개 리소스의 존재 여부를 노출하지 않기 위한 정책이다.
+   * <p>존재하지 않는 매물, 잘못된 ObjectId, {@code DRAFT}/{@code PAUSED}/{@code DELETED} 매물, 활성 방 상품이 하나도 없는
+   * 매물은 모두 사용자에게 구분하지 않고 {@code LISTING_NOT_FOUND}로 응답한다. 비공개/비노출 리소스의 존재 여부를 노출하지 않기 위한 정책이며, 목록
+   * API가 "공개 + ACTIVE roomOffer 존재" 매물만 보여주는 기준과도 맞춘다.
    */
   private Listing requirePublishedListing(String listingId) {
     return listingRepository
         .findById(listingId)
         .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
+        .filter(ListingService::hasActiveRoomOffer)
         .orElseThrow(ListingNotFoundException::new);
+  }
+
+  /** 상세·찜·신청 진입점에서 화면에 보여줄 수 있는 활성 방 상품이 하나 이상 있는지 확인한다. */
+  private static boolean hasActiveRoomOffer(Listing listing) {
+    return listing.getRoomOffers().stream()
+        .anyMatch(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE);
   }
 
   /**

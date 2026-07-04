@@ -246,26 +246,61 @@ Request Body: 없음
   "success": true,
   "data": {
     "listingId": "6858e2000000000000000001",
-    "title": "신촌 도보 5분 1인실 고시원",
-    "type": "GOSIWON",
-    "imageUrls": [
-      "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
-      "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
-    ],
-    "location": {
-      "lat": 37.555134,
-      "lng": 126.936893,
-      "address": "서울 서대문구 신촌로 ...",
-      "addressDetail": "3층 305호"
+    "basicInfo": {
+      "title": "신촌 도보 5분 1인실 고시원",
+      "type": "GOSIWON",
+      "status": "PUBLISHED"
     },
-    "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-    "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
-    "featureSummary": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
-    "propertyPolicies": {
-      "arcRequired": false,
-      "residentRegistrationAvailable": true,
-      "englishAvailable": false,
-      "mealsProvided": true
+    "summary": {
+      "minMonthlyRent": 380000,
+      "maxMonthlyRent": 400000,
+      "minDeposit": 500000,
+      "maxDeposit": 700000,
+      "minMaintenanceFee": 0,
+      "maxMaintenanceFee": 20000,
+      "minStayMonths": 1,
+      "maxStayMonths": 12,
+      "activeRoomOfferCount": 3,
+      "imageCount": 20,
+      "conditions": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC"]
+    },
+    "locationInfo": {
+      "location": { "lat": 37.555134, "lng": 126.936893 },
+      "address": {
+        "city": "SEOUL",
+        "district": "SEODAEMUN_GU",
+        "fullAddress": "서울 서대문구 신촌로 ...",
+        "detail": "3층 305호"
+      },
+      "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
+      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
+      "nearbyUniversityCodes": ["YONSEI", "EWHA"]
+    },
+    "propertyInfo": {
+      "building": {
+        "type": "VILLA",
+        "usedFloorMin": 2,
+        "usedFloorMax": 3,
+        "totalFloors": 5,
+        "parkingAvailable": false,
+        "elevatorAvailable": false,
+        "heatingSystem": "CENTRAL"
+      },
+      "propertyPolicies": {
+        "arcRequired": false,
+        "residentRegistrationAvailable": true,
+        "studySuitable": true,
+        "mealsProvided": false,
+        "englishAvailable": true
+      },
+      "facilities": {
+        "laundry": ["WASHER", "IRON"],
+        "livingAmenities": ["WIFI", "TV", "SOFA"],
+        "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
+        "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
+        "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
+      },
+      "featureSummary": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE"]
     },
     "roomOffers": [
       {
@@ -280,28 +315,56 @@ Request Body: 없음
         },
         "contract": {
           "minStayMonths": 2,
-          "maxStayMonths": 6
+          "maxStayMonths": 6,
+          "refundPolicy": {
+            "code": "FULL_REFUND_BEFORE_7_DAYS",
+            "description": "입주 7일 전 취소 시 전액 환불"
+          }
         },
         "inventory": {
           "totalCount": 10,
-          "availableCount": 0,
+          "availableCount": 2,
           "nextAvailableFrom": null
         },
         "genderPolicy": "FEMALE_ONLY",
-        "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"]
+        "features": ["SINGLE_ROOM", "PRIVATE_BATH"],
+        "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
+        "roomImageUrls": [
+          "https://cdn.kohere.app/listings/6858e2000000000000000001/rooms/101.jpg"
+        ]
       }
     ],
-    "landlordId": 77,
-    "favorited": true,
-    "favoriteCount": 12,
-    "createdAt": "2026-05-30T02:11:00Z"
+    "content": {
+      "descriptions": {
+        "ko": "신촌역 도보권의 조용한 1인실 고시원입니다.",
+        "en": "A quiet goshiwon within walking distance of Sinchon Station."
+      },
+      "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다.",
+      "imageUrls": [
+        "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
+        "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
+      ],
+      "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg"
+    },
+    "reviewSummary": {
+      "reviewCount": 0
+    },
+    "interaction": {
+      "favorited": true,
+      "favoriteCount": 12
+    },
+    "createdAt": "2026-05-30T02:11:00Z",
+    "updatedAt": "2026-06-01T02:11:00Z"
   },
   "error": null
 }
 ```
 
 - 전화번호 등 직접 연락처는 노출하지 않는다. 매물 예약(신청)은 인앱 채팅과 분리된 독립 기능으로 연결되고, 문의는 인앱 채팅으로 연결된다(문의·인앱 채팅은 후속·이연 — [04-booking-inquiry-chat](04-booking-inquiry-chat.md)).
-- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이다. 필터 조건은 같은 `roomOffer`가 가격·재고·옵션을 모두 만족하는지 기준으로 판단한다.
+- `summary`는 상세 화면 상단 가격·보증금·관리비·계약기간·방 타입 수·이미지 카운터를 프론트가 바로 그릴 수 있게 서버가 계산한 값이다. 계산 기준은 **ACTIVE roomOffers**다.
+- `summary.conditions`는 ACTIVE roomOffers의 `filterTags` 합집합이다. 단, `NO_ARC`는 DB에 저장되는 방 태그가 아니라 `propertyPolicies.arcRequired=false`에서 파생한 표시/검색용 가상 태그다.
+- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이며, 상세 화면 Room Types에 보여줄 **ACTIVE 방 상품만** 반환한다. INACTIVE 방 상품은 응답에서 제외한다.
+- `reviewSummary.reviewCount`는 리뷰 도메인 도입 전까지 `0`으로 반환한다. 문의 수는 현재 상세 응답에 포함하지 않으며, 문의/채팅 기능 고도화 때 별도 계약으로 추가한다.
 - 상세 조회가 성공하면 `(userId, listingId)` 기준으로 최근 본 매물을 upsert하고 `viewedAt`을 최신 시각으로 갱신한다.
 - 최근 본 저장이나 사용자별 30개 초과 정리에 실패해도 상세 조회 응답은 성공으로 유지한다. 서버는 실패를 로그로 남기고, 프론트는 별도 재시도를 하지 않아도 된다.
 - `interaction.favorited`는 현재 로그인 사용자의 실제 찜 여부다.

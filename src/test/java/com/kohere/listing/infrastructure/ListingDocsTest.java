@@ -3,6 +3,7 @@ package com.kohere.listing.infrastructure;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
@@ -108,6 +109,10 @@ class ListingDocsTest {
   private static final String LISTING_DETAIL_DESCRIPTION =
       "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
           + "상세 화면의 이미지, 각 방 정보, 가격 정보, 매물 정보, 건물 정보, 공용시설, 위치 및 주변 정보 섹션을 구성하는 데이터를 반환한다. "
+          + "summary는 상세 상단 가격·보증금·관리비·계약기간·이미지 개수·방 개수·표시 태그를 프론트가 재계산하지 않도록 ACTIVE roomOffer 기준으로 집계한다. "
+          + "NO_ARC는 roomOffer에 저장하지 않는 가상 필터라 propertyPolicies.arcRequired=false일 때 summary.conditions에 파생해서 포함한다. "
+          + "roomOffers[]는 상세 화면 Room Types에 실제 노출할 ACTIVE 방 상품만 포함한다. "
+          + "reviewSummary.reviewCount는 리뷰 도메인 도입 전까지 0으로 내려주며, 문의 수는 채팅/문의 기능 고도화 때 별도 계약으로 추가한다. "
           + "고시원 매물의 propertyInfo.featureSummary는 활성 방 상품들이 가진 조건 태그의 합집합이다. "
           + "상세 화면의 작은 지도는 응답의 locationInfo.location 좌표를 사용해 프론트에서 렌더링한다. "
           + "공개 상태가 아닌 매물이나 존재하지 않는 매물은 LISTING_NOT_FOUND를 반환한다.";
@@ -286,6 +291,10 @@ class ListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.summary.minMonthlyRent").value(300000))
+        .andExpect(jsonPath("$.data.summary.activeRoomOfferCount").value(1))
+        .andExpect(jsonPath("$.data.summary.conditions", hasItem("NO_ARC")))
+        .andExpect(jsonPath("$.data.reviewSummary.reviewCount").value(0))
         .andDo(
             document(
                 "listing-detail",
@@ -1076,6 +1085,47 @@ class ListingDocsTest {
             JsonFieldType.STRING,
             "매물 유형. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
         field("data.basicInfo.status", JsonFieldType.STRING, "매물 공개 상태. 상세 조회는 PUBLISHED 매물만 반환"),
+        field(
+            "data.summary.minMonthlyRent",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 월세 범위의 최저값(KRW). ACTIVE roomOffers만 집계하며 프론트는 maxMonthlyRent와 함께 가격 문구를 만든다"),
+        field(
+            "data.summary.maxMonthlyRent",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 월세 범위의 최고값(KRW). minMonthlyRent와 같으면 단일 가격으로 표시 가능"),
+        field(
+            "data.summary.minDeposit",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 보증금 범위의 최저값(KRW). ACTIVE roomOffers만 집계"),
+        field(
+            "data.summary.maxDeposit",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 보증금 범위의 최고값(KRW). minDeposit과 같으면 단일 보증금으로 표시 가능"),
+        field(
+            "data.summary.minMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 관리비 범위의 최저값(KRW). 0이면 프론트에서 No Maint. Fee처럼 표시 가능"),
+        field(
+            "data.summary.maxMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 관리비 범위의 최고값(KRW). minMaintenanceFee와 함께 관리비 범위를 표시"),
+        field(
+            "data.summary.minStayMonths",
+            JsonFieldType.NUMBER,
+            "상세 화면 대표 최소 계약기간 범위의 최저 개월 수. 예: 1이면 1 mo~ 표시 가능"),
+        field("data.summary.maxStayMonths", JsonFieldType.NUMBER, "상세 화면 대표 계약기간 범위의 최고 개월 수"),
+        field(
+            "data.summary.activeRoomOfferCount",
+            JsonFieldType.NUMBER,
+            "상세 화면 Room Types 개수. 실제 노출 가능한 ACTIVE roomOffers 수와 일치"),
+        field(
+            "data.summary.imageCount",
+            JsonFieldType.NUMBER,
+            "상단 갤러리 이미지 총 개수. content.imageUrls의 길이와 동일하며 프론트의 1/N 카운터에 사용"),
+        field(
+            "data.summary.conditions",
+            JsonFieldType.ARRAY,
+            "상세 상단/특징 칩에 표시할 조건 태그. ACTIVE roomOffers의 filterTags 합집합에 ARC 불필요 매물은 NO_ARC를 파생 추가"),
         field("data.locationInfo.location.lat", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 위도(WGS84)"),
         field("data.locationInfo.location.lng", JsonFieldType.NUMBER, "상세 화면 작은 지도에 사용할 경도(WGS84)"),
         field("data.locationInfo.address.city", JsonFieldType.STRING, "도시 코드"),
@@ -1124,7 +1174,10 @@ class ListingDocsTest {
             "매물 전체에서 가능한 조건 태그 목록. 고시원은 활성 방 상품들의 filterTags 합집합"),
         field("data.roomOffers[].roomOfferId", JsonFieldType.STRING, "방 상품 식별자(ObjectId hex 문자열)"),
         field("data.roomOffers[].name", JsonFieldType.STRING, "방 상품명. 예: 스탠다드 1인실"),
-        field("data.roomOffers[].status", JsonFieldType.STRING, "방 상품 상태. ACTIVE인 방이 실제 노출/계약 대상"),
+        field(
+            "data.roomOffers[].status",
+            JsonFieldType.STRING,
+            "방 상품 상태. 상세 응답의 roomOffers[]는 Room Types에 보여줄 ACTIVE 방 상품만 포함하므로 현재는 ACTIVE"),
         field("data.roomOffers[].rentalType", JsonFieldType.STRING, "임대 방식"),
         field("data.roomOffers[].pricing.monthlyRent", JsonFieldType.NUMBER, "월세(KRW)"),
         field("data.roomOffers[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
@@ -1155,6 +1208,10 @@ class ListingDocsTest {
         field("data.content.extraNotes", JsonFieldType.STRING, "자유 입력 주의사항"),
         field("data.content.imageUrls", JsonFieldType.ARRAY, "건물 공용 이미지 URL 목록"),
         field("data.content.thumbnailUrl", JsonFieldType.NULL, "대표 썸네일 URL(없으면 null)"),
+        field(
+            "data.reviewSummary.reviewCount",
+            JsonFieldType.NUMBER,
+            "리뷰 수. 리뷰 도메인 도입 전까지 0으로 반환하며, 리뷰 기능 고도화 시 실제 집계값으로 연결 예정"),
         field(
             "data.interaction.favorited",
             JsonFieldType.BOOLEAN,

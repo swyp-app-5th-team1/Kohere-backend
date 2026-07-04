@@ -1026,6 +1026,69 @@ class ListingMongoIntegrationTest {
         .isEqualTo(1);
   }
 
+  /** 상세 응답은 MongoDB에 저장된 방 상품 중 ACTIVE 방만 내려주고, UI 상단 요약도 같은 기준으로 집계한다. */
+  @Test
+  void detail_상세요약과_방목록은_ACTIVE_roomOffer만_사용한다() {
+    listingRepository.save(
+        sampleListingBuilder()
+            .imageUrls(
+                List.of(
+                    "https://cdn.kohere.app/listings/detail/1.jpg",
+                    "https://cdn.kohere.app/listings/detail/2.jpg",
+                    "https://cdn.kohere.app/listings/detail/3.jpg"))
+            .roomOffers(
+                List.of(
+                    roomOffer(
+                        "6858e2000000000000000901",
+                        "Green Zone 1",
+                        380000,
+                        500000,
+                        0,
+                        1,
+                        6,
+                        2,
+                        Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.ADDRESS_REGISTRATION)),
+                    roomOffer(
+                        "6858e2000000000000000902",
+                        "Green Zone 2",
+                        400000,
+                        700000,
+                        20000,
+                        2,
+                        12,
+                        1,
+                        Set.of(ConditionTag.PRIVATE_BATH, ConditionTag.NO_MAINT_FEE)),
+                    roomOffer(
+                        "6858e2000000000000000903",
+                        "Inactive Zone",
+                        Listing.RoomOfferStatus.INACTIVE,
+                        100000,
+                        100000,
+                        0,
+                        1,
+                        1,
+                        1,
+                        Set.of(ConditionTag.MOVE_IN_NOW))))
+            .build());
+
+    ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
+
+    assertThat(response.summary().minMonthlyRent()).isEqualTo(380000);
+    assertThat(response.summary().maxMonthlyRent()).isEqualTo(400000);
+    assertThat(response.summary().minDeposit()).isEqualTo(500000);
+    assertThat(response.summary().maxDeposit()).isEqualTo(700000);
+    assertThat(response.summary().maxMaintenanceFee()).isEqualTo(20000);
+    assertThat(response.summary().minStayMonths()).isEqualTo(1);
+    assertThat(response.summary().maxStayMonths()).isEqualTo(12);
+    assertThat(response.summary().activeRoomOfferCount()).isEqualTo(2);
+    assertThat(response.summary().imageCount()).isEqualTo(3);
+    assertThat(response.summary().conditions()).contains(ConditionTag.NO_ARC);
+    assertThat(response.roomOffers())
+        .extracting(ListingDetailResponse.RoomOfferResponse::name)
+        .containsExactly("Green Zone 1", "Green Zone 2");
+    assertThat(response.reviewSummary().reviewCount()).isZero();
+  }
+
   /** 같은 매물을 다시 보면 최근 본 문서를 중복 생성하지 않고 viewedAt만 최신값으로 갱신한다. */
   @Test
   void recent_같은_매물_재조회는_viewedAt만_갱신한다() {

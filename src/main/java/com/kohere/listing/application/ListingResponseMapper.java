@@ -165,10 +165,12 @@ final class ListingResponseMapper {
    * {@code favoriteCount}를 그대로 사용한다.
    */
   static ListingDetailResponse toDetail(Listing listing, boolean favorited) {
+    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
     return new ListingDetailResponse(
         listing.getId(),
         new ListingDetailResponse.BasicInfo(
             listing.getTitle(), listing.getType(), listing.getStatus()),
+        toDetailSummary(listing, activeOffers),
         new ListingDetailResponse.LocationInfo(
             new ListingDetailResponse.GeoPoint(
                 listing.getLocation().latitude(), listing.getLocation().longitude()),
@@ -181,15 +183,38 @@ final class ListingResponseMapper {
             listing.getPropertyPolicies(),
             listing.getFacilities(),
             listing.getFeatureSummary()),
-        listing.getRoomOffers().stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
+        activeOffers.stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
         new ListingDetailResponse.ContentInfo(
             listing.getDescriptions(),
             listing.getExtraNotes(),
             listing.getImageUrls(),
             thumbnailUrl(listing)),
+        new ListingDetailResponse.ReviewSummary(0),
         new ListingDetailResponse.InteractionInfo(favorited, listing.getFavoriteCount()),
         listing.getCreatedAt(),
         listing.getUpdatedAt());
+  }
+
+  /**
+   * 상세 화면 상단에서 바로 사용할 가격·계약·이미지·태그 요약을 만든다.
+   *
+   * <p>목록 카드와 동일하게 활성 방 상품만 집계한다. {@code NO_ARC}는 MongoDB의 {@code roomOffers.filterTags}에 저장하지 않는
+   * 검색용 가상 태그이므로, 매물 정책상 ARC가 필요 없을 때만 상세 표시용 조건 목록에 파생해서 넣는다.
+   */
+  private static ListingDetailResponse.SummaryInfo toDetailSummary(
+      Listing listing, List<Listing.RoomOffer> activeOffers) {
+    return new ListingDetailResponse.SummaryInfo(
+        minMonthlyRent(activeOffers),
+        maxMonthlyRent(activeOffers),
+        minDeposit(activeOffers),
+        maxDeposit(activeOffers),
+        minMaintenanceFee(activeOffers),
+        maxMaintenanceFee(activeOffers),
+        minStayMonths(activeOffers),
+        maxStayMonths(activeOffers),
+        activeOffers.size(),
+        listing.getImageUrls().size(),
+        detailConditionTags(listing, activeOffers));
   }
 
   /** 방 상품 하나를 상세 응답의 roomOffers 항목으로 변환한다. */
@@ -290,6 +315,22 @@ final class ListingResponseMapper {
   private static List<ConditionTag> aggregateConditionTags(List<Listing.RoomOffer> offers) {
     Set<ConditionTag> tags = EnumSet.noneOf(ConditionTag.class);
     offers.forEach(offer -> tags.addAll(offer.filterTags()));
+    return List.copyOf(tags);
+  }
+
+  /**
+   * 상세 화면에 보여줄 조건 태그를 만든다.
+   *
+   * <p>방 상품에 실제 저장된 태그는 그대로 합치고, ARC가 필요 없는 매물은 UI 필터 칩과 맞추기 위해 {@code NO_ARC}를 추가한다. 이렇게 하면 프론트가
+   * {@code propertyPolicies.arcRequired=false}를 다시 읽어 표시 태그를 직접 만들 필요가 없다.
+   */
+  private static List<ConditionTag> detailConditionTags(
+      Listing listing, List<Listing.RoomOffer> offers) {
+    Set<ConditionTag> tags = EnumSet.noneOf(ConditionTag.class);
+    offers.forEach(offer -> tags.addAll(offer.filterTags()));
+    if (!listing.getPropertyPolicies().arcRequired()) {
+      tags.add(ConditionTag.NO_ARC);
+    }
     return List.copyOf(tags);
   }
 

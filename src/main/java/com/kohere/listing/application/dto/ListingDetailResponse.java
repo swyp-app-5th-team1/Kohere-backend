@@ -11,16 +11,37 @@ import java.util.Set;
 public record ListingDetailResponse(
     String listingId,
     BasicInfo basicInfo,
+    SummaryInfo summary,
     LocationInfo locationInfo,
     PropertyInfo propertyInfo,
     List<RoomOfferResponse> roomOffers,
     ContentInfo content,
+    ReviewSummary reviewSummary,
     InteractionInfo interaction,
     Instant createdAt,
     Instant updatedAt) {
 
   /** 제목·유형·공개 상태처럼 상세 화면 상단에서 쓰는 기본 정보다. */
   public record BasicInfo(String title, ListingType type, Listing.ListingStatus status) {}
+
+  /**
+   * 상세 화면 상단과 탭 요약에 바로 쓰는 집계 정보다.
+   *
+   * <p>목록 카드와 같은 기준으로 활성 방 상품만 모아 월세·보증금·관리비·계약기간 범위를 계산한다. 프론트가 방 목록을 다시 순회해 같은 값을 재계산하면 목록과 상세의
+   * 표시 기준이 달라질 수 있으므로, 서버가 단일 기준으로 내려준다. 환산 가격(예: USD)은 환율 정책이 필요하므로 포함하지 않고 프론트에서 계산한다.
+   */
+  public record SummaryInfo(
+      int minMonthlyRent,
+      int maxMonthlyRent,
+      int minDeposit,
+      int maxDeposit,
+      int minMaintenanceFee,
+      int maxMaintenanceFee,
+      int minStayMonths,
+      int maxStayMonths,
+      int activeRoomOfferCount,
+      int imageCount,
+      List<ConditionTag> conditions) {}
 
   /** 지도 좌표, 주소, 주변 시설/학교처럼 위치 기반 표시에 쓰는 정보다. */
   public record LocationInfo(
@@ -64,6 +85,14 @@ public record ListingDetailResponse(
       String extraNotes,
       List<String> imageUrls,
       String thumbnailUrl) {}
+
+  /**
+   * 리뷰 섹션을 위한 최소 요약이다.
+   *
+   * <p>현재 MVP에는 리뷰 도메인이 아직 없으므로 {@code reviewCount=0}을 내려준다. 실제 리뷰 목록·평점·요약 문구는 리뷰 기능 고도화 시 이 객체를
+   * 확장해서 연결한다. 문의 수는 채팅/문의 기능이 아직 TODO 상태라 상세 응답에 노출하지 않는다.
+   */
+  public record ReviewSummary(int reviewCount) {}
 
   /** 현재 사용자와 매물의 상호작용 상태다. 찜 기능 연결 전에는 favorited=false로 내려간다. */
   public record InteractionInfo(boolean favorited, int favoriteCount) {}
