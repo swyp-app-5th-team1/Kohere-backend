@@ -22,13 +22,13 @@
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
 | GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
 | GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
-| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(로그인 시 최근 본 매물 기록) | 선택 | 200 |
+| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 + 최근 본 매물 기록 | 필수 | 200 |
 | POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
 | DELETE | `/api/v1/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
 | GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
-| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(7일 이내, 최대 5건) | 필수 | 200 |
+| GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
-> 인증 "선택"은 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 찜·찜 목록·최근 본 매물은 모두 `me` 스코프라 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
+> 인증 "선택"인 탐색 API는 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 상세·찜·찜 목록·최근 본 매물은 인증 필수이며, `me` 스코프 API는 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
 
 ## 상세
 
@@ -228,8 +228,8 @@ Request Body: 없음
 
 ### GET /api/v1/listings/{listingId} — 매물 상세
 
-- 설명: 단건 매물 상세를 반환한다. 인증 사용자면 최근 본 매물에 upsert한다.
-- 인증: 선택 (로그인 시 `favorited` 채움 + 최근 본 매물 기록)
+- 설명: 단건 매물 상세를 반환하고, 로그인 사용자의 최근 본 매물에 upsert한다.
+- 인증: 필수
 
 Path 파라미터:
 
@@ -302,12 +302,15 @@ Request Body: 없음
 
 - 전화번호 등 직접 연락처는 노출하지 않는다. 매물 예약(신청)은 인앱 채팅과 분리된 독립 기능으로 연결되고, 문의는 인앱 채팅으로 연결된다(문의·인앱 채팅은 후속·이연 — [04-booking-inquiry-chat](04-booking-inquiry-chat.md)).
 - `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이다. 필터 조건은 같은 `roomOffer`가 가격·재고·옵션을 모두 만족하는지 기준으로 판단한다.
-- 비로그인 시 `favorited=false`, 최근 본 매물 기록은 생성하지 않는다.
+- 상세 조회가 성공하면 `(userId, listingId)` 기준으로 최근 본 매물을 upsert하고 `viewedAt`을 최신 시각으로 갱신한다.
+- 최근 본 저장이나 사용자별 30개 초과 정리에 실패해도 상세 조회 응답은 성공으로 유지한다. 서버는 실패를 로그로 남기고, 프론트는 별도 재시도를 하지 않아도 된다.
+- `interaction.favorited`는 현재 로그인 사용자의 실제 찜 여부다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제된 매물 |
 
 ### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
@@ -430,10 +433,10 @@ Request Body: 없음
 
 ### GET /api/v1/users/me/recent-listings — 최근 본 매물
 
-- 설명: 7일 이내에 조회한 매물을 최신순 최대 5건 반환한다(요구사항 정의서 기준). 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
+- 설명: 상세 조회로 저장된 최근 본 매물 중 현재 공개 상태이고 활성 방 상품이 있는 매물을 `viewedAt desc` 최신순 최대 10건 반환한다. 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
 - 인증: 필수
 
-Query 파라미터: 없음 (상한 5건 고정)
+Query 파라미터: 없음 (응답 상한 10건 고정)
 
 Request Body: 없음
 
@@ -448,11 +451,23 @@ Request Body: 없음
         "listingId": "6858e2000000000000000001",
         "title": "홍대입구 코리빙 2인실",
         "type": "CO_LIVING",
-        "monthlyRent": 600000,
-        "deposit": 1000000,
+        "minMonthlyRent": 580000,
+        "maxMonthlyRent": 620000,
+        "minDeposit": 1000000,
+        "maxDeposit": 1000000,
+        "minMaintenanceFee": 30000,
+        "maxMaintenanceFee": 50000,
+        "minStayMonths": 1,
+        "maxStayMonths": 12,
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
-        "location": { "lat": 37.5571, "lng": 126.9245, "address": "서울 마포구 ..." },
+        "lat": 37.5571,
+        "lng": 126.9245,
+        "address": "서울 마포구 ...",
+        "nearestTransit": { "type": "SUBWAY", "name": "Hongdae Sta.", "walkMinutes": 8 },
+        "conditions": ["ENGLISH_AVAILABLE", "RESIDENT_REGISTRATION"],
+        "distanceMeters": null,
         "favorited": false,
+        "favoriteCount": 13,
         "viewedAt": "2026-06-15T01:30:00Z"
       }
     ]
@@ -461,7 +476,10 @@ Request Body: 없음
 }
 ```
 
-- 7일이 지난 기록은 응답에서 제외한다(만료 즉시 숨김 + 배치 삭제, 정리 주기는 운영 설정값).
+- 응답 필드는 `/api/v1/listings` 카드 응답과 최대한 동일하며, 최근 본 목록 전용으로 `viewedAt`을 추가한다.
+- `favorited`는 현재 로그인 사용자의 실제 찜 여부다. 프론트는 이 값으로 하트 상태를 바로 표시할 수 있다.
+- DB에는 사용자별 최근 본 기록을 최신순 최대 30개까지 보관한다. 상세 조회로 새 기록을 저장한 뒤 30개를 넘으면 오래된 기록부터 삭제한다.
+- 조회 API는 저장된 30개 중 현재 `PUBLISHED` 상태이고 활성 `roomOffer`가 있는 매물만 최신순 최대 10개 반환한다. 비공개/삭제/노출중지 매물은 목록에서 숨긴다.
 - 같은 매물 재조회는 새 항목을 만들지 않고 `viewedAt`만 갱신한다.
 
 발생 가능한 에러:

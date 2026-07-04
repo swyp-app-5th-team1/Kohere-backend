@@ -1,7 +1,9 @@
 package com.kohere.listing.domain;
 
 import com.kohere.common.response.PageResponse;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 찜 영속 포트.
@@ -13,6 +15,14 @@ public interface FavoriteRepository {
 
   /** 현재 사용자가 해당 매물을 이미 찜했는지 확인한다. 잘못된 ObjectId 형식이면 찜이 없는 것으로 취급한다. */
   Optional<Favorite> findByUserIdAndListingId(Long userId, String listingId);
+
+  /**
+   * 현재 사용자가 주어진 매물 목록 중 실제로 찜한 매물 id만 반환한다.
+   *
+   * <p>최근 본 매물처럼 최대 10개 안팎의 카드 목록에서 하트 상태를 채울 때 사용한다. 각 카드마다 단건 조회를 반복하지 않고 한 번의 {@code in} 조회로 끝내기
+   * 위한 메서드다.
+   */
+  Set<String> findFavoritedListingIds(Long userId, List<String> listingIds);
 
   /**
    * 찜을 신규 저장한다.

@@ -9,6 +9,8 @@ import com.kohere.listing.domain.Listing;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
 import org.bson.types.ObjectId;
@@ -49,6 +51,22 @@ public class FavoriteRepositoryImpl implements FavoriteRepository {
     return mongoRepository
         .findByUserIdAndListingId(userId, new ObjectId(listingId))
         .map(FavoriteRepositoryImpl::toDomain);
+  }
+
+  @Override
+  public Set<String> findFavoritedListingIds(Long userId, List<String> listingIds) {
+    List<ObjectId> objectIds =
+        listingIds.stream().filter(ObjectId::isValid).map(ObjectId::new).toList();
+    if (objectIds.isEmpty()) {
+      return Set.of();
+    }
+
+    Query query = new Query(Criteria.where("userId").is(userId).and("listingId").in(objectIds));
+    query.fields().include("listingId");
+
+    return mongoTemplate.find(query, FavoriteDocument.class).stream()
+        .map(document -> document.getListingId().toHexString())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   @Override

@@ -89,5 +89,19 @@ class ListingMongoIndexInitializer implements InitializingBean {
     // 내 찜 목록은 MVP에서 favoritedAt desc 고정이므로 사용자+찜시각 인덱스로 최신순 페이지 조회를 지원한다.
     favoriteIndexOperations.createIndex(
         new Index().on("userId", ASC).on("favoritedAt", DESC).named("favorites_user_favoritedAt"));
+
+    var recentListingIndexOperations = mongoTemplate.indexOps(RecentListingDocument.class);
+
+    // 같은 사용자가 같은 매물을 여러 번 봐도 최근 본 목록에는 한 번만 남도록 DB 레벨에서 보장한다.
+    recentListingIndexOperations.createIndex(
+        new Index()
+            .on("userId", ASC)
+            .on("listingId", ASC)
+            .unique()
+            .named("recentListings_user_listing"));
+
+    // 최근 본 목록 조회와 사용자별 30개 보관 정리는 모두 viewedAt desc 순서를 사용한다.
+    recentListingIndexOperations.createIndex(
+        new Index().on("userId", ASC).on("viewedAt", DESC).named("recentListings_user_viewedAt"));
   }
 }

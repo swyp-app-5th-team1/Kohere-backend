@@ -11,6 +11,7 @@ import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.MatchedPlaceResponse;
+import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.Favorite;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.FavoriteRepository;
@@ -24,6 +25,8 @@ import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
+import com.kohere.listing.domain.RecentListingRepository;
+import com.kohere.listing.domain.RecentListingView;
 import com.kohere.listing.domain.SearchPlace;
 import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
@@ -31,20 +34,23 @@ import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
  * 매물 탐색·찜 유스케이스 조율. 도메인(포트)을 호출하고 흐름만 조율한다. 도메인 규칙은 엔티티/도메인 서비스에 둔다 (docs/convention/code-style.md
  * §3-3).
  *
- * <p>의존성은 생성자 주입({@code @RequiredArgsConstructor})으로 받는다(§3-4). 인증 주체(userId)는 SecurityContext에서
- * 가져온다(TODO: 보안 설정 후 연동).
+ * <p>의존성은 생성자 주입({@code @RequiredArgsConstructor})으로 받는다(§3-4). 인증 주체(userId)는 presentation 계층이
+ * {@code @AuthenticationPrincipal}에서 꺼내 명시적으로 전달한다.
  *
  * <p>TODO: 영속 계층(JPA) 도입 시 유스케이스에 트랜잭션 경계({@code @Transactional})를 추가한다.
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ListingService {
 
   private static final double BOUNDS_EXPANSION_RATIO = 0.2;
@@ -57,11 +63,14 @@ public class ListingService {
 
   private static final int MAX_PAGE_SIZE = 100;
   private static final int MAX_KEYWORD_LENGTH = 50;
+  private static final int RECENT_LISTINGS_RESPONSE_LIMIT = 10;
+  private static final int RECENT_LISTINGS_STORAGE_LIMIT = 30;
   private static final double EARTH_RADIUS_METERS = 6_371_000.0;
   private static final double METERS_PER_LATITUDE_DEGREE = 111_320.0;
 
   private final ListingRepository listingRepository;
   private final FavoriteRepository favoriteRepository;
+  private final RecentListingRepository recentListingRepository;
   private final SearchPlaceRepository searchPlaceRepository;
 
   /**
@@ -111,9 +120,21 @@ public class ListingService {
         result.total());
   }
 
-  /** 단일 매물 상세 정보를 조회하고 상세 화면 섹션별 응답으로 변환한다. */
-  public ListingDetailResponse getListing(String listingId) {
-    return ListingResponseMapper.toDetail(requirePublishedListing(listingId));
+  /**
+   * 단일 매물 상세 정보를 조회하고 최근 본 매물 기록을 남긴다.
+   *
+   * <p>상세 응답은 사용자가 명시적으로 요청한 핵심 기능이고, 최근 본 저장은 그 뒤에 따라오는 부가 기능이다. 그래서 매물 조회가 성공하면 먼저 상세 DTO를 구성하고,
+   * 최근 본 저장이나 오래된 기록 정리가 실패하더라도 상세 조회 자체는 실패시키지 않는다. 실패 내용은 운영자가 확인할 수 있도록 warn 로그로 남긴다.
+   */
+  public ListingDetailResponse getListing(Long userId, String listingId) {
+    Listing listing = requirePublishedListing(listingId);
+    boolean favorited =
+        favoriteRepository.findByUserIdAndListingId(userId, listing.getId()).isPresent();
+    ListingDetailResponse response = ListingResponseMapper.toDetail(listing, favorited);
+
+    recordRecentListing(userId, listing.getId());
+
+    return response;
   }
 
   /**
@@ -131,9 +152,27 @@ public class ListingService {
         favorites.page());
   }
 
-  /** 최근 본 매물 조회 예정 지점이다. */
-  public List<ListingSummaryResponse> getRecentListings() {
-    throw new UnsupportedOperationException("TODO: 최근 본 매물(7일·최대 5건)");
+  /**
+   * 로그인 사용자가 최근 본 공개 매물 목록을 최신순 최대 10개 반환한다.
+   *
+   * <p>DB에는 사용자별 최대 30개까지 보관하지만, 화면 응답은 그중 공개 상태이고 활성 방 상품이 있어 실제 카드로 보여줄 수 있는 매물만 최대 10개 내려준다.
+   * 비공개/삭제/노출중지 매물은 사용자가 과거에 봤더라도 목록에서 숨긴다.
+   */
+  public RecentListingsResponse getRecentListings(Long userId) {
+    List<RecentListingView> recentListings =
+        recentListingRepository.findPublishedByUserIdOrderByViewedAtDesc(
+            userId, RECENT_LISTINGS_RESPONSE_LIMIT);
+    List<String> listingIds = recentListings.stream().map(view -> view.listing().getId()).toList();
+    Set<String> favoritedListingIds =
+        favoriteRepository.findFavoritedListingIds(userId, listingIds);
+
+    return new RecentListingsResponse(
+        recentListings.stream()
+            .map(
+                view ->
+                    ListingResponseMapper.toRecentListing(
+                        view, favoritedListingIds.contains(view.listing().getId())))
+            .toList());
   }
 
   /**
@@ -190,6 +229,21 @@ public class ListingService {
         .findById(listingId)
         .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
         .orElseThrow(ListingNotFoundException::new);
+  }
+
+  /**
+   * 최근 본 매물 기록을 저장하고 사용자별 보관 상한을 정리한다.
+   *
+   * <p>최근 본 기록 저장은 상세 조회를 돕는 부가 기능이다. MongoDB 일시 장애나 중복 키 경쟁 같은 예외가 여기서 발생해도 사용자가 보고 있던 상세 화면을 깨뜨리면
+   * 안 되므로, 이 메서드는 예외를 밖으로 던지지 않고 로그만 남긴다.
+   */
+  private void recordRecentListing(Long userId, String listingId) {
+    try {
+      recentListingRepository.upsertViewedAt(userId, listingId, Instant.now());
+      recentListingRepository.deleteOldByUserIdKeepingLatest(userId, RECENT_LISTINGS_STORAGE_LIMIT);
+    } catch (RuntimeException e) {
+      log.warn("최근 본 매물 저장/정리에 실패했습니다. userId={}, listingId={}", userId, listingId, e);
+    }
   }
 
   /** 컨트롤러에서 받은 값을 검증하고 저장소가 이해하기 쉬운 검색 조건으로 묶는다. */

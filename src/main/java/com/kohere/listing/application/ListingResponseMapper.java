@@ -6,10 +6,12 @@ import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingSearchResult;
+import com.kohere.listing.domain.RecentListingView;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -118,8 +120,51 @@ final class ListingResponseMapper {
         favoriteListing.favorite().getFavoritedAt());
   }
 
+  /**
+   * 최근 본 매물 화면에서 사용할 카드 응답을 만든다.
+   *
+   * <p>최근 본 목록은 검색 필터가 없으므로, 공개 매물 안의 활성 방 상품 전체를 집계해 일반 매물 리스트와 같은 범위 필드를 만든다. {@code favorited}는
+   * 목록 조회 시 FavoriteRepository에서 한 번에 계산한 사용자별 찜 여부다.
+   */
+  static RecentListingResponse toRecentListing(RecentListingView recentListing, boolean favorited) {
+    Listing listing = recentListing.listing();
+    List<Listing.RoomOffer> offers = activeRoomOffers(listing);
+    return new RecentListingResponse(
+        listing.getId(),
+        listing.getTitle(),
+        listing.getType(),
+        minMonthlyRent(offers),
+        maxMonthlyRent(offers),
+        minDeposit(offers),
+        maxDeposit(offers),
+        minMaintenanceFee(offers),
+        maxMaintenanceFee(offers),
+        minStayMonths(offers),
+        maxStayMonths(offers),
+        thumbnailUrl(listing),
+        listing.getLocation().latitude(),
+        listing.getLocation().longitude(),
+        listing.getAddress().fullAddress(),
+        toNearestTransitSummary(listing.getNearestTransit()),
+        aggregateConditionTags(offers),
+        null,
+        favorited,
+        listing.getFavoriteCount(),
+        recentListing.recentListing().getViewedAt());
+  }
+
   /** 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다. */
   static ListingDetailResponse toDetail(Listing listing) {
+    return toDetail(listing, false);
+  }
+
+  /**
+   * 상세 화면에서 객체별 섹션으로 렌더링할 수 있게 상세 DTO를 만든다.
+   *
+   * <p>상세 API는 로그인 필수이므로 {@code favorited}에는 현재 사용자 기준 실제 찜 여부를 넣는다. 매물 전체 찜 수는 Listing의 비정규화 캐시인
+   * {@code favoriteCount}를 그대로 사용한다.
+   */
+  static ListingDetailResponse toDetail(Listing listing, boolean favorited) {
     return new ListingDetailResponse(
         listing.getId(),
         new ListingDetailResponse.BasicInfo(
@@ -142,7 +187,7 @@ final class ListingResponseMapper {
             listing.getExtraNotes(),
             listing.getImageUrls(),
             thumbnailUrl(listing)),
-        new ListingDetailResponse.InteractionInfo(false, listing.getFavoriteCount()),
+        new ListingDetailResponse.InteractionInfo(favorited, listing.getFavoriteCount()),
         listing.getCreatedAt(),
         listing.getUpdatedAt());
   }
@@ -178,6 +223,18 @@ final class ListingResponseMapper {
         .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
         .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
         .orElseGet(() -> listing.getRoomOffers().getFirst());
+  }
+
+  /**
+   * 필터 없는 카드 목록에서 집계할 활성 방 상품만 추린다.
+   *
+   * <p>최근 본 매물은 검색 조건이 없지만 일반 목록 카드와 같은 가격 범위를 보여줘야 한다. 따라서 비활성 방 상품은 제외하고, 조회 저장소가 이미 보장한 "활성 방
+   * 상품이 최소 1개 있다"는 전제 아래 범위 값을 계산한다.
+   */
+  private static List<Listing.RoomOffer> activeRoomOffers(Listing listing) {
+    return listing.getRoomOffers().stream()
+        .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
+        .toList();
   }
 
   /** 조건을 통과한 방 상품 중 가장 낮은 월세를 카드의 월세 범위 시작값으로 쓴다. */

@@ -92,11 +92,17 @@ final class ListingMongoMapper {
 
   /** 저장 문서의 가까운 교통 정보를 도메인 값으로 변환한다. */
   private static Listing.NearestTransit toDomain(ListingDocument.NearestTransitDocument transit) {
+    if (transit == null) {
+      return null;
+    }
     return new Listing.NearestTransit(transit.type(), transit.name(), transit.walkMinutes());
   }
 
   /** 도메인 가까운 교통 정보를 저장 문서 값으로 변환한다. */
   private static ListingDocument.NearestTransitDocument toDocument(Listing.NearestTransit transit) {
+    if (transit == null) {
+      return null;
+    }
     return new ListingDocument.NearestTransitDocument(
         transit.type(), transit.name(), transit.walkMinutes());
   }

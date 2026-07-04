@@ -64,8 +64,9 @@ public class ListingController {
 
   /** 매물 상세 화면에서 사용할 객체별 상세 정보를 반환한다. */
   @GetMapping("/{listingId}")
-  public ListingDetailResponse getListing(@PathVariable String listingId) {
-    return listingService.getListing(listingId);
+  public ListingDetailResponse getListing(
+      @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String listingId) {
+    return listingService.getListing(principal.userId(), listingId);
   }
 
   /**

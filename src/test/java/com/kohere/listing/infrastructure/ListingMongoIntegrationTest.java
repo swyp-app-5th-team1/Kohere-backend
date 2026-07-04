@@ -13,8 +13,11 @@ import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
+import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingKeywordSearchResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
+import com.kohere.listing.application.dto.RecentListingResponse;
+import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Favorite;
 import com.kohere.listing.domain.FavoriteRepository;
@@ -27,6 +30,7 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.RecentListingRepository;
 import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
@@ -62,6 +66,7 @@ class ListingMongoIntegrationTest {
 
   @Autowired private ListingRepository listingRepository;
   @Autowired private FavoriteRepository favoriteRepository;
+  @Autowired private RecentListingRepository recentListingRepository;
   @Autowired private ListingService listingService;
   @Autowired private ListingRecommendationService listingRecommendationService;
   @Autowired private SearchPlaceRepository searchPlaceRepository;
@@ -72,6 +77,7 @@ class ListingMongoIntegrationTest {
   void cleanListingCollections() {
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
   }
 
@@ -134,6 +140,14 @@ class ListingMongoIntegrationTest {
             .collect(java.util.stream.Collectors.toSet());
 
     assertThat(favoriteIndexNames).contains("favorites_user_listing", "favorites_user_favoritedAt");
+
+    Set<String> recentListingIndexNames =
+        mongoTemplate.indexOps(RecentListingDocument.class).getIndexInfo().stream()
+            .map(index -> index.getName())
+            .collect(java.util.stream.Collectors.toSet());
+
+    assertThat(recentListingIndexNames)
+        .contains("recentListings_user_listing", "recentListings_user_viewedAt");
 
     Set<String> searchPlaceIndexNames =
         mongoTemplate.indexOps(SearchPlaceDocument.class).getIndexInfo().stream()
@@ -1006,6 +1020,148 @@ class ListingMongoIntegrationTest {
         .hasMessageContaining("size");
   }
 
+  /** 상세 조회가 성공하면 최근 본 매물 기록을 남기고, 상세 응답에는 현재 사용자의 실제 찜 여부를 반영한다. */
+  @Test
+  void recent_상세조회는_최근본을_저장하고_상세_찜여부를_반영한다() {
+    listingRepository.save(sampleListingBuilder().favoriteCount(1).build());
+    favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
+
+    ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
+
+    assertThat(response.listingId()).isEqualTo(LISTING_ID);
+    assertThat(response.interaction().favorited()).isTrue();
+    assertThat(response.interaction().favoriteCount()).isEqualTo(1);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(1);
+  }
+
+  /** 같은 매물을 다시 보면 최근 본 문서를 중복 생성하지 않고 viewedAt만 최신값으로 갱신한다. */
+  @Test
+  void recent_같은_매물_재조회는_viewedAt만_갱신한다() {
+    listingRepository.save(sampleListing());
+    Instant firstViewedAt = Instant.parse("2026-06-24T01:00:00Z");
+    Instant secondViewedAt = Instant.parse("2026-06-24T03:00:00Z");
+
+    recentListingRepository.upsertViewedAt(1L, LISTING_ID, firstViewedAt);
+    recentListingRepository.upsertViewedAt(1L, LISTING_ID, secondViewedAt);
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().listingId()).isEqualTo(LISTING_ID);
+    assertThat(result.content().getFirst().viewedAt()).isEqualTo(secondViewedAt);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(1);
+  }
+
+  /** 최근 본 목록은 공개 매물만 최신순 최대 10개 반환하고, 현재 사용자의 실제 찜 여부를 함께 내려준다. */
+  @Test
+  void recent_목록은_공개매물만_최신순_최대10개와_실제찜여부를_반환한다() {
+    Instant baseViewedAt = Instant.parse("2026-06-24T00:00:00Z");
+    for (int index = 1; index <= 13; index++) {
+      Listing.ListingStatus status =
+          index == 12
+              ? Listing.ListingStatus.PAUSED
+              : index == 13 ? Listing.ListingStatus.DELETED : Listing.ListingStatus.PUBLISHED;
+      saveListingWithRecentView(1L, index, status, baseViewedAt.plusSeconds(index));
+    }
+    recentListingRepository.upsertViewedAt(2L, listingId(11), baseViewedAt.plusSeconds(999));
+    favoriteRepository.saveIfAbsent(favorite(1L, listingId(10), "2026-06-24T05:00:00Z"));
+    favoriteRepository.saveIfAbsent(favorite(2L, listingId(11), "2026-06-24T06:00:00Z"));
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).hasSize(10);
+    assertThat(result.content())
+        .extracting(RecentListingResponse::listingId)
+        .containsExactly(
+            listingId(11),
+            listingId(10),
+            listingId(9),
+            listingId(8),
+            listingId(7),
+            listingId(6),
+            listingId(5),
+            listingId(4),
+            listingId(3),
+            listingId(2));
+    assertThat(result.content())
+        .filteredOn(response -> response.listingId().equals(listingId(10)))
+        .singleElement()
+        .satisfies(
+            response -> {
+              assertThat(response.favorited()).isTrue();
+              assertThat(response.distanceMeters()).isNull();
+              assertThat(response.nearestTransit())
+                  .isEqualTo(
+                      new ListingSummaryResponse.NearestTransitSummary(
+                          Listing.TransitType.SUBWAY, "서울대입구역", 5));
+            });
+    assertThat(result.content())
+        .filteredOn(response -> response.listingId().equals(listingId(11)))
+        .singleElement()
+        .satisfies(response -> assertThat(response.favorited()).isFalse());
+  }
+
+  /** 상세 조회로 최근 본 기록을 남긴 뒤 사용자별 30개를 넘으면 오래된 기록부터 삭제한다. */
+  @Test
+  void recent_상세조회후_사용자별_최대30개만_보관한다() {
+    for (int index = 1; index <= 31; index++) {
+      listingRepository.save(listingWithIndex(index));
+      listingService.getListing(1L, listingId(index));
+    }
+    recentListingRepository.upsertViewedAt(2L, listingId(1), Instant.parse("2026-06-24T10:00:00Z"));
+
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isEqualTo(30);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 2L)))
+        .isEqualTo(1);
+    assertThat(listingService.getRecentListings(1L).content()).hasSize(10);
+  }
+
+  /** 없거나 공개 상태가 아닌 매물 상세 조회는 LISTING_NOT_FOUND가 되며 최근 본 기록도 남기지 않는다. */
+  @Test
+  void recent_상세조회_대상이_없거나_비공개면_기록하지_않는다() {
+    String pausedListingId = listingId(40);
+    listingRepository.save(listingWithIndex(40, Listing.ListingStatus.PAUSED));
+
+    assertThatThrownBy(() -> listingService.getListing(1L, pausedListingId))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.getListing(1L, listingId(41)))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThatThrownBy(() -> listingService.getListing(1L, "not-object-id"))
+        .isInstanceOf(ListingNotFoundException.class);
+    assertThat(
+            mongoTemplate
+                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .countDocuments(new Document("userId", 1L)))
+        .isZero();
+  }
+
+  /** 최근 본 기록이 없거나 모두 비공개 매물이면 content 빈 배열을 정상 응답으로 반환한다. */
+  @Test
+  void recent_목록이_비어도_정상_응답을_반환한다() {
+    listingRepository.save(listingWithIndex(50, Listing.ListingStatus.DELETED));
+    recentListingRepository.upsertViewedAt(
+        1L, listingId(50), Instant.parse("2026-06-24T01:00:00Z"));
+
+    RecentListingsResponse result = listingService.getRecentListings(1L);
+
+    assertThat(result.content()).isEmpty();
+  }
+
   /** 조건을 모두 만족하는 같은 방 상품이 없으면 목록 검색 결과는 비어 있어야 한다. */
   @Test
   void search_조건을_모두_만족하지_않으면_빈_목록을_반환한다() {
@@ -1091,6 +1247,50 @@ class ListingMongoIntegrationTest {
         .userId(userId)
         .listingId(listingId)
         .favoritedAt(Instant.parse(favoritedAt))
+        .build();
+  }
+
+  /** 최근 본 매물 목록 테스트에 사용할 매물을 저장하고 같은 사용자에게 최근 본 기록을 남긴다. */
+  private void saveListingWithRecentView(
+      Long userId, int index, Listing.ListingStatus status, Instant viewedAt) {
+    listingRepository.save(listingWithIndex(index, status));
+    recentListingRepository.upsertViewedAt(userId, listingId(index), viewedAt);
+  }
+
+  /** 반복 테스트에서 충돌 없는 고정 listingId를 만든다. */
+  private static String listingId(int index) {
+    return String.format("6858e200000000000000%04x", index);
+  }
+
+  /** 반복 테스트에서 충돌 없는 고정 roomOfferId를 만든다. */
+  private static String roomOfferId(int index) {
+    return String.format("6858e200000000000001%04x", index);
+  }
+
+  /** 반복 테스트에서 사용할 공개 매물 기본값이다. */
+  private static Listing listingWithIndex(int index) {
+    return listingWithIndex(index, Listing.ListingStatus.PUBLISHED);
+  }
+
+  /** 반복 테스트에서 사용할 매물 기본값이다. */
+  private static Listing listingWithIndex(int index, Listing.ListingStatus status) {
+    return sampleListingBuilder()
+        .id(listingId(index))
+        .title("최근 본 테스트 매물 " + index)
+        .status(status)
+        .roomOffers(
+            List.of(
+                roomOffer(
+                    roomOfferId(index),
+                    "최근 본 방 " + index,
+                    300000 + index * 1000,
+                    300000,
+                    10000,
+                    1,
+                    6,
+                    1,
+                    Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.RESIDENT_REGISTRATION))))
+        .favoriteCount(index)
         .build();
   }
 

@@ -127,6 +127,15 @@ class ListingDocsTest {
           + "MVP에서는 별도 sort 파라미터를 받지 않고 favoritedAt desc로 고정한다. "
           + "응답 항목은 모두 현재 사용자가 찜한 매물이므로 favorited=true이며, "
           + "DRAFT/PAUSED/DELETED 등 공개 상태가 아닌 매물은 content와 totalElements에서 제외된다.";
+  private static final String RECENT_LISTINGS_SUMMARY = "최근 본 매물 목록";
+  private static final String RECENT_LISTINGS_DESCRIPTION =
+      "로그인 사용자가 상세 화면에서 본 매물을 최신 조회순으로 최대 10개 반환한다. "
+          + "프론트가 입력할 query parameter는 없으며, 상세 조회 API가 Authorization 토큰의 userId와 listingId로 최근 본 기록을 자동 저장한다. "
+          + "같은 매물을 다시 보면 중복 생성하지 않고 viewedAt만 갱신한다. "
+          + "DB에는 사용자별 최신 30개 기록까지만 보관하고, 조회 응답은 그중 현재 PUBLISHED 상태이며 활성 roomOffer가 있는 매물만 최대 10개 내려준다. "
+          + "PAUSED/DELETED/DRAFT 매물은 사용자가 과거에 봤더라도 숨긴다. "
+          + "응답 필드는 /api/v1/listings 카드 응답과 최대한 맞췄고, 최근 본 화면에서 정렬 기준을 확인할 수 있도록 viewedAt을 추가한다. "
+          + "favorited는 현재 로그인 사용자의 실제 찜 여부라 하트 UI를 이 값만 보고 그리면 된다.";
 
   // 문서화용 위조 토큰. 401 예시에서도 bearerAuthJWT 보안 스킴이 안정적으로 생성되게 한다.
   private static final String FORGED_TOKEN =
@@ -160,6 +169,7 @@ class ListingDocsTest {
             .build();
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
     new ListingSeedRunner(listingRepository).run(null);
     new SearchPlaceSeedChangeUnit().execution(mongoTemplate);
@@ -336,6 +346,22 @@ class ListingDocsTest {
                     .description(FAVORITES_LIST_DESCRIPTION),
                 queryParameters(favoritesQueryParameters()),
                 responseFields(favoritesResponseFields())));
+
+    mockMvc
+        .perform(
+            get("/api/v1/users/me/recent-listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].favorited").value(true))
+        .andExpect(jsonPath("$.data.content[0].viewedAt").isString())
+        .andDo(
+            document(
+                "my-recent-listings",
+                resourceDetails()
+                    .summary(RECENT_LISTINGS_SUMMARY)
+                    .description(RECENT_LISTINGS_DESCRIPTION),
+                responseFields(recentListingsResponseFields())));
 
     mockMvc
         .perform(
@@ -561,6 +587,24 @@ class ListingDocsTest {
         "my-favorites-list-invalid-page-size",
         FAVORITES_LIST_SUMMARY,
         FAVORITES_LIST_DESCRIPTION);
+
+    // ===== GET /users/me/recent-listings =====
+    perform(
+        get("/api/v1/users/me/recent-listings"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "my-recent-listings-unauthenticated",
+        RECENT_LISTINGS_SUMMARY,
+        RECENT_LISTINGS_DESCRIPTION);
+
+    perform(
+        get("/api/v1/users/me/recent-listings")
+            .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "my-recent-listings-token-expired",
+        RECENT_LISTINGS_SUMMARY,
+        RECENT_LISTINGS_DESCRIPTION);
   }
 
   private void perform(
@@ -776,6 +820,73 @@ class ListingDocsTest {
         field("data.page.totalElements", JsonFieldType.NUMBER, "공개 상태라 실제 응답 가능한 내 찜 매물 수"),
         field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
         field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        errorNull());
+  }
+
+  /** 최근 본 매물 목록 API 응답 필드 문서 정의다. */
+  private static List<FieldDescriptor> recentListingsResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field(
+            "data.content[].listingId",
+            JsonFieldType.STRING,
+            "최근 본 매물 식별자(ObjectId hex 문자열). 같은 매물을 여러 번 봐도 한 번만 내려오며 viewedAt만 최신화됨"),
+        field("data.content[].title", JsonFieldType.STRING, "최근 본 카드에 표시할 매물 제목"),
+        field(
+            "data.content[].type",
+            JsonFieldType.STRING,
+            "매물 유형. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"),
+        field(
+            "data.content[].minMonthlyRent",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최저 월세(KRW). 일반 매물 리스트 카드와 같은 방식으로 계산"),
+        field(
+            "data.content[].maxMonthlyRent",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최고 월세(KRW). minMonthlyRent와 같으면 단일 가격으로 표시 가능"),
+        field("data.content[].minDeposit", JsonFieldType.NUMBER, "현재 활성 roomOffers 중 최저 보증금(KRW)"),
+        field("data.content[].maxDeposit", JsonFieldType.NUMBER, "현재 활성 roomOffers 중 최고 보증금(KRW)"),
+        field(
+            "data.content[].minMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최저 관리비(KRW)"),
+        field(
+            "data.content[].maxMaintenanceFee",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 최고 관리비(KRW)"),
+        field(
+            "data.content[].minStayMonths",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 가장 짧은 최소 계약 개월 수"),
+        field(
+            "data.content[].maxStayMonths",
+            JsonFieldType.NUMBER,
+            "현재 활성 roomOffers 중 가장 긴 최대 계약 개월 수"),
+        field("data.content[].thumbnailUrl", JsonFieldType.NULL, "썸네일 URL(없으면 null)"),
+        field("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
+        field("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
+        field("data.content[].address", JsonFieldType.STRING, "카드에 표시할 주소"),
+        field("data.content[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통수단 요약(없으면 null)"),
+        field("data.content[].nearestTransit.type", JsonFieldType.STRING, "가까운 교통수단 유형"),
+        field("data.content[].nearestTransit.name", JsonFieldType.STRING, "가까운 교통수단 이름"),
+        field(
+            "data.content[].nearestTransit.walkMinutes",
+            JsonFieldType.NUMBER,
+            "가까운 교통수단까지의 도보 시간(분)"),
+        field("data.content[].conditions", JsonFieldType.ARRAY, "현재 활성 roomOffers의 조건 태그 합집합"),
+        field(
+            "data.content[].distanceMeters",
+            JsonFieldType.NULL,
+            "최근 본 목록은 지도 기준 좌표가 없으므로 항상 null. 거리 표시가 필요하면 별도 지도/검색 API를 사용"),
+        field(
+            "data.content[].favorited",
+            JsonFieldType.BOOLEAN,
+            "현재 로그인 사용자의 실제 찜 여부. true면 채운 하트, false면 빈 하트로 표시"),
+        field("data.content[].favoriteCount", JsonFieldType.NUMBER, "매물의 전체 찜 수"),
+        field(
+            "data.content[].viewedAt",
+            JsonFieldType.STRING,
+            "사용자가 이 매물을 마지막으로 상세 조회한 시각(UTC ISO-8601)"),
         errorNull());
   }
 
@@ -1050,7 +1161,7 @@ class ListingDocsTest {
         field(
             "data.interaction.favorited",
             JsonFieldType.BOOLEAN,
-            "현재 사용자 찜 여부. 현재는 사용자별 찜 연동 전이라 false로 반환하며, 찜 API 연동 후 사용자별 상태로 변경 예정"),
+            "현재 로그인 사용자의 실제 찜 여부. true면 상세 화면 하트를 채운 상태로 표시"),
         field("data.interaction.favoriteCount", JsonFieldType.NUMBER, "찜 수"),
         field("data.createdAt", JsonFieldType.STRING, "생성 시각(ISO-8601 UTC)"),
         field("data.updatedAt", JsonFieldType.STRING, "수정 시각(ISO-8601 UTC)"),

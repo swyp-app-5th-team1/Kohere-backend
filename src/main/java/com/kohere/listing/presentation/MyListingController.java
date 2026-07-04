@@ -5,8 +5,7 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.AuthPrincipal;
 import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
-import com.kohere.listing.application.dto.ListingSummaryResponse;
-import java.util.List;
+import com.kohere.listing.application.dto.RecentListingsResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +37,15 @@ public class MyListingController {
     return ApiResponse.success(listingService.getMyFavorites(principal.userId(), page, size));
   }
 
+  /**
+   * 로그인 사용자의 최근 본 매물 목록을 조회한다.
+   *
+   * <p>응답은 최신 조회순 최대 10개이며, 사용자가 과거에 본 매물이라도 현재 공개 상태가 아니면 제외된다. 프론트는 일반 매물 카드와 거의 같은 필드를 쓰고 {@code
+   * viewedAt}으로 정렬 기준을 확인할 수 있다.
+   */
   @GetMapping("/recent-listings")
-  public ApiResponse<List<ListingSummaryResponse>> getRecentListings() {
-    return ApiResponse.success(listingService.getRecentListings());
+  public ApiResponse<RecentListingsResponse> getRecentListings(
+      @AuthenticationPrincipal AuthPrincipal principal) {
+    return ApiResponse.success(listingService.getRecentListings(principal.userId()));
   }
 }

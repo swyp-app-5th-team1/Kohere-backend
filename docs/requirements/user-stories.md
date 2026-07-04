@@ -680,7 +680,7 @@
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)
 
-외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 목록·상세 조회는 비로그인도 가능(인증 선택)하나, 찜·최근 본 매물은 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 검증 실패 시 필드 상세는 `error.errors[]`에 담긴다.
+외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 상세 조회·찜·최근 본 매물은 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 검증 실패 시 필드 상세는 `error.errors[]`에 담긴다.
 
 ### US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
 
@@ -776,8 +776,8 @@
 **I want** 사진 갤러리·유형·가격·보증금·계약기간·위치·편의시설·임대인 정보가 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
 **So that** 매물을 충분히 검토하고 다시 쉽게 찾아올 수 있다
 
-- 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 보관 7일·사용자당 노출 최대 5개(요구사항 정의서 기준)
-- 데이터 관점: 임대인 연락처는 노출하지 않고 채팅으로만 연결, 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 비로그인 상세 조회는 기록을 남기지 않음
+- 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 DB 보관 사용자별 최대 30개·조회 응답 최대 10개
+- 데이터 관점: 임대인 연락처는 노출하지 않고 채팅으로만 연결, 최근 본 매물은 (userId, listingId) 유니크로 upsert하며 `viewedAt` 갱신, 상세 조회 성공 후 30개 초과 오래된 기록 삭제
 
 **AC (Given / When / Then)**
 
@@ -789,14 +789,14 @@
   Given 존재하지 않거나 비공개/삭제된 매물 ID로
   When 상세를 조회하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
-- 시나리오: 인증 선택(비로그인 상세)
+- 시나리오: 인증 실패
   Given 토큰 없는 사용자가
   When 상세를 조회하면
-  Then `200 OK`로 상세를 반환하되 `favorited=false`이며 최근 본 매물에는 기록되지 않는다
-- 시나리오: 경계(최근 본 매물 5개 초과·동일 매물 재조회)
-  Given 사용자가 이미 5개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
+  Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`를 반환한다
+- 시나리오: 경계(최근 본 매물 30개 초과·동일 매물 재조회)
+  Given 사용자가 이미 30개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
   When 상세를 조회하면
-  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, `GET /api/v1/users/me/recent-listings` 조회 시 7일 이내·최신순 최대 5건만 반환된다
+  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v1/users/me/recent-listings` 조회 시 공개 매물만 최신순 최대 10건 반환된다
 
 ### US-3-5 — 찜 토글·찜 목록(인증 필수)
 

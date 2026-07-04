@@ -344,7 +344,7 @@
 | `_id` | ObjectId | PK |
 | `userId` | long | NOT NULL · UNIQUE(userId,listingId) · → user(값 참조) |
 | `listingId` | ObjectId | NOT NULL · UNIQUE(userId,listingId) · → listings.\_id 값 참조. 재조회 upsert |
-| `viewedAt` | ISODate | NOT NULL · TTL(7일) |
+| `viewedAt` | ISODate | NOT NULL · 최신순 정렬키(desc) |
 
 **인덱스:**
 
@@ -360,12 +360,12 @@
 | `favorites_user_listing` | `userId, listingId` | UNIQUE | 중복 찜 불가·토글 멱등 |
 | `favorites_user_favoritedAt` | `userId, favoritedAt` | 복합(desc) | 내 찜 목록 |
 | `recentListings_user_listing` | `userId, listingId` | UNIQUE | 재조회 upsert |
-| `recentListings_viewedAt_ttl` | `viewedAt` | TTL(604800s) | 7일 자동 만료 |
+| `recentListings_user_viewedAt` | `userId, viewedAt desc` | 복합 | 최근 본 목록 조회·사용자별 오래된 기록 정리 |
 
 - **교차 스토어/모듈 no-FK**: `landlordId`·`favorites.userId`·`recentListings.userId`는 user(MySQL)를 값으로만 참조한다. `listingId`는 Mongo `_id ObjectId` 값 참조이며 API에서는 문자열로 노출한다.
 - **유니크/멱등**: 찜 토글 멱등(신규 201/기존 200, 해제 항상 200). 최근본 재조회는 upsert.
 - **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시 — 토글 시 동일 store 갱신 + 배치 재계산([§6](#6-결정-필요-open-questions)).
-- **최근 본**: "7일·최대 5건" — 7일은 TTL, 5건은 조회 `viewedAt desc limit 5`(표시 상한).
+- **최근 본**: 사용자별 최신 30개까지만 보관하고, 조회 API는 그중 공개 상태 매물만 `viewedAt desc limit 10`으로 반환한다.
 - **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환.
 - **방 재고**: 예약/계약 확정 시 `roomOffers.inventory.availableCount > 0` 조건에서 해당 방 상품 수량을 원자적으로 감소시킨다. 실제 방 번호별 관리가 필요해지면 별도 `roomUnits` 컬렉션을 추가한다.
 - `favorited`·`distanceMeters`는 조회 시점 산출 표현값으로 영속하지 않는다(domain-model).
