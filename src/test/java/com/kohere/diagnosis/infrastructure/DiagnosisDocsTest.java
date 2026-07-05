@@ -699,10 +699,13 @@ class DiagnosisDocsTest {
         field(prefix + "purpose", JsonFieldType.STRING, "입국 목적(STUDY|NON_STUDY)"),
         optField(prefix + "university", JsonFieldType.STRING, "대학 그룹(STUDY일 때만, NON_STUDY면 null)"),
         optField(prefix + "district", JsonFieldType.STRING, "지역구(NON_STUDY일 때만, STUDY면 null)"),
-        field(prefix + "conditions", JsonFieldType.ARRAY, "주거 조건 코드 목록(0~3개)"),
+        field(
+            prefix + "conditions",
+            JsonFieldType.ARRAY,
+            "주거 조건 코드 목록(④ 최대 3개 + ⑥ arcStatus=NO_ARC이면 서버가 NO_ARC 조건 파생 추가)"),
         field(prefix + "monthlyRentMin", JsonFieldType.NUMBER, "월세 하한(KRW)"),
         field(prefix + "monthlyRentMax", JsonFieldType.NUMBER, "월세 상한(KRW)"),
-        field(prefix + "arcStatus", JsonFieldType.STRING, "ARC 발급 상태(ARC_ISSUED|ARC_PENDING)"));
+        field(prefix + "arcStatus", JsonFieldType.STRING, "ARC 발급 상태(ARC_ISSUED|NO_ARC)"));
   }
 
   private static List<FieldDescriptor> historyResponseFields() {

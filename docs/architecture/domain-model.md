@@ -496,16 +496,17 @@
 | | `GWANAK_GU` | 관악구 |
 | | `DONGDAEMUN_GU` | 동대문구 |
 | | `ETC` | 기타 |
-| `DiagnosisCondition` | `IMMEDIATE_MOVE_IN` | 즉시입주 |
+| `DiagnosisCondition` | `MOVE_IN_NOW` | 즉시입주(④, listing `ConditionTag` 이름 통일) |
 | | `FEMALE_ONLY` | 여성전용 |
 | | `PRIVATE_BATH` | 개인욕실 |
-| | `ENGLISH_AVAILABLE` | 영어가능 |
-| | `RESIDENT_REGISTRATION` | 전입신고가능 |
-| | `NO_MAINTENANCE_FEE` | 관리비없음 |
-| | `MEALS_PROVIDED` | 식사제공 |
+| | `ENGLISH_OK` | 영어가능 |
+| | `ADDRESS_REGISTRATION` | 전입신고가능 |
+| | `NO_MAINT_FEE` | 관리비없음 |
+| | `MEALS_INCLUDED` | 식사제공 |
 | | `DOUBLE_ROOM` | 2인실 |
+| | `NO_ARC` | ARC 불요(⑥ `arcStatus=NO_ARC`에서 서버가 파생, ④ 직접 선택 불가·최대 3개 제한 제외) |
 | `ArcStatus` | `ARC_ISSUED` | ARC(외국인등록증) 발급 완료 |
-| | `ARC_PENDING` | ARC 미발급·발급 예정 |
+| | `NO_ARC` | ARC 미발급(추천 시 파생 조건 `DiagnosisCondition.NO_ARC`로 반영) |
 | `DiagnosisStatus` | `IN_PROGRESS` | 진행 중(서버가 단계별 답을 채워가는 in-progress draft, 이력·목록 비노출) |
 | | `COMPLETED` | 제출 확정 완료(`IN_PROGRESS`에서 전이, 이력·목록 노출) |
 | `NoMatchReason` | `NO_MATCH` | 조건에 맞는 매물 없음 |

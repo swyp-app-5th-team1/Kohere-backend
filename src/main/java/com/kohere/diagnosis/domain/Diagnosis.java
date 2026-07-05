@@ -64,7 +64,10 @@ public class Diagnosis {
       throw new InvalidInputException("purpose 답변이 필요합니다.");
     }
     validatePurposeBranch();
-    if (conditions != null && conditions.size() > MAX_CONDITIONS) {
+    // NO_ARC는 ⑥ arcStatus에서 파생한 매물 정책 필터라 ④ 최대 3개 제한 계산에서 제외한다.
+    if (conditions != null
+        && conditions.stream().filter(DiagnosisCondition::userSelectable).count()
+            > MAX_CONDITIONS) {
       throw new InvalidInputException("conditions는 최대 3개까지 선택할 수 있습니다.");
     }
     if (monthlyRentMin == null || monthlyRentMax == null) {

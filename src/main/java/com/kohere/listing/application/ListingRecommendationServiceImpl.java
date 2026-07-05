@@ -8,7 +8,6 @@ import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import java.util.Collections;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -23,14 +22,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ListingRecommendationServiceImpl implements ListingRecommendationService {
-
-  private static final Map<String, ConditionTag> LEGACY_CONDITION_ALIASES =
-      Map.of(
-          "IMMEDIATE_MOVE_IN", ConditionTag.MOVE_IN_NOW,
-          "ENGLISH_AVAILABLE", ConditionTag.ENGLISH_OK,
-          "RESIDENT_REGISTRATION", ConditionTag.ADDRESS_REGISTRATION,
-          "NO_MAINTENANCE_FEE", ConditionTag.NO_MAINT_FEE,
-          "MEALS_PROVIDED", ConditionTag.MEALS_INCLUDED);
 
   private final ListingRepository listingRepository;
 
@@ -52,19 +43,11 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
         listings.page());
   }
 
-  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다. */
+  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다(diagnosis가 UI 필터 코드로 전달). */
   private static Set<ConditionTag> parseConditionTags(Set<String> conditions) {
     if (conditions == null || conditions.isEmpty()) {
       return Collections.emptySet();
     }
-    return conditions.stream()
-        .map(ListingRecommendationServiceImpl::parseConditionTag)
-        .collect(Collectors.toUnmodifiableSet());
-  }
-
-  private static ConditionTag parseConditionTag(String condition) {
-    // diagnosis 모듈이 새 필터 코드로 전환되기 전까지 예전 조건 이름을 새 UI 코드로 해석한다.
-    ConditionTag alias = LEGACY_CONDITION_ALIASES.get(condition);
-    return alias == null ? ConditionTag.valueOf(condition) : alias;
+    return conditions.stream().map(ConditionTag::valueOf).collect(Collectors.toUnmodifiableSet());
   }
 }

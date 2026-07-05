@@ -81,13 +81,13 @@ public class DiagnosisCatalogSeedChangeUnit {
             select("MULTI", 3),
             q("원하는 주거 조건을 선택하세요(최대 3개).", "Select your housing conditions (up to 3)."),
             List.of(
-                opt("IMMEDIATE_MOVE_IN", "즉시 입주", "Immediate move-in"),
+                opt("MOVE_IN_NOW", "즉시 입주", "Immediate move-in"),
                 opt("FEMALE_ONLY", "여성 전용", "Female only"),
                 opt("PRIVATE_BATH", "개인 욕실", "Private bath"),
-                opt("ENGLISH_AVAILABLE", "영어 가능", "English available"),
-                opt("RESIDENT_REGISTRATION", "전입신고 가능", "Resident registration"),
-                opt("NO_MAINTENANCE_FEE", "관리비 없음", "No maintenance fee"),
-                opt("MEALS_PROVIDED", "식사 제공", "Meals provided"),
+                opt("ENGLISH_OK", "영어 가능", "English available"),
+                opt("ADDRESS_REGISTRATION", "전입신고 가능", "Resident registration"),
+                opt("NO_MAINT_FEE", "관리비 없음", "No maintenance fee"),
+                opt("MEALS_INCLUDED", "식사 제공", "Meals provided"),
                 opt("DOUBLE_ROOM", "2인실", "Double room"))),
         doc(
             5,
@@ -100,7 +100,7 @@ public class DiagnosisCatalogSeedChangeUnit {
             "arcStatus",
             select("SINGLE", 1),
             q("외국인등록증(ARC) 발급 상태는 어떤가요?", "What is your ARC issuance status?"),
-            List.of(opt("ARC_ISSUED", "발급 완료", "Issued"), opt("ARC_PENDING", "발급 예정", "Pending"))));
+            List.of(opt("ARC_ISSUED", "발급 완료", "Issued"), opt("NO_ARC", "미발급", "Not issued"))));
   }
 
   private static DiagnosisSuggestionDocument noMatchSuggestion() {

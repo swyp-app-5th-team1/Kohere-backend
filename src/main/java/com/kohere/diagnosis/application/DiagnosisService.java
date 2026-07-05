@@ -209,12 +209,16 @@ public class DiagnosisService {
         requirePurpose(draft, Purpose.NON_STUDY, "district");
         builder.district(parseEnum(District.class, requireCode(request))).university(null);
       }
-      case "conditions" -> builder.conditions(parseConditions(request));
+      case "conditions" ->
+          builder.conditions(withArcCondition(parseConditions(request), draft.getArcStatus()));
       case "monthlyRent" -> {
         validateRent(request);
         builder.monthlyRentMin(request.min()).monthlyRentMax(request.max());
       }
-      case "arcStatus" -> builder.arcStatus(parseEnum(ArcStatus.class, requireCode(request)));
+      case "arcStatus" -> {
+        ArcStatus arcStatus = parseEnum(ArcStatus.class, requireCode(request));
+        builder.arcStatus(arcStatus).conditions(withArcCondition(draft.getConditions(), arcStatus));
+      }
       default -> throw new InvalidInputException("지원하지 않는 field입니다: " + field);
     }
     return builder.build();
@@ -237,11 +241,33 @@ public class DiagnosisService {
     Set<DiagnosisCondition> result = new LinkedHashSet<>();
     if (request.codes() != null) {
       for (String code : request.codes()) {
-        result.add(parseEnum(DiagnosisCondition.class, code));
+        DiagnosisCondition condition = parseEnum(DiagnosisCondition.class, code);
+        if (!condition.userSelectable()) {
+          // NO_ARC는 ⑥ arcStatus에서 서버가 파생하는 필터라 ④에서 직접 선택할 수 없다.
+          throw new InvalidInputException("conditions에서 선택할 수 없는 값입니다: " + code);
+        }
+        result.add(condition);
       }
     }
     if (result.size() > Diagnosis.MAX_CONDITIONS) {
       throw new InvalidInputException("conditions는 최대 3개까지 선택할 수 있습니다.");
+    }
+    return result;
+  }
+
+  /**
+   * ④ 주거 조건에 ⑥ {@code arcStatus} 파생 조건({@code NO_ARC})을 합친다. ARC 미발급({@code ArcStatus.NO_ARC})이면
+   * {@code DiagnosisCondition.NO_ARC}를 넣어 ARC 불요 매물만 추천되게 하고, 발급 완료({@code ARC_ISSUED})·미응답이면 뺀다.
+   * ④·⑥ 답 저장 순서와 무관하게 정합을 유지하도록 기존 파생 {@code NO_ARC}는 걷어내고 현재 {@code arcStatus} 기준으로 다시 계산한다.
+   */
+  private static Set<DiagnosisCondition> withArcCondition(
+      Set<DiagnosisCondition> conditions, ArcStatus arcStatus) {
+    Set<DiagnosisCondition> result = new LinkedHashSet<>();
+    if (conditions != null) {
+      conditions.stream().filter(DiagnosisCondition::userSelectable).forEach(result::add);
+    }
+    if (arcStatus == ArcStatus.NO_ARC) {
+      result.add(DiagnosisCondition.NO_ARC);
     }
     return result;
   }

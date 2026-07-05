@@ -1238,9 +1238,9 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).isEmpty();
   }
 
-  /** diagnosis가 아직 쓰는 기존 조건 이름도 listing 추천 서비스가 새 필터 코드로 해석한다. */
+  /** diagnosis가 전달한 UI 필터 조건 코드로 매물 요약을 반환한다. */
   @Test
-  void recommendByCriteria_진단_레거시조건으로_매물요약을_반환한다() {
+  void recommendByCriteria_조건코드로_매물요약을_반환한다() {
     new ListingSeedRunner(listingRepository).run(null);
 
     PageResponse<RecommendedListingView> result =
@@ -1248,7 +1248,7 @@ class ListingMongoIntegrationTest {
             new RecommendationCriteria(
                 "SEOUL",
                 500000,
-                Set.of("FEMALE_ONLY", "RESIDENT_REGISTRATION"),
+                Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
                 "SNU",
                 null,
                 0,
@@ -1272,7 +1272,7 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 500000, Set.of("IMMEDIATE_MOVE_IN"), "SNU", null, 0, 20, null));
+                "SEOUL", 500000, Set.of("MOVE_IN_NOW"), "SNU", null, 0, 20, null));
 
     assertThat(result.content()).isEmpty();
   }
