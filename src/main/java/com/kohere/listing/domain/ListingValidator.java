@@ -4,18 +4,27 @@ import com.kohere.common.exception.InvalidInputException;
 import java.util.Collection;
 import java.util.List;
 
-/** 저장 전 애플리케이션 경로에서 매물 문서의 필수 구조와 도메인 불변식을 검증한다. */
+/**
+ * 저장 전 애플리케이션 경로에서 매물 문서의 필수 구조와 도메인 불변식을 검증한다.
+ *
+ * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v2 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
+ * NullPointerException이나 잘못된 검색 결과를 미리 막는다.
+ */
 public final class ListingValidator {
 
   private ListingValidator() {}
 
   public static void validateForSave(Listing listing) {
     requireNonNull(listing, "listing이 필요합니다.");
-    require(listing.getSchemaVersion() >= 1, "schemaVersion은 1 이상이어야 합니다.");
+    require(listing.getSchemaVersion() == 2, "schemaVersion은 2여야 합니다.");
     requireNonNull(listing.getLandlordId(), "landlordId가 필요합니다.");
     requireText(listing.getTitle(), "title이 필요합니다.");
     requireNonNull(listing.getType(), "type이 필요합니다.");
     requireNonNull(listing.getStatus(), "status가 필요합니다.");
+    requireNonNull(listing.getRentalType(), "rentalType이 필요합니다.");
+    validateRefundPolicy(listing.getRefundPolicy());
+    validateContract(listing.getContract());
+    requireNonNull(listing.getGenderPolicy(), "genderPolicy가 필요합니다.");
     requireNonNull(listing.getLocation(), "location이 필요합니다.");
     validateAddress(listing.getAddress());
     validateNearestTransit(listing.getNearestTransit());
@@ -23,10 +32,8 @@ public final class ListingValidator {
     requireNonNull(listing.getPropertyPolicies(), "propertyPolicies가 필요합니다.");
     validateFacilities(listing.getFacilities());
     validateRoomOffers(listing.getRoomOffers());
-    requireCollection(listing.getFeatureSummary(), "featureSummary");
-    validateStoredConditionTags(listing.getFeatureSummary(), "featureSummary");
     requireCollection(listing.getNearbyUniversityCodes(), "nearbyUniversityCodes");
-    requireNonNull(listing.getDescriptions(), "descriptions가 필요합니다.");
+    validateDescriptions(listing.getDescriptions());
     requireCollection(listing.getImageUrls(), "imageUrls");
     require(listing.getFavoriteCount() >= 0, "favoriteCount는 0 이상이어야 합니다.");
     requireNonNull(listing.getCreatedAt(), "createdAt이 필요합니다.");
@@ -44,6 +51,8 @@ public final class ListingValidator {
     requireNonNull(transit, "nearestTransit이 필요합니다.");
     requireNonNull(transit.type(), "nearestTransit.type이 필요합니다.");
     requireText(transit.name(), "nearestTransit.name이 필요합니다.");
+    requireText(
+        transit.nearbyPlacesDescription(), "nearestTransit.nearbyPlacesDescription이 필요합니다.");
   }
 
   private static void validateBuilding(Listing.Building building) {
@@ -52,11 +61,12 @@ public final class ListingValidator {
     require(building.usedFloorMin() <= building.usedFloorMax(), "building 사용 층 범위가 올바르지 않습니다.");
     require(building.totalFloors() >= 1, "building.totalFloors는 1 이상이어야 합니다.");
     require(building.usedFloorMax() <= building.totalFloors(), "building 사용 층은 전체 층수를 넘을 수 없습니다.");
-    requireNonNull(building.heatingSystem(), "building.heatingSystem이 필요합니다.");
   }
 
   private static void validateFacilities(Listing.Facilities facilities) {
     requireNonNull(facilities, "facilities가 필요합니다.");
+    requireCollection(facilities.heatingSystem(), "facilities.heatingSystem");
+    requireCollection(facilities.kitchen(), "facilities.kitchen");
     requireCollection(facilities.laundry(), "facilities.laundry");
     requireCollection(facilities.livingAmenities(), "facilities.livingAmenities");
     requireCollection(facilities.securityFeatures(), "facilities.securityFeatures");
@@ -83,12 +93,8 @@ public final class ListingValidator {
     requireNonNull(roomOffer, "roomOffers 항목이 필요합니다.");
     requireText(roomOffer.name(), "roomOffers.name이 필요합니다.");
     requireNonNull(roomOffer.status(), "roomOffers.status가 필요합니다.");
-    requireNonNull(roomOffer.rentalType(), "roomOffers.rentalType이 필요합니다.");
     validatePricing(roomOffer.pricing());
-    validateContract(roomOffer.contract());
     requireNonNull(roomOffer.inventory(), "roomOffers.inventory가 필요합니다.");
-    requireNonNull(roomOffer.genderPolicy(), "roomOffers.genderPolicy가 필요합니다.");
-    requireCollection(roomOffer.features(), "roomOffers.features");
     requireCollection(roomOffer.filterTags(), "roomOffers.filterTags");
     validateStoredConditionTags(roomOffer.filterTags(), "roomOffers.filterTags");
     requireCollection(roomOffer.roomImageUrls(), "roomOffers.roomImageUrls");
@@ -104,9 +110,18 @@ public final class ListingValidator {
   }
 
   private static void validateContract(Listing.Contract contract) {
-    requireNonNull(contract, "roomOffers.contract가 필요합니다.");
-    requireNonNull(contract.refundPolicy(), "roomOffers.contract.refundPolicy가 필요합니다.");
-    requireNonNull(contract.refundPolicy().code(), "roomOffers.contract.refundPolicy.code가 필요합니다.");
+    requireNonNull(contract, "contract가 필요합니다.");
+  }
+
+  private static void validateRefundPolicy(Listing.RefundPolicy refundPolicy) {
+    requireNonNull(refundPolicy, "refundPolicy가 필요합니다.");
+    requireNonNull(refundPolicy.code(), "refundPolicy.code가 필요합니다.");
+  }
+
+  private static void validateDescriptions(Listing.Descriptions descriptions) {
+    requireNonNull(descriptions, "descriptions가 필요합니다.");
+    requireText(descriptions.ko(), "descriptions.ko가 필요합니다.");
+    requireText(descriptions.en(), "descriptions.en이 필요합니다.");
   }
 
   private static void requireCollection(Collection<?> values, String field) {

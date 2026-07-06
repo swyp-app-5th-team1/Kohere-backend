@@ -78,14 +78,14 @@ class ListingDocsTest {
           + "응답 content[]의 1개 항목은 roomOffer가 아니라 Listing(고시원/건물/숙소 매물) 1개다. "
           + "필터가 없으면 해당 매물의 active roomOffer 전체를 집계하고, "
           + "필터가 있으면 조건을 만족하는 active roomOffer만 집계한다. "
-          + "월세·보증금·관리비·계약기간은 집계 대상 roomOffer의 최저~최고 범위로 내려간다. "
+          + "월세·보증금·관리비는 집계 대상 roomOffer의 최저~최고 범위로 내려가고, 계약기간은 매물 공통 contract 값을 내려준다. "
           + "월세·보증금·일반 조건 태그는 roomOffer 기준으로 적용하고, 매물 종류·NO_ARC·지도 범위는 Listing 기준으로 적용한다. "
           + "전입신고 가능 여부는 conditions=ADDRESS_REGISTRATION으로 필터링한다. "
           + "No ARC 필터는 별도 파라미터가 아니라 conditions=NO_ARC로 요청하며, ARC 없이 가능한 매물(propertyPolicies.arcRequired=false)만 반환한다. "
           + "conditions에 NO_ARC를 넣지 않으면 ARC 조건은 적용하지 않는다. "
           + "같은 매물에 조건에 맞는 roomOffer가 여러 개 있어도 같은 listingId는 한 번만 내려간다. "
           + "프론트는 minMonthlyRent~maxMonthlyRent, minDeposit~maxDeposit, minMaintenanceFee~maxMaintenanceFee, "
-          + "minStayMonths~maxStayMonths로 목록 카드의 범위 문구를 만들고, 카드 선택 시 listingId로 상세 API를 호출하면 된다. "
+          + "minStayMonths~maxStayMonths로 목록 카드의 가격·계약기간 문구를 만들고, 카드 선택 시 listingId로 상세 API를 호출하면 된다. "
           + "이 API는 지도 바텀시트 리스트 카드용이며, 지도 핀/클러스터 데이터는 별도 지도 API에서 제공한다.";
   private static final String LISTINGS_MAP_SUMMARY = "지도 마커 조회";
   private static final String LISTINGS_MAP_DESCRIPTION =
@@ -102,14 +102,14 @@ class ListingDocsTest {
           + "매칭된 장소 좌표 기준 3km 이내의 공개 매물 카드 목록을 반환한다. "
           + "일부 검색어와 별칭 검색을 지원한다. 예를 들어 keyword=연세는 연세대학교, keyword=신촌은 신촌역으로 매칭될 수 있다. "
           + "정렬 기본값은 DISTANCE이며, distanceMeters는 matchedPlace 좌표에서 매물까지의 직선 거리다. "
-          + "content[]는 리스트 API와 같은 Listing 단위 카드이며, 조건을 통과한 roomOffer들의 가격·보증금·관리비·계약기간 범위를 포함한다. "
+          + "content[]는 리스트 API와 같은 Listing 단위 카드이며, 조건을 통과한 roomOffer들의 가격·보증금·관리비 범위와 매물 공통 계약기간을 포함한다. "
           + "검색어가 POI 사전에 없으면 404가 아니라 200 OK로 matchedPlace=null, content=[]를 반환한다. "
           + "프론트는 matchedPlace=null이면 '검색된 장소가 없어요', matchedPlace가 있고 content=[]이면 '이 주변에 매물이 없어요'처럼 구분해 표시할 수 있다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
       "매물 카드나 지도 핀에서 선택한 단일 매물의 상세 정보를 조회한다. "
           + "상세 화면의 이미지, 각 방 정보, 가격 정보, 매물 정보, 건물 정보, 공용시설, 위치 및 주변 정보 섹션을 구성하는 데이터를 반환한다. "
-          + "summary는 상세 상단 가격·보증금·관리비·계약기간·이미지 개수·방 개수·표시 태그를 프론트가 재계산하지 않도록 ACTIVE roomOffer 기준으로 집계한다. "
+          + "summary는 상세 상단 가격·보증금·관리비·이미지 개수·방 개수·표시 태그를 ACTIVE roomOffer 기준으로 집계하고, 계약기간은 매물 공통 contract 값으로 내려준다. "
           + "NO_ARC는 roomOffer에 저장하지 않는 가상 필터라 propertyPolicies.arcRequired=false일 때 summary.conditions에 파생해서 포함한다. "
           + "roomOffers[]는 상세 화면 Room Types에 실제 노출할 ACTIVE 방 상품만 포함한다. "
           + "reviewSummary.reviewCount는 리뷰 도메인 도입 전까지 0으로 내려주며, 문의 수는 채팅/문의 기능 고도화 때 별도 계약으로 추가한다. "
@@ -1159,6 +1159,8 @@ class ListingDocsTest {
             "data.propertyInfo.propertyPolicies.englishAvailable",
             JsonFieldType.BOOLEAN,
             "영어 소통 가능 여부"),
+        field("data.propertyInfo.facilities.heatingSystem", JsonFieldType.ARRAY, "난방 방식 목록"),
+        field("data.propertyInfo.facilities.kitchen", JsonFieldType.ARRAY, "공용 주방 시설"),
         field("data.propertyInfo.facilities.laundry", JsonFieldType.ARRAY, "세탁 시설"),
         field("data.propertyInfo.facilities.livingAmenities", JsonFieldType.ARRAY, "생활 편의시설"),
         field("data.propertyInfo.facilities.securityFeatures", JsonFieldType.ARRAY, "보안 시설"),

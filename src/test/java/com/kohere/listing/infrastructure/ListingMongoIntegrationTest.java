@@ -34,10 +34,12 @@ import com.kohere.listing.domain.RecentListingRepository;
 import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import com.mongodb.client.model.InsertOneOptions;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import org.bson.Document;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -115,6 +117,57 @@ class ListingMongoIntegrationTest {
 
     assertThat(saved.getId()).hasSize(24);
     assertThat(saved.getRoomOffers().getFirst().roomOfferId()).hasSize(24);
+  }
+
+  /** v1 문서는 Mongock 이행 후 v2 저장 구조로 바뀌고, 새 도메인 매퍼로 문제없이 읽힌다. */
+  @Test
+  void migration_v1_문서를_v2_저장구조로_이행한다() {
+    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a01");
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .insertOne(
+            legacyV1ListingDocument(legacyRoomOfferId),
+            new InsertOneOptions().bypassDocumentValidation(true));
+
+    new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
+    assertThat(migrated.getString("genderPolicy")).isEqualTo("FEMALE_ONLY");
+    assertThat(migrated.get("featureSummary")).isNull();
+    assertThat(migrated.get("nearbyPlacesDescription")).isNull();
+    assertThat(migrated.get("extraNotes")).isNull();
+
+    Document nearestTransit = migrated.get("nearestTransit", Document.class);
+    assertThat(nearestTransit.getString("nearbyPlacesDescription")).isEqualTo("편의점");
+    Document building = migrated.get("building", Document.class);
+    assertThat(building.get("heatingSystem")).isNull();
+    Document facilities = migrated.get("facilities", Document.class);
+    assertThat(facilities.getList("heatingSystem", String.class)).containsExactly("CENTRAL");
+    assertThat(facilities.getList("kitchen", String.class)).isEmpty();
+    Document descriptions = migrated.get("descriptions", Document.class);
+    assertThat(descriptions.getString("extraNotes")).isEqualTo("레거시 주의사항");
+
+    Document roomOffer = migrated.getList("roomOffers", Document.class).getFirst();
+    assertThat(roomOffer.getString("roomOfferId")).isEqualTo(legacyRoomOfferId.toHexString());
+    assertThat(roomOffer.get("rentalType")).isNull();
+    assertThat(roomOffer.get("contract")).isNull();
+    assertThat(roomOffer.get("genderPolicy")).isNull();
+    assertThat(roomOffer.get("features")).isNull();
+
+    Listing found = listingRepository.findById(LISTING_ID).orElseThrow();
+    assertThat(found.getSchemaVersion()).isEqualTo(2);
+    assertThat(found.getContract().minStayMonths()).isEqualTo(1);
+    assertThat(found.getContract().maxStayMonths()).isEqualTo(12);
+    assertThat(found.getRefundPolicy().code()).isEqualTo(Listing.RefundPolicyCode.PARTIAL_REFUND);
+    assertThat(found.getRoomOffers().getFirst().roomOfferId())
+        .isEqualTo(legacyRoomOfferId.toHexString());
   }
 
   /** 앱 시작 시 지도·필터 조회용 MongoDB 인덱스가 생성되는지 확인한다. */
@@ -726,6 +779,7 @@ class ListingMongoIntegrationTest {
                         6,
                         1,
                         Set.of(ConditionTag.ADDRESS_REGISTRATION))))
+            .contract(new Listing.Contract(1, 12))
             .build());
     ListingSearchRequest request = new ListingSearchRequest();
     request.setSwLat(37.45);
@@ -1069,6 +1123,7 @@ class ListingMongoIntegrationTest {
                         1,
                         1,
                         Set.of(ConditionTag.MOVE_IN_NOW))))
+            .contract(new Listing.Contract(1, 12))
             .build());
 
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
@@ -1086,6 +1141,14 @@ class ListingMongoIntegrationTest {
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
+    assertThat(response.roomOffers())
+        .allSatisfy(
+            roomOffer -> {
+              assertThat(roomOffer.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+              assertThat(roomOffer.contract().minStayMonths()).isEqualTo(1);
+              assertThat(roomOffer.contract().maxStayMonths()).isEqualTo(12);
+              assertThat(roomOffer.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
+            });
     assertThat(response.reviewSummary().reviewCount()).isZero();
   }
 
@@ -1398,35 +1461,126 @@ class ListingMongoIntegrationTest {
         .build();
   }
 
+  /** v2 이행 테스트에서 MongoDB에 직접 넣을 레거시 v1 문서다. */
+  private static Document legacyV1ListingDocument(ObjectId roomOfferId) {
+    return new Document("_id", new ObjectId(LISTING_ID))
+        .append("schemaVersion", 1)
+        .append("landlordId", 1L)
+        .append("title", "레거시 고시원")
+        .append("type", "GOSIWON")
+        .append("status", "PUBLISHED")
+        .append(
+            "location",
+            new Document("type", "Point").append("coordinates", List.of(126.951422, 37.459471)))
+        .append(
+            "address",
+            new Document("city", "SEOUL")
+                .append("district", "GWANAK_GU")
+                .append("fullAddress", "서울특별시 관악구 레거시로 1")
+                .append("detail", null))
+        .append(
+            "nearestTransit",
+            new Document("type", "SUBWAY").append("name", "서울대입구역").append("walkMinutes", 5))
+        .append("nearbyPlacesDescription", "편의점")
+        .append("nearbyUniversityCodes", List.of("SNU"))
+        .append(
+            "building",
+            new Document("type", "VILLA")
+                .append("usedFloorMin", 1)
+                .append("usedFloorMax", 2)
+                .append("totalFloors", 4)
+                .append("parkingAvailable", true)
+                .append("elevatorAvailable", true)
+                .append("heatingSystem", "CENTRAL"))
+        .append(
+            "propertyPolicies",
+            new Document("arcRequired", false)
+                .append("residentRegistrationAvailable", true)
+                .append("studySuitable", true)
+                .append("mealsProvided", true)
+                .append("englishAvailable", false))
+        .append(
+            "facilities",
+            new Document("laundry", List.of("COIN_LAUNDRY"))
+                .append("livingAmenities", List.of("WIFI"))
+                .append("securityFeatures", List.of("CCTV"))
+                .append(
+                    "commonSpaces",
+                    List.of(
+                        new Document("type", "SHARED_TOILET").append("count", 2),
+                        new Document("type", "STUDY_ROOM").append("count", null)))
+                .append("providedSupplies", List.of("BEDDING")))
+        .append(
+            "roomOffers",
+            List.of(
+                new Document("roomOfferId", roomOfferId)
+                    .append("name", "레거시 1인실")
+                    .append("status", "ACTIVE")
+                    .append("rentalType", "MONTHLY_RENT")
+                    .append(
+                        "pricing",
+                        new Document("monthlyRent", 300000)
+                            .append("deposit", 300000)
+                            .append("maintenanceFee", 0)
+                            .append("currency", "KRW"))
+                    .append(
+                        "contract",
+                        new Document("minStayMonths", 1)
+                            .append("maxStayMonths", 12)
+                            .append(
+                                "refundPolicy",
+                                new Document("code", "PARTIAL_REFUND")
+                                    .append("description", "부분 환불")))
+                    .append(
+                        "inventory",
+                        new Document("totalCount", 10)
+                            .append("availableCount", 1)
+                            .append("nextAvailableFrom", null))
+                    .append("genderPolicy", "FEMALE_ONLY")
+                    .append("features", List.of("SINGLE_ROOM"))
+                    .append("filterTags", List.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"))
+                    .append("roomImageUrls", List.of())))
+        .append("featureSummary", List.of("FEMALE_ONLY"))
+        .append("descriptions", new Document("ko", "레거시 설명").append("en", "Legacy description"))
+        .append("extraNotes", "레거시 주의사항")
+        .append("imageUrls", List.of())
+        .append("favoriteCount", 0)
+        .append("createdAt", java.util.Date.from(Instant.parse("2026-06-24T00:00:00Z")))
+        .append("updatedAt", java.util.Date.from(Instant.parse("2026-06-24T00:00:00Z")));
+  }
+
   /** 저장·조회 테스트에서 일부 필드만 바꿔 쓸 대표 매물 빌더를 만든다. */
   private static Listing.ListingBuilder sampleListingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(1)
+        .schemaVersion(2)
         .landlordId(1L)
         .title("테스트 고시원")
         .type(ListingType.GOSIWON)
         .status(Listing.ListingStatus.PUBLISHED)
+        .rentalType(Listing.RentalType.MONTHLY_RENT)
+        .refundPolicy(
+            new Listing.RefundPolicy(
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불"))
+        .contract(new Listing.Contract(2, 6))
+        .genderPolicy(Listing.GenderPolicy.FEMALE_ONLY)
         .location(new Listing.GeoPoint(126.951422, 37.459471))
         .address(new Listing.Address("SEOUL", "GWANAK_GU", "서울특별시 관악구 테스트로 1", null))
-        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5))
-        .nearbyPlacesDescription("편의점")
+        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"))
         .nearbyUniversityCodes(Set.of("SNU"))
-        .building(
-            new Listing.Building(
-                Listing.BuildingType.VILLA, 1, 2, 4, true, true, Listing.HeatingSystem.CENTRAL))
+        .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
         .facilities(
             new Listing.Facilities(
+                Set.of(Listing.HeatingSystem.CENTRAL),
+                Set.of("공용 냉장고"),
                 Set.of("COIN_LAUNDRY"),
                 Set.of("WIFI"),
                 Set.of("CCTV"),
                 List.of(new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2)),
                 Set.of("BEDDING")))
         .roomOffers(List.of(sampleRoomOffer(ROOM_OFFER_ID)))
-        .featureSummary(Set.of(ConditionTag.FEMALE_ONLY))
-        .descriptions(new Listing.Descriptions("테스트 설명", "Test description"))
-        .extraNotes("테스트")
+        .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
         .imageUrls(List.of())
         .favoriteCount(0)
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
@@ -1462,7 +1616,8 @@ class ListingMongoIntegrationTest {
   /**
    * 목록 응답 집계 테스트에서 사용할 방 상품 묶음을 만든다.
    *
-   * <p>월세·보증금뿐 아니라 관리비와 계약기간을 방 상품별로 다르게 지정해, 목록 카드의 범위 필드가 저장된 roomOffer 데이터에서 계산되는지 확인한다.
+   * <p>v2 저장 스키마에서는 계약기간이 매물 루트로 올라갔기 때문에 {@code minStayMonths}/{@code maxStayMonths} 인자는 기존 테스트
+   * 호출부를 크게 흔들지 않기 위한 호환 파라미터다. 목록 카드의 계약기간은 이 값이 아니라 Listing의 {@code contract}에서 내려온다.
    */
   private static Listing.RoomOffer roomOffer(
       String roomOfferId,
@@ -1520,16 +1675,8 @@ class ListingMongoIntegrationTest {
         roomOfferId,
         name,
         status,
-        Listing.RentalType.MONTHLY_RENT,
         new Listing.Pricing(monthlyRent, deposit, maintenanceFee, Listing.Currency.KRW),
-        new Listing.Contract(
-            minStayMonths,
-            maxStayMonths,
-            new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불")),
         new Listing.Inventory(10, availableCount, null),
-        Listing.GenderPolicy.FEMALE_ONLY,
-        Set.of(Listing.RoomFeature.SINGLE_ROOM),
         filterTags,
         List.of());
   }

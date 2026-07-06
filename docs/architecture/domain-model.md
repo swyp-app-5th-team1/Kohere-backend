@@ -239,7 +239,7 @@
 
 > [API 스펙](../api/specs/03-listings-favorites.md) · [시퀀스](sequence-diagrams/03-listings-favorites/README.md) · `allowedDependencies = {common}`
 
-외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·계약·성별·옵션을 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다.
+외국인 대상 주거 매물의 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·재고·검색 태그를 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다. 임대 방식·계약기간·환불 정책·성별 정책처럼 매물 전체에 공통인 값은 Listing 루트가 소유한다.
 
 **`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`는 MongoDB ObjectId의 24자리 hex 문자열이며 API에서는 `listingId`로 노출한다. [값 객체: `Location`, `Address`, `NearestTransit`, `Building`, `PropertyPolicies`, `Facilities`, `RoomOffer`]
 
@@ -253,26 +253,27 @@
 | `title` | String | 매물 제목 |
 | `type` | enum `ListingType` | 매물 유형 |
 | `status` | enum `ListingStatus` | 공개/임시저장/중지/삭제 상태 |
+| `rentalType` | enum `RentalType` | 매물 공통 임대 방식 |
+| `refundPolicy` | VO `RefundPolicy` | 매물 공통 환불 정책 |
+| `contract` | VO `Contract` | 매물 공통 최소/최대 계약기간 |
+| `genderPolicy` | enum `GenderPolicy` | 매물 공통 성별 정책 |
 | `location` | VO `Location` | 지도 검색용 좌표 |
 | `address` | VO `Address` | 표시 주소·행정구역 |
-| `nearestTransit` | VO `NearestTransit` | 가까운 교통수단과 도보 시간 |
-| `nearbyPlacesDescription` | String | 집주인이 자유 입력한 주변 시설 안내 |
+| `nearestTransit` | VO `NearestTransit` | 가까운 교통수단·도보 시간·주변 시설 안내 |
 | `nearbyUniversityCodes` | `Set<String>` | 학교 검색·추천에 사용할 **개별 대학(member) 코드**(`SNU`·`CAU` 등) — 진단의 `UniversityGroup` 그룹 코드가 아니라 개별 대학 코드를 저장한다(저장 형식 불변). 진단은 선택 그룹을 member 코드로 펼쳐 `$in`으로 매칭([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)) |
-| `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터·난방 |
+| `building` | VO `Building` | 건물 유형·층수·주차·엘리베이터 |
 | `propertyPolicies` | VO `PropertyPolicies` | 건물/전체 방 공통 정책(ARC·전입신고·식사·영어 안내 등) |
-| `facilities` | VO `Facilities` | 공용 편의·보안·공간·제공 물품 |
-| `roomOffers` | `List<RoomOffer>` | 가격·계약·방 특징·재고가 같은 실제 방 묶음 |
-| `featureSummary` | `Set<ConditionTag>` | 활성 방 상품들의 필터 태그 합집합(상세 표시용) |
-| `descriptions` | VO `Descriptions` | 다국어 상세 설명 |
-| `extraNotes` | String | 자유 입력 주의사항 |
+| `facilities` | VO `Facilities` | 난방·주방·세탁·공용 편의·보안·공간·제공 물품 |
+| `roomOffers` | `List<RoomOffer>` | 가격·재고·검색 태그가 같은 실제 방 묶음 |
+| `descriptions` | VO `Descriptions` | 다국어 상세 설명과 자유 입력 주의사항 |
 | `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일) |
 | `favoriteCount` | int | 찜 수 집계(≥0) |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 수정 시각(UTC) |
 
-**불변식:** `status=PUBLISHED`인 매물만 목록·지도·상세·찜·신청·문의 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); Listing은 최소 1개 이상의 `roomOffers`를 가져야 한다; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; `featureSummary`는 상세 화면 표시용 합집합이며 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·재고·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; 직접 연락처는 매물 애그리거트에 저장하지 않고 신청·문의는 인앱 채팅으로만 연결한다; `favoriteCount`는 0 미만 불가이며 찜 등록/해제와 정합(멱등 토글에서 중복 증감 없음); `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점에 요청 주체·파라미터로 산출되는 표현값이며 애그리거트 영속 속성이 아니다.
+**불변식:** `status=PUBLISHED`인 매물만 목록·지도·상세·찜·신청·문의 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); Listing은 최소 1개 이상의 `roomOffers`를 가져야 한다; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; 상세 화면의 `featureSummary`는 DB에 저장하지 않고 활성 `RoomOffer.filterTags` 합집합으로 응답 시 계산한다; 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·재고·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; 직접 연락처는 매물 애그리거트에 저장하지 않고 신청·문의는 인앱 채팅으로만 연결한다; `favoriteCount`는 0 미만 불가이며 찜 등록/해제와 정합(멱등 토글에서 중복 증감 없음); `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점에 요청 주체·파라미터로 산출되는 표현값이며 애그리거트 영속 속성이 아니다.
 
-**`RoomOffer`** — 동일한 가격·계약조건·성별 정책·방 특징을 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
+**`RoomOffer`** — 동일한 가격·재고·검색 태그를 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
 
 **속성:**
 
@@ -281,16 +282,12 @@
 | `roomOfferId` | 식별자 | Listing 내부 방 상품 식별자 |
 | `name` | String | 사용자에게 노출되는 방 상품명 |
 | `status` | enum `RoomOfferStatus` | 판매/노출 상태 |
-| `rentalType` | enum `RentalType` | 임대 방식 |
 | `pricing` | VO `Pricing` | 월세·보증금·관리비·통화 |
-| `contract` | VO `Contract` | 최소/최대 계약기간·환불 안내 |
 | `inventory` | VO `Inventory` | 전체 수량·계약 가능 수량·다음 입주 가능일 |
-| `genderPolicy` | enum `GenderPolicy` | 성별 정책 |
-| `features` | `Set<RoomFeature>` | 방 상품 자체 시설·형태 |
 | `filterTags` | `Set<ConditionTag>` | 검색 최적화를 위해 정본 필드에서 파생한 필터 태그 |
 | `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 |
 
-**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; `contract.minStayMonths <= contract.maxStayMonths`; `inventory.availableCount <= inventory.totalCount`이고 둘 다 0 이상; 계약 확정은 `availableCount > 0`인 방 상품에서만 가능하며 확정 시 수량을 원자적으로 1 감소시킨다; 가격·성별 정책·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
+**불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; Listing 루트의 `contract.minStayMonths <= contract.maxStayMonths`; `inventory.availableCount <= inventory.totalCount`이고 둘 다 0 이상; 계약 확정은 `availableCount > 0`인 방 상품에서만 가능하며 확정 시 수량을 원자적으로 1 감소시킨다; 가격·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
 
 **`Favorite`** — 사용자가 매물을 찜한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, listingId)`.
 

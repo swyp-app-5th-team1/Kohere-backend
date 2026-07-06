@@ -6,7 +6,13 @@ import java.util.List;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 
-/** 순수 도메인 모델과 MongoDB 저장 모델의 변환을 한곳에서 담당한다. */
+/**
+ * 순수 도메인 모델과 MongoDB 저장 모델의 변환을 한곳에서 담당한다.
+ *
+ * <p>MongoDB 문서는 v2 저장 스키마를 따른다. v2에서는 매물 전체에 공통인 임대 방식·계약기간·환불 정책·성별 정책이 루트에 있고, 방 상품에는 가격·재고·검색
+ * 태그만 남는다. 이 매퍼는 저장 구조와 도메인 구조를 1:1로 맞추는 역할만 하며, 프론트 호환 응답 조립은 {@code ListingResponseMapper}에서
+ * 담당한다.
+ */
 final class ListingMongoMapper {
 
   private ListingMongoMapper() {}
@@ -20,18 +26,19 @@ final class ListingMongoMapper {
         .title(document.getTitle())
         .type(document.getType())
         .status(document.getStatus())
+        .rentalType(document.getRentalType())
+        .refundPolicy(toDomain(document.getRefundPolicy()))
+        .contract(toDomain(document.getContract()))
+        .genderPolicy(document.getGenderPolicy())
         .location(toDomain(document.getLocation()))
         .address(toDomain(document.getAddress()))
         .nearestTransit(toDomain(document.getNearestTransit()))
-        .nearbyPlacesDescription(document.getNearbyPlacesDescription())
         .nearbyUniversityCodes(document.getNearbyUniversityCodes())
         .building(toDomain(document.getBuilding()))
         .propertyPolicies(toDomain(document.getPropertyPolicies()))
         .facilities(toDomain(document.getFacilities()))
         .roomOffers(document.getRoomOffers().stream().map(ListingMongoMapper::toDomain).toList())
-        .featureSummary(document.getFeatureSummary())
         .descriptions(toDomain(document.getDescriptions()))
-        .extraNotes(document.getExtraNotes())
         .imageUrls(document.getImageUrls())
         .favoriteCount(document.getFavoriteCount())
         .createdAt(document.getCreatedAt())
@@ -49,18 +56,19 @@ final class ListingMongoMapper {
         .title(listing.getTitle())
         .type(listing.getType())
         .status(listing.getStatus())
+        .rentalType(listing.getRentalType())
+        .refundPolicy(toDocument(listing.getRefundPolicy()))
+        .contract(toDocument(listing.getContract()))
+        .genderPolicy(listing.getGenderPolicy())
         .location(toDocument(listing.getLocation()))
         .address(toDocument(listing.getAddress()))
         .nearestTransit(toDocument(listing.getNearestTransit()))
-        .nearbyPlacesDescription(listing.getNearbyPlacesDescription())
         .nearbyUniversityCodes(listing.getNearbyUniversityCodes())
         .building(toDocument(listing.getBuilding()))
         .propertyPolicies(toDocument(listing.getPropertyPolicies()))
         .facilities(toDocument(listing.getFacilities()))
         .roomOffers(listing.getRoomOffers().stream().map(ListingMongoMapper::toDocument).toList())
-        .featureSummary(listing.getFeatureSummary())
         .descriptions(toDocument(listing.getDescriptions()))
-        .extraNotes(listing.getExtraNotes())
         .imageUrls(listing.getImageUrls())
         .favoriteCount(listing.getFavoriteCount())
         .createdAt(listing.getCreatedAt())
@@ -95,7 +103,8 @@ final class ListingMongoMapper {
     if (transit == null) {
       return null;
     }
-    return new Listing.NearestTransit(transit.type(), transit.name(), transit.walkMinutes());
+    return new Listing.NearestTransit(
+        transit.type(), transit.name(), transit.walkMinutes(), transit.nearbyPlacesDescription());
   }
 
   /** 도메인 가까운 교통 정보를 저장 문서 값으로 변환한다. */
@@ -104,7 +113,7 @@ final class ListingMongoMapper {
       return null;
     }
     return new ListingDocument.NearestTransitDocument(
-        transit.type(), transit.name(), transit.walkMinutes());
+        transit.type(), transit.name(), transit.walkMinutes(), transit.nearbyPlacesDescription());
   }
 
   /** 저장 문서의 건물 정보를 도메인 값으로 변환한다. */
@@ -115,8 +124,7 @@ final class ListingMongoMapper {
         building.usedFloorMax(),
         building.totalFloors(),
         building.parkingAvailable(),
-        building.elevatorAvailable(),
-        building.heatingSystem());
+        building.elevatorAvailable());
   }
 
   /** 도메인 건물 정보를 저장 문서 값으로 변환한다. */
@@ -127,8 +135,7 @@ final class ListingMongoMapper {
         building.usedFloorMax(),
         building.totalFloors(),
         building.parkingAvailable(),
-        building.elevatorAvailable(),
-        building.heatingSystem());
+        building.elevatorAvailable());
   }
 
   /** 저장 문서의 매물 정책을 도메인 값으로 변환한다. */
@@ -160,6 +167,8 @@ final class ListingMongoMapper {
             .map(space -> new Listing.CommonSpace(space.type(), space.count()))
             .toList();
     return new Listing.Facilities(
+        facilities.heatingSystem(),
+        facilities.kitchen(),
         facilities.laundry(),
         facilities.livingAmenities(),
         facilities.securityFeatures(),
@@ -174,6 +183,8 @@ final class ListingMongoMapper {
             .map(space -> new ListingDocument.CommonSpaceDocument(space.type(), space.count()))
             .toList();
     return new ListingDocument.FacilitiesDocument(
+        facilities.heatingSystem(),
+        facilities.kitchen(),
         facilities.laundry(),
         facilities.livingAmenities(),
         facilities.securityFeatures(),
@@ -181,30 +192,43 @@ final class ListingMongoMapper {
         facilities.providedSupplies());
   }
 
+  /** 저장 문서의 환불 정책을 도메인 값으로 변환한다. */
+  private static Listing.RefundPolicy toDomain(ListingDocument.RefundPolicyDocument refundPolicy) {
+    return new Listing.RefundPolicy(refundPolicy.code(), refundPolicy.description());
+  }
+
+  /** 도메인 환불 정책을 저장 문서 값으로 변환한다. */
+  private static ListingDocument.RefundPolicyDocument toDocument(
+      Listing.RefundPolicy refundPolicy) {
+    return new ListingDocument.RefundPolicyDocument(
+        refundPolicy.code(), refundPolicy.description());
+  }
+
+  /** 저장 문서의 계약기간을 도메인 값으로 변환한다. */
+  private static Listing.Contract toDomain(ListingDocument.ContractDocument contract) {
+    return new Listing.Contract(contract.minStayMonths(), contract.maxStayMonths());
+  }
+
+  /** 도메인 계약기간을 저장 문서 값으로 변환한다. */
+  private static ListingDocument.ContractDocument toDocument(Listing.Contract contract) {
+    return new ListingDocument.ContractDocument(contract.minStayMonths(), contract.maxStayMonths());
+  }
+
   /** 저장 문서의 방 상품을 도메인 RoomOffer로 변환한다. */
   private static Listing.RoomOffer toDomain(ListingDocument.RoomOfferDocument roomOffer) {
     return new Listing.RoomOffer(
-        roomOffer.roomOfferId().toHexString(),
+        roomOffer.roomOfferId(),
         roomOffer.name(),
         roomOffer.status(),
-        roomOffer.rentalType(),
         new Listing.Pricing(
             roomOffer.pricing().monthlyRent(),
             roomOffer.pricing().deposit(),
             roomOffer.pricing().maintenanceFee(),
             roomOffer.pricing().currency()),
-        new Listing.Contract(
-            roomOffer.contract().minStayMonths(),
-            roomOffer.contract().maxStayMonths(),
-            new Listing.RefundPolicy(
-                roomOffer.contract().refundPolicy().code(),
-                roomOffer.contract().refundPolicy().description())),
         new Listing.Inventory(
             roomOffer.inventory().totalCount(),
             roomOffer.inventory().availableCount(),
             roomOffer.inventory().nextAvailableFrom()),
-        roomOffer.genderPolicy(),
-        roomOffer.features(),
         roomOffer.filterTags(),
         roomOffer.roomImageUrls());
   }
@@ -212,40 +236,33 @@ final class ListingMongoMapper {
   /** 도메인 RoomOffer를 저장 문서의 방 상품 구조로 변환한다. */
   private static ListingDocument.RoomOfferDocument toDocument(Listing.RoomOffer roomOffer) {
     return new ListingDocument.RoomOfferDocument(
-        objectIdOrNew(roomOffer.roomOfferId(), "roomOfferId"),
+        objectIdHexOrNew(roomOffer.roomOfferId(), "roomOfferId"),
         roomOffer.name(),
         roomOffer.status(),
-        roomOffer.rentalType(),
         new ListingDocument.PricingDocument(
             roomOffer.pricing().monthlyRent(),
             roomOffer.pricing().deposit(),
             roomOffer.pricing().maintenanceFee(),
             roomOffer.pricing().currency()),
-        new ListingDocument.ContractDocument(
-            roomOffer.contract().minStayMonths(),
-            roomOffer.contract().maxStayMonths(),
-            new ListingDocument.RefundPolicyDocument(
-                roomOffer.contract().refundPolicy().code(),
-                roomOffer.contract().refundPolicy().description())),
         new ListingDocument.InventoryDocument(
             roomOffer.inventory().totalCount(),
             roomOffer.inventory().availableCount(),
             roomOffer.inventory().nextAvailableFrom()),
-        roomOffer.genderPolicy(),
-        roomOffer.features(),
         roomOffer.filterTags(),
         roomOffer.roomImageUrls());
   }
 
   /** 저장 문서의 다국어 설명을 도메인 값으로 변환한다. */
   private static Listing.Descriptions toDomain(ListingDocument.DescriptionsDocument descriptions) {
-    return new Listing.Descriptions(descriptions.ko(), descriptions.en());
+    return new Listing.Descriptions(
+        descriptions.ko(), descriptions.en(), descriptions.extraNotes());
   }
 
   /** 도메인 다국어 설명을 저장 문서 값으로 변환한다. */
   private static ListingDocument.DescriptionsDocument toDocument(
       Listing.Descriptions descriptions) {
-    return new ListingDocument.DescriptionsDocument(descriptions.ko(), descriptions.en());
+    return new ListingDocument.DescriptionsDocument(
+        descriptions.ko(), descriptions.en(), descriptions.extraNotes());
   }
 
   private static ObjectId objectIdOrNew(String value, String field) {
@@ -256,5 +273,21 @@ final class ListingMongoMapper {
       throw new InvalidInputException(field + "는 24자리 ObjectId hex 문자열이어야 합니다.");
     }
     return new ObjectId(value);
+  }
+
+  /**
+   * 중첩 방 상품 식별자를 Mongo ObjectId 문자열로 정규화한다.
+   *
+   * <p>v2 저장 샘플은 {@code roomOfferId}를 문자열로 둔다. 그래도 기존 API와 테스트가 24자리 ObjectId hex 형식을 전제로 하므로, 새 값이
+   * 없을 때는 ObjectId를 발급하되 MongoDB에는 문자열로 저장한다.
+   */
+  private static String objectIdHexOrNew(String value, String field) {
+    if (value == null) {
+      return new ObjectId().toHexString();
+    }
+    if (!ObjectId.isValid(value)) {
+      throw new InvalidInputException(field + "는 24자리 ObjectId hex 문자열이어야 합니다.");
+    }
+    return value;
   }
 }

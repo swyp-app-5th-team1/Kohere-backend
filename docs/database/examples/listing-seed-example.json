@@ -1,11 +1,21 @@
 [
   {
     "_id": { "$oid": "6858e2000000000000000001" },
-    "schemaVersion": 1,
+    "schemaVersion": 2,
     "landlordId": 1,
     "title": "고시원001",
     "type": "GOSIWON",
     "status": "PUBLISHED",
+    "rentalType": "MONTHLY_RENT",
+    "refundPolicy": {
+      "code": "FULL_REFUND_BEFORE_7_DAYS",
+      "description": "입주 7일 전 취소 시 전액 환불"
+    },
+    "contract": {
+      "minStayMonths": 2,
+      "maxStayMonths": 6
+    },
+    "genderPolicy": "FEMALE_ONLY",
     "location": {
       "type": "Point",
       "coordinates": [126.951422, 37.459471]
@@ -19,9 +29,9 @@
     "nearestTransit": {
       "type": "SUBWAY",
       "name": "Seoul Nat'l Univ.",
-      "walkMinutes": 5
+      "walkMinutes": 5,
+      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장"
     },
-    "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
     "nearbyUniversityCodes": ["SNU", "CAU", "SOONGSIL"],
     "building": {
       "type": "VILLA",
@@ -29,8 +39,7 @@
       "usedFloorMax": 2,
       "totalFloors": 4,
       "parkingAvailable": true,
-      "elevatorAvailable": true,
-      "heatingSystem": "CENTRAL"
+      "elevatorAvailable": true
     },
     "propertyPolicies": {
       "arcRequired": false,
@@ -40,47 +49,33 @@
       "englishAvailable": false
     },
     "facilities": {
+      "heatingSystem": ["CENTRAL"],
+      "kitchen": ["Shared Refrigerator", "Microwave"],
       "laundry": ["COIN_LAUNDRY"],
-      "livingAmenities": ["WIFI", "TV", "SOFA"],
+      "livingAmenities": ["MICROWAVE", "SOFA", "TV", "WIFI"],
       "securityFeatures": ["CCTV", "ENTRANCE_DOOR_LOCK", "FIRE_EXTINGUISHER"],
       "commonSpaces": [
         { "type": "SHARED_TOILET", "count": 6 },
         { "type": "STUDY_ROOM", "count": null }
       ],
-      "providedSupplies": ["BEDDING", "SEASONING", "TISSUE"]
+      "providedSupplies": ["Shower Room", "Laundry Detergent", "Toilet Paper", "Slippers"]
     },
     "roomOffers": [
       {
-        "roomOfferId": { "$oid": "6858e2000000000000000101" },
+        "roomOfferId": "6858e2000000000000000101",
         "name": "스탠다드 1인실",
         "status": "ACTIVE",
-        "rentalType": "MONTHLY_RENT",
         "pricing": {
           "monthlyRent": 300000,
           "deposit": 300000,
           "maintenanceFee": 0,
           "currency": "KRW"
         },
-        "contract": {
-          "minStayMonths": 2,
-          "maxStayMonths": 6,
-          "refundPolicy": {
-            "code": "FULL_REFUND_BEFORE_7_DAYS",
-            "description": "입주 7일 전 취소 시 전액 환불"
-          }
-        },
         "inventory": {
-          "totalCount": 10,
+          "totalCount": 1,
           "availableCount": 0,
           "nextAvailableFrom": null
         },
-        "genderPolicy": "FEMALE_ONLY",
-        "features": [
-          "SINGLE_ROOM",
-          "PRIVATE_REFRIGERATOR",
-          "MICROWAVE",
-          "ELECTRIC_KETTLE"
-        ],
         "filterTags": [
           "FEMALE_ONLY",
           "ADDRESS_REGISTRATION",
@@ -90,17 +85,11 @@
         "roomImageUrls": []
       }
     ],
-    "featureSummary": [
-      "FEMALE_ONLY",
-      "ADDRESS_REGISTRATION",
-      "NO_MAINT_FEE",
-      "MEALS_INCLUDED"
-    ],
     "descriptions": {
       "ko": "지하철역 도보 5분 이내, 교통이 편리한 위치의 코리빙 하우스입니다.",
-      "en": "A well-maintained gosiwon welcoming foreign residents. English support available."
+      "en": "A well-maintained gosiwon welcoming foreign residents. English support available.",
+      "extraNotes": "외국인 환영, 영어 안내 가능합니다."
     },
-    "extraNotes": "외국인 환영, 영어 안내 가능합니다.",
     "imageUrls": [],
     "favoriteCount": 0,
     "createdAt": { "$date": "2024-09-15T00:00:00Z" },

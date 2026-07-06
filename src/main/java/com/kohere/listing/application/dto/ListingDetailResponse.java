@@ -27,8 +27,9 @@ public record ListingDetailResponse(
   /**
    * 상세 화면 상단과 탭 요약에 바로 쓰는 집계 정보다.
    *
-   * <p>목록 카드와 같은 기준으로 활성 방 상품만 모아 월세·보증금·관리비·계약기간 범위를 계산한다. 프론트가 방 목록을 다시 순회해 같은 값을 재계산하면 목록과 상세의
-   * 표시 기준이 달라질 수 있으므로, 서버가 단일 기준으로 내려준다. 환산 가격(예: USD)은 환율 정책이 필요하므로 포함하지 않고 프론트에서 계산한다.
+   * <p>목록 카드와 같은 기준으로 활성 방 상품만 모아 월세·보증금·관리비 범위를 계산하고, 계약기간은 매물 공통 contract 값을 내려준다. 프론트가 방 목록을 다시
+   * 순회해 같은 값을 재계산하면 목록과 상세의 표시 기준이 달라질 수 있으므로, 서버가 단일 기준으로 내려준다. 환산 가격(예: USD)은 환율 정책이 필요하므로 포함하지
+   * 않고 프론트에서 계산한다.
    */
   public record SummaryInfo(
       int minMonthlyRent,
@@ -47,16 +48,40 @@ public record ListingDetailResponse(
   public record LocationInfo(
       GeoPoint location,
       Listing.Address address,
-      Listing.NearestTransit nearestTransit,
+      NearestTransitInfo nearestTransit,
       String nearbyPlacesDescription,
       Set<String> nearbyUniversityCodes) {}
 
   /** 프론트 지도 컴포넌트에서 바로 쓰기 쉬운 위도·경도 값이다. */
   public record GeoPoint(double lat, double lng) {}
 
+  /**
+   * 가까운 교통수단 응답 전용 값이다.
+   *
+   * <p>저장 스키마 v2에서는 주변 편의시설 문구가 {@code nearestTransit} 하위에 들어가지만, 기존 프론트 계약을 유지하기 위해 응답의 {@code
+   * nearestTransit} 객체에는 기존 3개 필드만 담고 주변 편의시설 문구는 {@code locationInfo.nearbyPlacesDescription}로
+   * 내려준다.
+   */
+  public record NearestTransitInfo(Listing.TransitType type, String name, int walkMinutes) {}
+
+  /**
+   * 건물 정보 응답 전용 값이다.
+   *
+   * <p>저장 스키마 v2에서는 난방 정보가 {@code facilities.heatingSystem[]}으로 이동했다. 하지만 기존 상세 응답 키인 {@code
+   * propertyInfo.building.heatingSystem}을 유지하기 위해 응답 전용 객체에서 대표 난방 값을 함께 노출한다.
+   */
+  public record BuildingInfo(
+      Listing.BuildingType type,
+      int usedFloorMin,
+      int usedFloorMax,
+      int totalFloors,
+      boolean parkingAvailable,
+      boolean elevatorAvailable,
+      Listing.HeatingSystem heatingSystem) {}
+
   /** 건물 자체의 시설·정책과 활성 방 상품들의 특징 합집합이다. */
   public record PropertyInfo(
-      Listing.Building building,
+      BuildingInfo building,
       Listing.PropertyPolicies propertyPolicies,
       Listing.Facilities facilities,
       Set<ConditionTag> featureSummary) {}
@@ -79,9 +104,12 @@ public record ListingDetailResponse(
   public record ContractResponse(
       int minStayMonths, int maxStayMonths, Listing.RefundPolicy refundPolicy) {}
 
+  /** API 응답에서 기존처럼 한국어·영어 설명만 담는 상세 설명 값이다. */
+  public record DescriptionsInfo(String ko, String en) {}
+
   /** 상세 설명, 이미지, 썸네일처럼 콘텐츠 렌더링에 쓰는 정보다. */
   public record ContentInfo(
-      Listing.Descriptions descriptions,
+      DescriptionsInfo descriptions,
       String extraNotes,
       List<String> imageUrls,
       String thumbnailUrl) {}

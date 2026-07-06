@@ -294,6 +294,8 @@ Request Body: 없음
         "englishAvailable": true
       },
       "facilities": {
+        "heatingSystem": ["CENTRAL"],
+        "kitchen": ["Shared Refrigerator", "Microwave"],
         "laundry": ["WASHER", "IRON"],
         "livingAmenities": ["WIFI", "TV", "SOFA"],
         "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
@@ -307,6 +309,7 @@ Request Body: 없음
         "roomOfferId": "6858e2000000000000000101",
         "name": "스탠다드 1인실",
         "status": "ACTIVE",
+        "rentalType": "MONTHLY_RENT",
         "pricing": {
           "monthlyRent": 300000,
           "deposit": 300000,

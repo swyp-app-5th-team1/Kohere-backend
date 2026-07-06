@@ -137,22 +137,27 @@ class BookingListingQueryIntegrationTest {
   private static Listing.ListingBuilder listingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(1)
+        .schemaVersion(2)
         .landlordId(1L)
         .title("테스트 고시원")
         .type(ListingType.GOSIWON)
         .status(Listing.ListingStatus.PUBLISHED)
+        .rentalType(Listing.RentalType.MONTHLY_RENT)
+        .refundPolicy(
+            new Listing.RefundPolicy(
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불"))
+        .contract(new Listing.Contract(2, 6))
+        .genderPolicy(Listing.GenderPolicy.ANY)
         .location(new Listing.GeoPoint(126.951422, 37.459471))
         .address(new Listing.Address("SEOUL", "GWANAK_GU", "서울특별시 관악구 테스트로 1", null))
-        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5))
-        .nearbyPlacesDescription("편의점")
+        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"))
         .nearbyUniversityCodes(Set.of("SNU"))
-        .building(
-            new Listing.Building(
-                Listing.BuildingType.VILLA, 1, 2, 4, true, true, Listing.HeatingSystem.CENTRAL))
+        .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
         .facilities(
             new Listing.Facilities(
+                Set.of(Listing.HeatingSystem.CENTRAL),
+                Set.of("공용 냉장고"),
                 Set.of("COIN_LAUNDRY"),
                 Set.of("WIFI"),
                 Set.of("CCTV"),
@@ -167,9 +172,7 @@ class BookingListingQueryIntegrationTest {
                     500000,
                     550000,
                     NEXT_AVAILABLE_FROM)))
-        .featureSummary(Set.of(ConditionTag.FEMALE_ONLY))
-        .descriptions(new Listing.Descriptions("테스트 설명", "Test description"))
-        .extraNotes("테스트")
+        .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
         .imageUrls(List.of("https://cdn.kohere.com/listings/thumb.jpg"))
         .favoriteCount(0)
         .createdAt(Instant.parse("2026-06-24T00:00:00Z"))
@@ -187,16 +190,8 @@ class BookingListingQueryIntegrationTest {
         roomOfferId,
         name,
         status,
-        Listing.RentalType.MONTHLY_RENT,
         new Listing.Pricing(monthlyRent, deposit, 0, Listing.Currency.KRW),
-        new Listing.Contract(
-            2,
-            6,
-            new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불")),
         new Listing.Inventory(10, 3, nextAvailableFrom),
-        Listing.GenderPolicy.ANY,
-        Set.of(Listing.RoomFeature.SINGLE_ROOM),
         Set.of(ConditionTag.FEMALE_ONLY),
         List.of());
   }
