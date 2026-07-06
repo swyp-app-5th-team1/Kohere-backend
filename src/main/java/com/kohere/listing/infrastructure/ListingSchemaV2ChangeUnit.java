@@ -9,6 +9,7 @@ import io.mongock.api.annotations.RollbackExecution;
 import java.util.ArrayList;
 import java.util.List;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
@@ -41,20 +42,47 @@ public class ListingSchemaV2ChangeUnit {
   public void execution(MongoTemplate mongo) {
     MongoCollection<Document> listings = mongo.getCollection(LISTINGS);
 
-    for (Document listing : listings.find(Filters.ne("schemaVersion", 2))) {
-      Document migrated = new Document(listing);
-      migrateScalarFields(migrated);
-      migrateRootPolicyFields(migrated);
-      migrateLocationFields(migrated);
-      migrateBuildingAndFacilities(migrated);
-      migrateDescriptions(migrated);
-      migrateRoomOffers(migrated);
-      migrated.remove("featureSummary");
-      migrated.put("schemaVersion", 2);
-
+    for (Document listing : listings.find(legacyListingFilter())) {
+      Document migrated = migrate(listing);
       listings.replaceOne(
           Filters.eq("_id", listing.get("_id")), migrated, new ReplaceOptions().upsert(false));
     }
+  }
+
+  /** v2로 정규화해야 하는 레거시 문서 조건이다. */
+  static Bson legacyListingFilter() {
+    return Filters.or(
+        Filters.ne("schemaVersion", 2),
+        Filters.exists("rentalType", false),
+        Filters.exists("refundPolicy", false),
+        Filters.exists("contract", false),
+        Filters.exists("genderPolicy", false),
+        Filters.exists("nearestTransit.nearbyPlacesDescription", false),
+        Filters.exists("facilities.heatingSystem", false),
+        Filters.exists("facilities.kitchen", false),
+        Filters.exists("descriptions.extraNotes", false),
+        Filters.exists("nearbyPlacesDescription"),
+        Filters.exists("featureSummary"),
+        Filters.exists("extraNotes"),
+        Filters.exists("building.heatingSystem"),
+        Filters.exists("roomOffers.rentalType"),
+        Filters.exists("roomOffers.contract"),
+        Filters.exists("roomOffers.genderPolicy"),
+        Filters.exists("roomOffers.features"));
+  }
+
+  /** listings 문서 하나를 v2 저장 구조로 정규화한다. */
+  static Document migrate(Document listing) {
+    Document migrated = new Document(listing);
+    migrateScalarFields(migrated);
+    migrateRootPolicyFields(migrated);
+    migrateLocationFields(migrated);
+    migrateBuildingAndFacilities(migrated);
+    migrateDescriptions(migrated);
+    migrateRoomOffers(migrated);
+    migrated.remove("featureSummary");
+    migrated.put("schemaVersion", 2);
+    return migrated;
   }
 
   /**

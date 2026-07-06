@@ -170,6 +170,71 @@ class ListingMongoIntegrationTest {
         .isEqualTo(legacyRoomOfferId.toHexString());
   }
 
+  /** schemaVersion만 2이고 실제 모양은 v1인 문서도 보정 changeUnit이 다시 v2로 정규화한다. */
+  @Test
+  void migration_v2로_표시된_레거시_문서도_보정한다() {
+    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a02");
+    Document legacy = legacyV1ListingDocument(legacyRoomOfferId);
+    legacy.put("schemaVersion", 2);
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .insertOne(legacy, new InsertOneOptions().bypassDocumentValidation(true));
+
+    new ListingSchemaV2RepairChangeUnit().execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
+    assertThat(migrated.get("featureSummary")).isNull();
+    assertThat(migrated.get("nearbyPlacesDescription")).isNull();
+    assertThat(migrated.get("extraNotes")).isNull();
+    assertThat(migrated.get("building", Document.class).get("heatingSystem")).isNull();
+    assertThat(migrated.get("facilities", Document.class).getList("heatingSystem", String.class))
+        .containsExactly("CENTRAL");
+    assertThat(migrated.getList("roomOffers", Document.class).getFirst().getString("roomOfferId"))
+        .isEqualTo(legacyRoomOfferId.toHexString());
+    assertThat(migrated.getList("roomOffers", Document.class).getFirst().get("contract")).isNull();
+  }
+
+  /** 기존 v2 validator가 먼저 걸린 DB도 validator를 풀고 이행한 뒤 다시 strict validator를 적용한다. */
+  @Test
+  void migration_기존_validator를_풀고_v2_이행후_다시_적용한다() {
+    ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a03");
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .insertOne(
+            legacyV1ListingDocument(legacyRoomOfferId),
+            new InsertOneOptions().bypassDocumentValidation(true));
+
+    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
+    new ListingValidatorRelaxBeforeSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
+
+    Document invalidLegacy = legacyV1ListingDocument(new ObjectId("6858e2000000000000000a04"));
+    invalidLegacy.put("_id", new ObjectId("6858e2000000000000000b04"));
+    assertThatThrownBy(
+            () ->
+                mongoTemplate
+                    .getCollection(ListingDocument.COLLECTION_NAME)
+                    .insertOne(invalidLegacy))
+        .isInstanceOf(Exception.class);
+  }
+
   /** 앱 시작 시 지도·필터 조회용 MongoDB 인덱스가 생성되는지 확인한다. */
   @Test
   void initialize_지도와_필터_인덱스를_모두_생성한다() {

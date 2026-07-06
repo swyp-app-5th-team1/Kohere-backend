@@ -3,13 +3,10 @@ package com.kohere.listing.infrastructure;
 import static org.springframework.data.domain.Sort.Direction.ASC;
 import static org.springframework.data.domain.Sort.Direction.DESC;
 
-import com.mongodb.client.model.CreateCollectionOptions;
-import com.mongodb.client.model.ValidationAction;
-import com.mongodb.client.model.ValidationLevel;
-import com.mongodb.client.model.ValidationOptions;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
-import org.springframework.beans.factory.InitializingBean;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.GeoSpatialIndexType;
@@ -24,45 +21,14 @@ import org.springframework.stereotype.Component;
     havingValue = "true",
     matchIfMissing = true)
 @RequiredArgsConstructor
-class ListingMongoIndexInitializer implements InitializingBean {
+class ListingMongoIndexInitializer implements ApplicationRunner {
 
   private final MongoTemplate mongoTemplate;
 
   /** 애플리케이션 시작 시 지도·필터 조회용 MongoDB 인덱스를 준비한다. */
   @Override
-  public void afterPropertiesSet() {
-    ensureListingValidator();
+  public void run(ApplicationArguments args) {
     ensureIndexes();
-  }
-
-  /**
-   * listings 컬렉션의 MongoDB validator를 v2 저장 스키마에 맞춘다.
-   *
-   * <p>로컬 개발 DB에는 과거 v1 validator가 남아 있을 수 있다. 이 상태에서 v2 seed를 저장하면 MongoDB가 {@code
-   * roomOffers[].contract}나 {@code featureSummary}를 요구하며 앱 시작을 실패시킨다. 그래서 앱이 켜질 때마다 collMod로 최신
-   * validator를 덮어쓴다.
-   */
-  private void ensureListingValidator() {
-    if (!mongoTemplate.collectionExists(ListingDocument.COLLECTION_NAME)) {
-      mongoTemplate
-          .getDb()
-          .createCollection(
-              ListingDocument.COLLECTION_NAME,
-              new CreateCollectionOptions()
-                  .validationOptions(
-                      new ValidationOptions()
-                          .validator(new Document("$jsonSchema", listingJsonSchema()))
-                          .validationLevel(ValidationLevel.STRICT)
-                          .validationAction(ValidationAction.ERROR)));
-      return;
-    }
-
-    Document command =
-        new Document("collMod", ListingDocument.COLLECTION_NAME)
-            .append("validator", new Document("$jsonSchema", listingJsonSchema()))
-            .append("validationLevel", "strict")
-            .append("validationAction", "error");
-    mongoTemplate.executeCommand(command);
   }
 
   /**
@@ -70,7 +36,7 @@ class ListingMongoIndexInitializer implements InitializingBean {
    *
    * <p>도메인 검증이 1차 방어선이고, 이 스키마는 로컬 DB나 운영 DB에 잘못된 형태의 문서가 직접 들어오는 것을 막는 2차 방어선이다.
    */
-  private static Document listingJsonSchema() {
+  static Document listingJsonSchema() {
     return new Document("bsonType", "object")
         .append(
             "required",
