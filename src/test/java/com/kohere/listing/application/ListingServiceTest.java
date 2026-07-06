@@ -68,8 +68,8 @@ class ListingServiceTest {
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
     assertThat(response.listingId()).isEqualTo(LISTING_ID);
-    assertThat(response.interaction().favorited()).isFalse();
-    assertThat(response.interaction().favoriteCount()).isEqualTo(3);
+    assertThat(response.favorited()).isFalse();
+    assertThat(response.favoriteCount()).isEqualTo(3);
     verify(recentListingRepository, never()).deleteOldByUserIdKeepingLatest(1L, 30);
   }
 
@@ -86,40 +86,34 @@ class ListingServiceTest {
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
     assertThat(response.listingId()).isEqualTo(LISTING_ID);
-    assertThat(response.interaction().favoriteCount()).isEqualTo(3);
+    assertThat(response.favoriteCount()).isEqualTo(3);
     verify(recentListingRepository).upsertViewedAt(eq(1L), eq(LISTING_ID), any(Instant.class));
   }
 
-  /** 상세 화면용 요약은 UI에 노출 가능한 ACTIVE 방만 집계하고, NO_ARC와 리뷰 기본값을 함께 내려준다. */
+  /** 상세 응답은 매물 공통 필드를 루트에 두고, UI에 노출 가능한 ACTIVE 방만 내려준다. */
   @Test
-  void getListing_상세요약은_ACTIVE_방만_집계하고_NO_ARC와_리뷰요약을_반환한다() {
+  void getListing_상세응답은_DB구조에_가깝게_루트필드와_ACTIVE_방을_반환한다() {
     Listing listing = sampleListing();
     when(listingRepository.findById(LISTING_ID)).thenReturn(Optional.of(listing));
     when(favoriteRepository.findByUserIdAndListingId(1L, LISTING_ID)).thenReturn(Optional.empty());
 
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
-    assertThat(response.summary().minMonthlyRent()).isEqualTo(300000);
-    assertThat(response.summary().maxMonthlyRent()).isEqualTo(450000);
-    assertThat(response.summary().minDeposit()).isEqualTo(300000);
-    assertThat(response.summary().maxDeposit()).isEqualTo(500000);
-    assertThat(response.summary().minMaintenanceFee()).isZero();
-    assertThat(response.summary().maxMaintenanceFee()).isEqualTo(20000);
-    assertThat(response.summary().minStayMonths()).isEqualTo(1);
-    assertThat(response.summary().maxStayMonths()).isEqualTo(12);
-    assertThat(response.summary().activeRoomOfferCount()).isEqualTo(2);
-    assertThat(response.summary().imageCount()).isEqualTo(2);
-    assertThat(response.summary().conditions())
-        .containsExactly(
-            ConditionTag.FEMALE_ONLY,
-            ConditionTag.PRIVATE_BATH,
-            ConditionTag.ADDRESS_REGISTRATION,
-            ConditionTag.NO_MAINT_FEE,
-            ConditionTag.NO_ARC);
+    assertThat(response.title()).isEqualTo("테스트 고시원");
+    assertThat(response.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+    assertThat(response.contract().minStayMonths()).isEqualTo(1);
+    assertThat(response.contract().maxStayMonths()).isEqualTo(12);
+    assertThat(response.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
+    assertThat(response.propertyPolicies().arcRequired()).isFalse();
+    assertThat(response.facilities().heatingSystem())
+        .containsExactly(Listing.HeatingSystem.CENTRAL);
+    assertThat(response.imageUrls()).hasSize(2);
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::roomOfferId)
         .containsExactly(ROOM_OFFER_ID, SECOND_ROOM_OFFER_ID);
-    assertThat(response.reviewSummary().reviewCount()).isZero();
+    assertThat(response.roomOffers())
+        .allSatisfy(
+            roomOffer -> assertThat(roomOffer.status()).isEqualTo(Listing.RoomOfferStatus.ACTIVE));
   }
 
   /** 테스트에서 사용할 공개 매물 도메인 객체다. */

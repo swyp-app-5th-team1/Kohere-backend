@@ -34,26 +34,26 @@
 
 ### GET /api/v1/listings — 매물 리스트
 
-- 설명: 필터·정렬을 적용한 매물/건물 단위 카드 목록을 오프셋 페이지로 반환한다. 카드 1개는 `Listing` 1개다.
+- 설명: 지도 바텀시트나 매물 리스트 화면에 표시할 매물 목록을 반환한다. 응답 항목 1개가 화면의 카드 1개가 된다.
 - 인증: 선택 (로그인 시 각 항목 `favorited` 채움)
 
 Query 파라미터:
 
 | 이름 | 타입 | 필수 | 기본 | 설명 |
 | --- | --- | --- | --- | --- |
-| `swLat` | number | 선택 | — | 지도 화면 남서쪽 위도. bbox를 쓰려면 `swLat`·`swLng`·`neLat`·`neLng` 모두 필요 |
-| `swLng` | number | 선택 | — | 지도 화면 남서쪽 경도 |
-| `neLat` | number | 선택 | — | 지도 화면 북동쪽 위도. `swLat`보다 커야 함 |
-| `neLng` | number | 선택 | — | 지도 화면 북동쪽 경도. `swLng`보다 커야 함 |
-| `minBudget` | integer(KRW) | 선택 | — | roomOffer 월세 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
-| `maxBudget` | integer(KRW) | 선택 | — | roomOffer 월세 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
-| `minDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 하한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
-| `maxDeposit` | integer(KRW) | 선택 | — | roomOffer 보증금 상한. 이 값을 만족하는 active roomOffer가 1개 이상 있는 매물만 반환 |
-| `type` | `ListingType` | 선택 | — | Listing 기준 매물 유형. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
-| `conditions` | `ConditionTag[]` | 선택 | — | 필터 칩. 콤마 구분 또는 같은 이름 반복 전송 가능. 일반 조건은 같은 active roomOffer가 모두 만족해야 한다. `MOVE_IN_NOW`는 같은 roomOffer의 `availableCount > 0`도 필요하다. `NO_ARC`는 roomOffer 태그가 아니라 Listing 정책 필터로 처리되어 `propertyPolicies.arcRequired=false` 매물만 반환한다. |
-| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 프리셋. `RECOMMENDED`는 기본 추천순, `PRICE_ASC`는 조건을 통과한 roomOffer들의 최저 월세 낮은 순, `DISTANCE`는 요청 bbox의 원본 중심점에서 가까운 Listing 순 |
-| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
-| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
+| `swLat` | number | 선택 | — | 현재 지도 화면의 남서쪽 위도. 지도 기준 목록을 갱신할 때 네 좌표를 모두 보낸다 |
+| `swLng` | number | 선택 | — | 현재 지도 화면의 남서쪽 경도 |
+| `neLat` | number | 선택 | — | 현재 지도 화면의 북동쪽 위도. `swLat`보다 커야 함 |
+| `neLng` | number | 선택 | — | 현재 지도 화면의 북동쪽 경도. `swLng`보다 커야 함 |
+| `minBudget` | integer(KRW) | 선택 | — | 월세 최소값. 조건에 맞는 방 타입이 있는 매물만 보여준다 |
+| `maxBudget` | integer(KRW) | 선택 | — | 월세 최대값. 카드 가격은 응답의 `roomOffers[].pricing`으로 계산한다 |
+| `minDeposit` | integer(KRW) | 선택 | — | 보증금 최소값 |
+| `maxDeposit` | integer(KRW) | 선택 | — | 보증금 최대값 |
+| `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
+| `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION`, `NO_ARC` 등을 반복 파라미터 또는 콤마로 전송 |
+| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED` 추천순, `PRICE_ASC` 낮은 월세순, `DISTANCE` 현재 지도 중심에서 가까운 순 |
+| `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호. 무한스크롤의 다음 페이지 요청에 사용 |
+| `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
 
 Request Body: 없음
 
@@ -68,23 +68,83 @@ Request Body: 없음
         "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
         "type": "GOSIWON",
-        "minMonthlyRent": 380000,
-        "maxMonthlyRent": 400000,
-        "minDeposit": 200000,
-        "maxDeposit": 200000,
-        "minMaintenanceFee": 20000,
-        "maxMaintenanceFee": 20000,
-        "minStayMonths": 1,
-        "maxStayMonths": 12,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
-        "lat": 37.555134,
-        "lng": 126.936893,
-        "address": "서울 서대문구 ...",
-        "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+        "status": "PUBLISHED",
+        "rentalType": "MONTHLY_RENT",
+        "refundPolicy": {
+          "code": "FULL_REFUND_BEFORE_7_DAYS",
+          "description": "입주 7일 전 취소 시 전액 환불"
+        },
+        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "genderPolicy": "FEMALE_ONLY",
+        "location": { "lat": 37.555134, "lng": 126.936893 },
+        "address": {
+          "city": "SEOUL",
+          "district": "SEODAEMUN_GU",
+          "fullAddress": "서울 서대문구 ...",
+          "detail": null
+        },
+        "nearestTransit": {
+          "type": "SUBWAY",
+          "name": "Seoul Nat'l Univ.",
+          "walkMinutes": 5,
+          "nearbyPlacesDescription": "편의점, 약국"
+        },
+        "nearbyUniversityCodes": ["YONSEI"],
+        "building": {
+          "type": "VILLA",
+          "usedFloorMin": 1,
+          "usedFloorMax": 2,
+          "totalFloors": 4,
+          "parkingAvailable": true,
+          "elevatorAvailable": true
+        },
+        "propertyPolicies": {
+          "arcRequired": false,
+          "residentRegistrationAvailable": true,
+          "studySuitable": true,
+          "mealsProvided": true,
+          "englishAvailable": false
+        },
+        "facilities": {
+          "heatingSystem": ["CENTRAL"],
+          "kitchen": ["Shared Refrigerator", "Microwave"],
+          "laundry": ["COIN_LAUNDRY"],
+          "livingAmenities": ["WIFI"],
+          "securityFeatures": ["CCTV"],
+          "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
+          "providedSupplies": ["Bedding"]
+        },
+        "roomOffers": [
+          {
+            "roomOfferId": "6858e2000000000000000101",
+            "name": "스탠다드 1인실",
+            "status": "ACTIVE",
+            "pricing": {
+              "monthlyRent": 380000,
+              "deposit": 200000,
+              "maintenanceFee": 20000,
+              "currency": "KRW"
+            },
+            "inventory": {
+              "totalCount": 10,
+              "availableCount": 2,
+              "nextAvailableFrom": null
+            },
+            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+            "roomImageUrls": []
+          }
+        ],
+        "descriptions": {
+          "ko": "지하철역 도보 5분 이내...",
+          "en": "A well-maintained gosiwon...",
+          "extraNotes": "외국인 환영"
+        },
+        "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "distanceMeters": 320,
         "favorited": true,
-        "favoriteCount": 12
+        "favoriteCount": 12,
+        "createdAt": "2026-06-01T00:00:00Z",
+        "updatedAt": "2026-06-10T00:00:00Z"
       }
     ],
     "page": {
@@ -99,32 +159,24 @@ Request Body: 없음
 }
 ```
 
-- 목록의 각 항목은 매물/건물 단위 카드다. 같은 매물에 조건을 만족하는 `roomOffer`가 여러 개 있어도 같은 `listingId`는 한 번만 내려간다.
-- 필터가 없으면 조회 범위 안의 공개 매물에 속한 모든 활성 `roomOffer`를 집계한다. 필터가 있으면 같은 `roomOffer`가 가격·보증금·재고·옵션 조건을 모두 만족하는 방 상품만 집계한다.
-- `minMonthlyRent`/`maxMonthlyRent`, `minDeposit`/`maxDeposit`, `minMaintenanceFee`/`maxMaintenanceFee`, `minStayMonths`/`maxStayMonths`는 조건을 통과한 `roomOffer`들의 최저~최고 범위다. 프론트는 이 값으로 `₩380~400K/mo`, `Dep.`, `Maint.`, `1 mo~` 같은 카드 문구를 만들 수 있다.
-- `nearestTransit`는 카드에 표시할 가까운 교통수단 요약이며, 없으면 `null`이다.
-- `availableCount`는 MVP 단계에서는 목록/검색 응답에 노출하지 않는다. 단, `conditions=MOVE_IN_NOW` 필터는 같은 roomOffer의 `availableCount`가 1 이상이어야 통과한다.
-- `conditions`는 조건을 통과한 `roomOffer`들이 가진 태그의 합집합이다.
-- `sort=PRICE_ASC`는 조건에 맞는 `roomOffer`들의 최저 월세 오름차순으로 매물 카드를 정렬한다.
-- `sort=DISTANCE`는 프론트가 별도 중심 좌표를 보내지 않는다. 서버가 요청 bbox(`swLat`·`swLng`·`neLat`·`neLng`)의 원본 중심점을 계산해 가까운 Listing 순으로 정렬한다. 따라서 `sort=DISTANCE`를 쓰려면 bbox 네 좌표가 모두 필요하다.
-- `distanceMeters`는 bbox가 제공된 경우 서버가 계산한 원본 bbox 중심점 기준 직선 거리다. bbox 없이 조회하면 `null`이다.
-- 방 상품별 상세 정보가 필요하면 카드의 `listingId`로 `GET /api/v1/listings/{listingId}`를 호출해 응답의 `roomOffers[]`를 표시한다.
-- 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 요청한다.
-- ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`로 요청한다. 이 필터는 `propertyPolicies.arcRequired=false`인 매물만 반환한다.
-- `conditions`에 `NO_ARC`를 넣지 않으면 ARC 조건은 적용하지 않으며, ARC가 필요한 매물과 필요 없는 매물이 모두 조회될 수 있다.
-- 비로그인 시 `favorited`는 `false`로 고정한다.
+- 카드 제목은 `title`, 대표 이미지는 `imageUrls[0]`, 주소는 `address.fullAddress`, 교통 배지는 `nearestTransit.name`과 `nearestTransit.walkMinutes`를 사용한다.
+- 가격/보증금/관리비는 `roomOffers[].pricing`에서 읽는다. 여러 방 타입이 있으면 프론트에서 최저~최고 범위를 계산해 카드에 표시한다.
+- 계약기간은 방 타입이 아니라 매물 공통 값인 `contract.minStayMonths/maxStayMonths`를 사용한다.
+- 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
+- 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
+- `distanceMeters`가 있으면 거리 라벨로 표시하고, 없으면 숨긴다.
+- `favorited`는 하트 상태, `favoriteCount`는 찜 수 표시값이다. 비로그인 목록에서는 `favorited=false`로 표시하면 된다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
-| 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 bbox 네 좌표 누락 |
 | 400 | `MALFORMED_REQUEST` | 타입 불일치(숫자 파라미터에 비숫자 등) |
 
 ### GET /api/v1/listings/map — 지도 마커 조회
 
-- 설명: bbox 영역 내 매물의 개별 마커 좌표를 반환한다. 클러스터링은 프론트 지도 SDK가 화면 기준으로 처리한다. 필터 기준은 목록과 같지만, 마커는 roomOffer가 아니라 Listing 기준으로 반환한다.
+- 설명: 지도에 찍을 마커 좌표만 반환한다. 지도 SDK 마커/클러스터 렌더링에 사용하고, 상세한 카드 정보는 `/api/v1/listings`로 가져온다.
 - 인증: 선택
 
 Query 파라미터:
@@ -135,11 +187,9 @@ Query 파라미터:
 | `swLng` | number | bbox 모드 필수 | 남서 경도 |
 | `neLat` | number | bbox 모드 필수 | 북동 위도(`swLat` 이상) |
 | `neLng` | number | bbox 모드 필수 | 북동 경도(`swLng` 이상) |
-| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions` | (리스트와 동일) | 선택 | 리스트와 동일한 필터 적용. 단 응답은 매물 카드가 아니라 지도 마커 수 기준 |
+| `minBudget`/`maxBudget`/`minDeposit`/`maxDeposit`/`type`/`conditions` | (리스트와 동일) | 선택 | 목록과 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음 |
 
-> 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 서버는 `/listings` 목록 조회와 동일하게 요청 bbox를 20% 확장해 조회한다.
-> 한 Listing 안에 조건을 만족하는 roomOffer가 여러 개 있어도 지도 마커는 해당 Listing 위치에 1개만 반환한다.
-> 전입신고 가능 여부는 `conditions=ADDRESS_REGISTRATION`으로 필터링한다. ARC 없이 가능한 매물만 보려면 `conditions=NO_ARC`를 함께 보낸다.
+> 지도 마커 조회는 bbox 4좌표가 모두 필요하다. 마커와 바텀시트 목록을 같이 갱신할 때는 목록 API에도 같은 필터 값을 보내면 된다.
 
 Request Body: 없음
 
@@ -158,34 +208,33 @@ Request Body: 없음
 }
 ```
 
-- `markers[]`는 프론트 지도 SDK가 마커와 클러스터를 만들 때 사용하는 최소 데이터다.
-- `title`, 가격, 썸네일 등 카드 정보는 포함하지 않는다. 마커 선택 후 카드 목록이나 상세 정보가 필요하면 `/api/v1/listings` 또는 `/api/v1/listings/{listingId}`를 호출한다.
-- 결과 수가 서버 상한(예: 500건)을 초과하면 `LISTING_AREA_TOO_LARGE`를 반환한다. 클라이언트는 지도를 더 확대하거나 bbox를 좁혀 다시 호출한다.
+- `markers[].lat/lng`는 지도 SDK에 넘길 좌표다.
+- `markers[].listingId`는 마커 선택 상태, 목록 카드 선택 상태, 상세 진입을 연결하는 키다.
+- `title`, 가격, 이미지 등 카드 정보는 포함하지 않는다. 마커를 눌렀을 때 카드가 필요하면 같은 `listingId`로 목록 결과에서 찾거나 상세 API를 호출한다.
+- `LISTING_AREA_TOO_LARGE`가 오면 지도를 더 확대하거나 bbox를 좁혀 다시 호출한다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `LISTING_INVALID_BBOX` | bbox 좌표 불완전/모순(`swLat>neLat` 등) |
-| 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과 수가 서버 상한 초과 |
+| 400 | `LISTING_AREA_TOO_LARGE` | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | 400 | `INVALID_INPUT` | 필터 enum/범위 위반 등 |
 
 ### GET /api/v1/listings/search — 키워드 검색
 
-- 설명: 학교명·지역명·지하철역명을 키워드로 매칭해 해당 위치와 주변 매물을 오프셋 페이지로 반환한다.
+- 설명: 검색창에서 학교명·지역명·지하철역명을 입력했을 때, 매칭된 장소와 주변 매물을 함께 반환한다.
 - 인증: 선택
-- MVP 구현: 검색 가능한 장소는 MongoDB `searchPlaces` POI 사전으로 관리한다. 서버는 `name`/`aliases`를 비교해
-  `정확히 일치 > 별칭 일치 > 앞부분 일치 > 포함 일치` 순으로 가장 적절한 장소 1개를 고른다.
-- MVP 구현: 매칭된 장소 좌표 기준 **3km 이내** 공개 매물 카드를 반환하며, 기본 정렬은 거리순이다.
+- 매칭된 장소가 있으면 `matchedPlace.lat/lng`로 지도를 이동하고, `content[]`를 검색 결과 리스트로 표시한다.
 
 Query 파라미터:
 
 | 이름 | 타입 | 필수 | 기본 | 설명 |
 | --- | --- | --- | --- | --- |
-| `keyword` | string | 필수 | — | 검색어(학교/지역/역). 1~50자 |
-| `sort` | `ListingSort` | 선택 | `DISTANCE` | 매칭 위치 기준 정렬 프리셋 |
-| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
-| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
+| `keyword` | string | 필수 | — | 검색창 입력값(학교/지역/역). 1~50자 |
+| `sort` | `ListingSort` | 선택 | `DISTANCE` | 검색 결과 정렬. 기본은 검색된 장소에서 가까운 순 |
+| `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호 |
+| `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
 
 Request Body: 없음
 
@@ -201,7 +250,7 @@ Request Body: 없음
       "lat": 37.565784,
       "lng": 126.938572
     },
-    "content": [ /* 리스트 항목과 동일한 매물 카드 스키마 */ ],
+    "content": [ /* /api/v1/listings content[]와 같은 매물 카드 구조 */ ],
     "page": {
       "number": 0,
       "size": 20,
@@ -214,11 +263,10 @@ Request Body: 없음
 }
 ```
 
-- `matchedPlace.type`은 `MatchedPlaceType`(`UNIVERSITY`/`REGION`/`SUBWAY_STATION`) 중 하나다.
-- `content[]`는 `/api/v1/listings`와 같은 Listing 단위 카드다. 같은 매물 안에서 검색 조건을 통과한 `roomOffer`가 여러 개 있어도 매물은 한 번만 내려가며, 가격·보증금·관리비·계약기간은 조건을 통과한 방 상품들의 범위로 내려간다.
-- 매칭 결과가 없으면 `matchedPlace=null`, `content=[]`로 `200 OK`(404 아님).
-- `matchedPlace=null`이면 프론트는 "검색된 장소가 없어요" 상태를 표시할 수 있다. `matchedPlace`가 있고 `content=[]`이면
-  장소는 찾았지만 3km 이내 매물이 없는 상태다.
+- `matchedPlace`가 있으면 검색 결과 화면의 지도 중심과 장소 제목으로 사용한다.
+- `content[]`는 목록 API와 같은 카드 구조다. `distanceMeters`는 검색된 장소에서 매물까지의 거리 라벨로 표시한다.
+- `matchedPlace=null`이면 "검색된 장소가 없어요" 상태를 표시한다.
+- `matchedPlace`가 있고 `content=[]`이면 "이 주변에 매물이 없어요" 상태를 표시한다.
 
 발생 가능한 에러:
 
@@ -228,14 +276,14 @@ Request Body: 없음
 
 ### GET /api/v1/listings/{listingId} — 매물 상세
 
-- 설명: 단건 매물 상세를 반환하고, 로그인 사용자의 최근 본 매물에 upsert한다.
+- 설명: 목록 카드나 지도 마커를 눌렀을 때 상세 화면을 그리기 위한 매물 정보를 반환한다.
 - 인증: 필수
 
 Path 파라미터:
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | string | 필수 | 매물 식별자(ObjectId hex 문자열) |
+| `listingId` | string | 필수 | 목록/검색/마커 응답에서 받은 `listingId` |
 
 Request Body: 없음
 
@@ -246,116 +294,90 @@ Request Body: 없음
   "success": true,
   "data": {
     "listingId": "6858e2000000000000000001",
-    "basicInfo": {
-      "title": "신촌 도보 5분 1인실 고시원",
-      "type": "GOSIWON",
-      "status": "PUBLISHED"
+    "title": "신촌 도보 5분 1인실 고시원",
+    "type": "GOSIWON",
+    "status": "PUBLISHED",
+    "rentalType": "MONTHLY_RENT",
+    "refundPolicy": {
+      "code": "FULL_REFUND_BEFORE_7_DAYS",
+      "description": "입주 7일 전 취소 시 전액 환불"
     },
-    "summary": {
-      "minMonthlyRent": 380000,
-      "maxMonthlyRent": 400000,
-      "minDeposit": 500000,
-      "maxDeposit": 700000,
-      "minMaintenanceFee": 0,
-      "maxMaintenanceFee": 20000,
-      "minStayMonths": 1,
-      "maxStayMonths": 12,
-      "activeRoomOfferCount": 3,
-      "imageCount": 20,
-      "conditions": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC"]
+    "contract": {
+      "minStayMonths": 2,
+      "maxStayMonths": 6
     },
-    "locationInfo": {
-      "location": { "lat": 37.555134, "lng": 126.936893 },
-      "address": {
-        "city": "SEOUL",
-        "district": "SEODAEMUN_GU",
-        "fullAddress": "서울 서대문구 신촌로 ...",
-        "detail": "3층 305호"
-      },
-      "nearestTransit": { "type": "SUBWAY", "name": "Seoul Nat'l Univ.", "walkMinutes": 5 },
-      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장",
-      "nearbyUniversityCodes": ["YONSEI", "EWHA"]
+    "genderPolicy": "FEMALE_ONLY",
+    "location": { "lat": 37.555134, "lng": 126.936893 },
+    "address": {
+      "city": "SEOUL",
+      "district": "SEODAEMUN_GU",
+      "fullAddress": "서울 서대문구 신촌로 ...",
+      "detail": "3층 305호"
     },
-    "propertyInfo": {
-      "building": {
-        "type": "VILLA",
-        "usedFloorMin": 2,
-        "usedFloorMax": 3,
-        "totalFloors": 5,
-        "parkingAvailable": false,
-        "elevatorAvailable": false,
-        "heatingSystem": "CENTRAL"
-      },
-      "propertyPolicies": {
-        "arcRequired": false,
-        "residentRegistrationAvailable": true,
-        "studySuitable": true,
-        "mealsProvided": false,
-        "englishAvailable": true
-      },
-      "facilities": {
-        "heatingSystem": ["CENTRAL"],
-        "kitchen": ["Shared Refrigerator", "Microwave"],
-        "laundry": ["WASHER", "IRON"],
-        "livingAmenities": ["WIFI", "TV", "SOFA"],
-        "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
-        "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
-        "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
-      },
-      "featureSummary": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_MAINT_FEE"]
+    "nearestTransit": {
+      "type": "SUBWAY",
+      "name": "Seoul Nat'l Univ.",
+      "walkMinutes": 5,
+      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장"
+    },
+    "nearbyUniversityCodes": ["YONSEI", "EWHA"],
+    "building": {
+      "type": "VILLA",
+      "usedFloorMin": 2,
+      "usedFloorMax": 3,
+      "totalFloors": 5,
+      "parkingAvailable": false,
+      "elevatorAvailable": false
+    },
+    "propertyPolicies": {
+      "arcRequired": false,
+      "residentRegistrationAvailable": true,
+      "studySuitable": true,
+      "mealsProvided": false,
+      "englishAvailable": true
+    },
+    "facilities": {
+      "heatingSystem": ["CENTRAL"],
+      "kitchen": ["Shared Refrigerator", "Microwave"],
+      "laundry": ["WASHER", "IRON"],
+      "livingAmenities": ["WIFI", "TV", "SOFA"],
+      "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
+      "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
+      "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
     },
     "roomOffers": [
       {
         "roomOfferId": "6858e2000000000000000101",
         "name": "스탠다드 1인실",
         "status": "ACTIVE",
-        "rentalType": "MONTHLY_RENT",
         "pricing": {
           "monthlyRent": 300000,
           "deposit": 300000,
           "maintenanceFee": 0,
           "currency": "KRW"
         },
-        "contract": {
-          "minStayMonths": 2,
-          "maxStayMonths": 6,
-          "refundPolicy": {
-            "code": "FULL_REFUND_BEFORE_7_DAYS",
-            "description": "입주 7일 전 취소 시 전액 환불"
-          }
-        },
         "inventory": {
           "totalCount": 10,
           "availableCount": 2,
           "nextAvailableFrom": null
         },
-        "genderPolicy": "FEMALE_ONLY",
-        "features": ["SINGLE_ROOM", "PRIVATE_BATH"],
         "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/6858e2000000000000000001/rooms/101.jpg"
         ]
       }
     ],
-    "content": {
-      "descriptions": {
-        "ko": "신촌역 도보권의 조용한 1인실 고시원입니다.",
-        "en": "A quiet goshiwon within walking distance of Sinchon Station."
-      },
-      "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다.",
-      "imageUrls": [
-        "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
-        "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
-      ],
-      "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg"
+    "descriptions": {
+      "ko": "신촌역 도보권의 조용한 1인실 고시원입니다.",
+      "en": "A quiet goshiwon within walking distance of Sinchon Station.",
+      "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다."
     },
-    "reviewSummary": {
-      "reviewCount": 0
-    },
-    "interaction": {
-      "favorited": true,
-      "favoriteCount": 12
-    },
+    "imageUrls": [
+      "https://cdn.kohere.app/listings/6858e2000000000000000001/1.jpg",
+      "https://cdn.kohere.app/listings/6858e2000000000000000001/2.jpg"
+    ],
+    "favorited": true,
+    "favoriteCount": 12,
     "createdAt": "2026-05-30T02:11:00Z",
     "updatedAt": "2026-06-01T02:11:00Z"
   },
@@ -363,14 +385,12 @@ Request Body: 없음
 }
 ```
 
-- 전화번호 등 직접 연락처는 노출하지 않는다. 매물 예약(신청)은 인앱 채팅과 분리된 독립 기능으로 연결되고, 문의는 인앱 채팅으로 연결된다(문의·인앱 채팅은 후속·이연 — [04-booking-inquiry-chat](04-booking-inquiry-chat.md)).
-- `summary`는 상세 화면 상단 가격·보증금·관리비·계약기간·방 타입 수·이미지 카운터를 프론트가 바로 그릴 수 있게 서버가 계산한 값이다. 계산 기준은 **ACTIVE roomOffers**다.
-- `summary.conditions`는 ACTIVE roomOffers의 `filterTags` 합집합이다. 단, `NO_ARC`는 DB에 저장되는 방 태그가 아니라 `propertyPolicies.arcRequired=false`에서 파생한 표시/검색용 가상 태그다.
-- `roomOffers[]`는 같은 가격·조건의 실제 방 묶음이며, 상세 화면 Room Types에 보여줄 **ACTIVE 방 상품만** 반환한다. INACTIVE 방 상품은 응답에서 제외한다.
-- `reviewSummary.reviewCount`는 리뷰 도메인 도입 전까지 `0`으로 반환한다. 문의 수는 현재 상세 응답에 포함하지 않으며, 문의/채팅 기능 고도화 때 별도 계약으로 추가한다.
-- 상세 조회가 성공하면 `(userId, listingId)` 기준으로 최근 본 매물을 upsert하고 `viewedAt`을 최신 시각으로 갱신한다.
-- 최근 본 저장이나 사용자별 30개 초과 정리에 실패해도 상세 조회 응답은 성공으로 유지한다. 서버는 실패를 로그로 남기고, 프론트는 별도 재시도를 하지 않아도 된다.
-- `interaction.favorited`는 현재 로그인 사용자의 실제 찜 여부다.
+- 상단 제목/하트는 `title`, `favorited`, `favoriteCount`를 사용한다.
+- 사진 갤러리는 `imageUrls`와 `roomOffers[].roomImageUrls`를 사용한다. 카드 대표 이미지는 `imageUrls[0]`를 우선 사용한다.
+- 가격 영역은 `roomOffers[].pricing`, 계약기간은 `contract`, 주소/지도는 `address`와 `location`, 교통 정보는 `nearestTransit`으로 표시한다.
+- 시설/정책 섹션은 `building`, `propertyPolicies`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
+- `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
+- 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
 
 발생 가능한 에러:
 
@@ -381,14 +401,14 @@ Request Body: 없음
 
 ### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
 
-- 설명: 매물을 찜한다. (userId, listingId) 유니크로 멱등 보장.
+- 설명: 사용자가 하트를 눌러 매물을 찜 상태로 만든다.
 - 인증: 필수
 
 Path 파라미터:
 
 | 이름 | 타입 | 필수 | 설명 |
 | --- | --- | --- | --- |
-| `listingId` | string | 필수 | 매물 식별자(ObjectId hex 문자열) |
+| `listingId` | string | 필수 | 목록/상세 응답에서 받은 `listingId` |
 
 Request Body: 없음
 
@@ -405,8 +425,8 @@ Request Body: 없음
 }
 ```
 
-- 신규로 찜이 **생성**되면 `201 Created`로 반환한다(생성=201, api-design-guide §1).
-- 이미 찜한 상태에서 다시 호출하면 생성이 일어나지 않으므로 `200 OK`로 현재 상태(`favorited: true`)를 멱등하게 반환한다(중복 행 미생성, 별도 충돌 에러 아님). 이는 04-booking-inquiry-chat 스펙의 문의 생성(신규 201 / 기존 200) 패턴과 일관된다.
+- 응답의 `favorited=true`로 하트를 채우고, `favoriteCount`로 카드/상세의 찜 수를 갱신한다.
+- 이미 찜한 매물에 다시 호출해도 에러가 아니며 현재 상태를 그대로 반환한다. 프론트는 status code와 무관하게 body 값으로 UI를 맞추면 된다.
 
 발생 가능한 에러:
 
@@ -417,7 +437,7 @@ Request Body: 없음
 
 ### DELETE /api/v1/listings/{listingId}/favorite — 찜 해제(토글)
 
-- 설명: 찜을 해제한다. 찜하지 않은 매물 해제도 멱등하게 처리한다.
+- 설명: 사용자가 하트를 다시 눌러 찜을 해제한다.
 - 인증: 필수
 
 Path 파라미터: `listingId` (위와 동일)
@@ -437,7 +457,7 @@ Request Body: 없음
 }
 ```
 
-> 토글 액션은 변경 후 현재 상태(`favorited`, `favoriteCount`)를 `data`에 담아야 하므로 본문 없는 `204`가 아닌 `200`을 사용한다(api-design-guide §3-2 토글성 액션 — 일반 삭제 `204` 규칙의 명시적 예외). 찜하지 않은 매물 해제도 에러 없이 멱등하게 `favorited: false`를 반환한다.
+> 응답의 `favorited=false`로 하트를 비우고, `favoriteCount`로 카드/상세의 찜 수를 갱신한다. 이미 해제된 매물이어도 에러가 아니라 현재 상태를 반환한다.
 
 발생 가능한 에러:
 
@@ -448,16 +468,16 @@ Request Body: 없음
 
 ### GET /api/v1/users/me/favorites — 내 찜한 매물 목록
 
-- 설명: 로그인 사용자가 찜한 매물 목록을 오프셋 페이지로 반환한다.
+- 설명: 마이페이지의 찜한 매물 목록을 반환한다.
 - 인증: 필수
 
 Query 파라미터:
 
 | 이름 | 타입 | 필수 | 기본 | 설명 |
 | --- | --- | --- | --- | --- |
-| `page` | integer | 선택 | 0 | 0-base 페이지 번호 |
-| `size` | integer | 선택 | 20 | 페이지 크기(최대 100) |
-| `sort` | string | 선택 | `favoritedAt,desc` | 찜한 시각 기준 정렬(api-design-guide §6 `field,dir` 형식) |
+| `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호 |
+| `size` | integer | 선택 | 20 | 한 번에 가져올 찜 매물 수(최대 100) |
+| `sort` | string | 선택 | `favoritedAt,desc` | 찜한 시각 최신순. 현재 화면에서는 기본값 그대로 사용하면 됨 |
 
 Request Body: 없음
 
@@ -472,13 +492,82 @@ Request Body: 없음
         "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
         "type": "GOSIWON",
-        "monthlyRent": 450000,
-        "deposit": 0,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
-        "location": { "lat": 37.555134, "lng": 126.936893, "address": "서울 서대문구 ..." },
-        "conditions": ["ENGLISH_OK"],
+        "status": "PUBLISHED",
+        "rentalType": "MONTHLY_RENT",
+        "refundPolicy": {
+          "code": "FULL_REFUND_BEFORE_7_DAYS",
+          "description": "입주 7일 전 취소 시 전액 환불"
+        },
+        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "genderPolicy": "FEMALE_ONLY",
+        "location": { "lat": 37.555134, "lng": 126.936893 },
+        "address": {
+          "city": "SEOUL",
+          "district": "SEODAEMUN_GU",
+          "fullAddress": "서울 서대문구 ...",
+          "detail": null
+        },
+        "nearestTransit": {
+          "type": "SUBWAY",
+          "name": "Seoul Nat'l Univ.",
+          "walkMinutes": 5,
+          "nearbyPlacesDescription": "편의점, 약국"
+        },
+        "nearbyUniversityCodes": ["YONSEI"],
+        "building": {
+          "type": "VILLA",
+          "usedFloorMin": 1,
+          "usedFloorMax": 2,
+          "totalFloors": 4,
+          "parkingAvailable": true,
+          "elevatorAvailable": true
+        },
+        "propertyPolicies": {
+          "arcRequired": false,
+          "residentRegistrationAvailable": true,
+          "studySuitable": true,
+          "mealsProvided": true,
+          "englishAvailable": false
+        },
+        "facilities": {
+          "heatingSystem": ["CENTRAL"],
+          "kitchen": ["Shared Refrigerator", "Microwave"],
+          "laundry": ["COIN_LAUNDRY"],
+          "livingAmenities": ["WIFI"],
+          "securityFeatures": ["CCTV"],
+          "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
+          "providedSupplies": ["Bedding"]
+        },
+        "roomOffers": [
+          {
+            "roomOfferId": "6858e2000000000000000101",
+            "name": "스탠다드 1인실",
+            "status": "ACTIVE",
+            "pricing": {
+              "monthlyRent": 450000,
+              "deposit": 0,
+              "maintenanceFee": 0,
+              "currency": "KRW"
+            },
+            "inventory": {
+              "totalCount": 10,
+              "availableCount": 2,
+              "nextAvailableFrom": null
+            },
+            "filterTags": ["ENGLISH_OK"],
+            "roomImageUrls": []
+          }
+        ],
+        "descriptions": {
+          "ko": "지하철역 도보 5분 이내...",
+          "en": "A well-maintained gosiwon...",
+          "extraNotes": "외국인 환영"
+        },
+        "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "favorited": true,
         "favoriteCount": 13,
+        "createdAt": "2026-06-01T00:00:00Z",
+        "updatedAt": "2026-06-10T00:00:00Z",
         "favoritedAt": "2026-06-10T11:20:00Z"
       }
     ],
@@ -488,7 +577,10 @@ Request Body: 없음
 }
 ```
 
-- 항목 모두 `favorited=true`다. 비어 있으면 `content=[]`, `200 OK`.
+- 항목 모두 `favorited=true`라 하트는 채운 상태로 표시한다.
+- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `contract`를 사용한다.
+- `favoritedAt`은 찜한 시각 표시나 최신순 정렬 확인에 사용할 수 있다.
+- 찜 해제 후에는 목록을 다시 조회하거나, 클라이언트에서 해당 `listingId` 항목을 제거하면 된다.
 
 발생 가능한 에러:
 
@@ -499,10 +591,10 @@ Request Body: 없음
 
 ### GET /api/v1/users/me/recent-listings — 최근 본 매물
 
-- 설명: 상세 조회로 저장된 최근 본 매물 중 현재 공개 상태이고 활성 방 상품이 있는 매물을 `viewedAt desc` 최신순 최대 10건 반환한다. 페이지네이션 없이 고정 상한이므로 `content` 배열만 반환하고 `page` 객체는 두지 않는다.
+- 설명: 마이페이지나 홈의 최근 본 매물 영역에 표시할 매물을 최신 조회순으로 최대 10건 반환한다.
 - 인증: 필수
 
-Query 파라미터: 없음 (응답 상한 10건 고정)
+Query 파라미터: 없음. 상세 조회를 호출하면 최근 본 기록이 자동으로 갱신된다.
 
 Request Body: 없음
 
@@ -517,23 +609,82 @@ Request Body: 없음
         "listingId": "6858e2000000000000000001",
         "title": "홍대입구 코리빙 2인실",
         "type": "CO_LIVING",
-        "minMonthlyRent": 580000,
-        "maxMonthlyRent": 620000,
-        "minDeposit": 1000000,
-        "maxDeposit": 1000000,
-        "minMaintenanceFee": 30000,
-        "maxMaintenanceFee": 50000,
-        "minStayMonths": 1,
-        "maxStayMonths": 12,
-        "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg",
-        "lat": 37.5571,
-        "lng": 126.9245,
-        "address": "서울 마포구 ...",
-        "nearestTransit": { "type": "SUBWAY", "name": "Hongdae Sta.", "walkMinutes": 8 },
-        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
-        "distanceMeters": null,
+        "status": "PUBLISHED",
+        "rentalType": "MONTHLY_RENT",
+        "refundPolicy": {
+          "code": "FULL_REFUND_BEFORE_7_DAYS",
+          "description": "입주 7일 전 취소 시 전액 환불"
+        },
+        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+        "genderPolicy": "ANY",
+        "location": { "lat": 37.5571, "lng": 126.9245 },
+        "address": {
+          "city": "SEOUL",
+          "district": "MAPO_GU",
+          "fullAddress": "서울 마포구 ...",
+          "detail": null
+        },
+        "nearestTransit": {
+          "type": "SUBWAY",
+          "name": "Hongdae Sta.",
+          "walkMinutes": 8,
+          "nearbyPlacesDescription": "편의점, 카페"
+        },
+        "nearbyUniversityCodes": ["HONGIK"],
+        "building": {
+          "type": "OFFICETEL",
+          "usedFloorMin": 5,
+          "usedFloorMax": 7,
+          "totalFloors": 12,
+          "parkingAvailable": false,
+          "elevatorAvailable": true
+        },
+        "propertyPolicies": {
+          "arcRequired": false,
+          "residentRegistrationAvailable": true,
+          "studySuitable": true,
+          "mealsProvided": false,
+          "englishAvailable": true
+        },
+        "facilities": {
+          "heatingSystem": ["INDIVIDUAL"],
+          "kitchen": ["Shared Refrigerator", "Microwave"],
+          "laundry": ["WASHER"],
+          "livingAmenities": ["WIFI"],
+          "securityFeatures": ["CCTV"],
+          "commonSpaces": [{ "type": "LOUNGE", "count": 1 }],
+          "providedSupplies": ["Toilet Paper"]
+        },
+        "roomOffers": [
+          {
+            "roomOfferId": "6858e2000000000000000201",
+            "name": "코리빙 2인실",
+            "status": "ACTIVE",
+            "pricing": {
+              "monthlyRent": 580000,
+              "deposit": 1000000,
+              "maintenanceFee": 30000,
+              "currency": "KRW"
+            },
+            "inventory": {
+              "totalCount": 8,
+              "availableCount": 1,
+              "nextAvailableFrom": null
+            },
+            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+            "roomImageUrls": []
+          }
+        ],
+        "descriptions": {
+          "ko": "홍대입구역 인근 코리빙...",
+          "en": "Co-living near Hongdae...",
+          "extraNotes": "공용 라운지 이용 가능"
+        },
+        "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
         "favorited": false,
         "favoriteCount": 13,
+        "createdAt": "2026-06-01T00:00:00Z",
+        "updatedAt": "2026-06-10T00:00:00Z",
         "viewedAt": "2026-06-15T01:30:00Z"
       }
     ]
@@ -542,11 +693,10 @@ Request Body: 없음
 }
 ```
 
-- 응답 필드는 `/api/v1/listings` 카드 응답과 최대한 동일하며, 최근 본 목록 전용으로 `viewedAt`을 추가한다.
-- `favorited`는 현재 로그인 사용자의 실제 찜 여부다. 프론트는 이 값으로 하트 상태를 바로 표시할 수 있다.
-- DB에는 사용자별 최근 본 기록을 최신순 최대 30개까지 보관한다. 상세 조회로 새 기록을 저장한 뒤 30개를 넘으면 오래된 기록부터 삭제한다.
-- 조회 API는 저장된 30개 중 현재 `PUBLISHED` 상태이고 활성 `roomOffer`가 있는 매물만 최신순 최대 10개 반환한다. 비공개/삭제/노출중지 매물은 목록에서 숨긴다.
-- 같은 매물 재조회는 새 항목을 만들지 않고 `viewedAt`만 갱신한다.
+- 카드 렌더링은 일반 목록과 같은 방식으로 `title`, `imageUrls[0]`, `address.fullAddress`, `roomOffers[].pricing`, `contract`를 사용한다.
+- `viewedAt`은 마지막으로 상세 화면을 본 시각이다. 필요하면 "최근 본 시간" 보조 문구에 사용한다.
+- `favorited`로 현재 하트 상태를 바로 표시한다.
+- 오래되었거나 더 이상 공개되지 않는 매물은 응답에 포함되지 않는다. 빈 배열이면 최근 본 매물 없음 상태를 표시한다.
 
 발생 가능한 에러:
 
@@ -563,7 +713,7 @@ Request Body: 없음
 | `LISTING_NOT_FOUND` | 404 | 존재하지 않거나 비공개/삭제된 매물 |
 | `LISTING_INVALID_SORT_PARAM` | 400 | `sort=DISTANCE`인데 bbox 네 좌표가 누락됨 |
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/모순(`swLat>neLat` 등) |
-| `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 서버 상한을 초과 |
+| `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다.
-> 이미 찜/미찜 상태에서의 토글은 별도 충돌 에러(`LISTING_ALREADY_FAVORITED` 등)로 보지 않고 멱등하게 현재 상태를 반환한다(등록은 신규 201 / 기존 200, 해제는 항상 200). 만약 "이미 찜" 충돌을 명시적으로 알리는 정책이 정해지면 `409`로 별도 코드를 추가한다.
+> 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.
