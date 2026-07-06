@@ -8,7 +8,7 @@ import java.util.Map;
  * 표시 DTO를 조립한다(ADR-0028·ADR-0029). 선택지 {@code code}는 언어 무관 제출 enum 값이다.
  *
  * @param step 진단 단계(1..6)
- * @param field 제출 필드명(region/purpose/university/district/conditions/monthlyBudgetMax/arcStatus)
+ * @param field 제출 필드명(region/purpose/university/district/conditions/monthlyRent/arcStatus)
  * @param question 언어-키 맵 문항(예: {@code {"en": "...", "ko": "..."}})
  * @param select 선택 제약(type=SINGLE/MULTI/NUMBER, max)
  * @param options 선택지 목록(code + 언어-키 맵 label). 숫자 입력 단계는 빈 목록

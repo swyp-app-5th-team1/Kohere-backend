@@ -29,12 +29,19 @@ public interface ListingRepository {
   /** 지도 SDK에 전달할 마커 후보를 조회한다. 전체 건수와 지정 상한 내 매물만 반환한다. */
   ListingMapSearchResult searchForMap(ListingSearchCondition condition, int limit);
 
-  /** 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다. */
+  /**
+   * 진단 결과 조건을 MongoDB 필터로 적용해 추천 매물 페이지를 조회한다.
+   *
+   * <p>대학은 diagnosis의 그룹 코드가 아니라 그룹에서 펼친 개별 대학 코드 집합으로 받는다. 빈 집합이면 대학 조건을 생략하고, 값이 있으면 Listing 루트의
+   * {@code nearbyUniversityCodes}와 ANY 매칭한다. 월세 하한/상한은 같은 활성 roomOffer가 조건 태그와 함께 모두 만족해야 하므로 저장소
+   * 구현에서 {@code roomOffers} 배열의 단일 원소 기준으로 검사한다.
+   */
   PageResponse<Listing> recommend(
       String region,
-      int monthlyBudgetMax,
+      Integer monthlyRentMin,
+      Integer monthlyRentMax,
       Set<ConditionTag> conditions,
-      String university,
+      Set<String> universityCodes,
       String district,
       int page,
       int size,

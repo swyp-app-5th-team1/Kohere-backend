@@ -139,7 +139,7 @@ GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
 ### 18. 진단 결과 추천 매물 + 지도 좌표
-#     주의(ADR-0032 그룹화 임시): 추천 criteria가 아직 listing 계약 확장 전이라 대학 필터 비활성·월세 상한(max)만 전달
-#     → STUDY도 지역(region)+조건+예산 기반 매칭. 매칭 0건이면 content/markers 빈 목록 + suggestions(NO_MATCH).
+#     STUDY는 대학 그룹을 개별 대학 코드로 펼쳐 nearbyUniversityCodes에 ANY 매칭하고, 월세 min/max를 모두 적용한다.
+#     매칭 0건이면 content/markers 빈 목록 + suggestions(NO_MATCH).
 GET {{baseUrl}}/api/v1/diagnoses/{{submit.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
 Authorization: Bearer {{login.response.body.$.data.accessToken}}

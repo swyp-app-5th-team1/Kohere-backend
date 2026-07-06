@@ -1247,9 +1247,10 @@ class ListingMongoIntegrationTest {
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
                 "SEOUL",
+                0,
                 500000,
                 Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
-                "SNU",
+                Set.of("SNU"),
                 null,
                 0,
                 20,
@@ -1264,6 +1265,58 @@ class ListingMongoIntegrationTest {
     assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
   }
 
+  /** 진단 대학 그룹에서 펼친 개별 대학 코드 집합은 nearbyUniversityCodes와 ANY 매칭되고, 빈 집합은 대학 필터를 생략한다. */
+  @Test
+  void recommendByCriteria_대학코드집합은_ANY로_매칭하고_빈집합은_대학필터를_생략한다() {
+    new ListingSeedRunner(listingRepository).run(null);
+
+    PageResponse<RecommendedListingView> matchedByGroupMember =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("CAU"), null, 0, 20, null));
+    PageResponse<RecommendedListingView> notMatchedByDifferentUniversity =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of("YONSEI"), null, 0, 20, null));
+    PageResponse<RecommendedListingView> noUniversityFilter =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 0, 500000, Set.of("FEMALE_ONLY"), Set.of(), null, 0, 20, null));
+
+    assertThat(matchedByGroupMember.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+    assertThat(notMatchedByDifferentUniversity.content()).isEmpty();
+    assertThat(noUniversityFilter.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+  }
+
+  /** 추천 월세 하한과 상한은 같은 active roomOffer의 pricing.monthlyRent에 함께 적용된다. */
+  @Test
+  void recommendByCriteria_월세하한과_상한을_모두_적용한다() {
+    new ListingSeedRunner(listingRepository).run(null);
+
+    PageResponse<RecommendedListingView> inRange =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 250000, 350000, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+    PageResponse<RecommendedListingView> belowMinimum =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 350001, 500000, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+    PageResponse<RecommendedListingView> aboveMaximum =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL", 0, 299999, Set.of("FEMALE_ONLY"), Set.of("SNU"), null, 0, 20, null));
+
+    assertThat(inRange.content())
+        .extracting(RecommendedListingView::listingId)
+        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+    assertThat(belowMinimum.content()).isEmpty();
+    assertThat(aboveMaximum.content()).isEmpty();
+  }
+
   /** 즉시입주 조건은 active 방 상품의 availableCount가 있을 때만 매칭되는지 확인한다. */
   @Test
   void recommendByCriteria_즉시입주조건은_availableCount가_있어야_매칭된다() {
@@ -1272,7 +1325,7 @@ class ListingMongoIntegrationTest {
     PageResponse<RecommendedListingView> result =
         listingRecommendationService.recommendByCriteria(
             new RecommendationCriteria(
-                "SEOUL", 500000, Set.of("MOVE_IN_NOW"), "SNU", null, 0, 20, null));
+                "SEOUL", 0, 500000, Set.of("MOVE_IN_NOW"), Set.of("SNU"), null, 0, 20, null));
 
     assertThat(result.content()).isEmpty();
   }

@@ -326,17 +326,24 @@ public class DiagnosisService {
 
   // --- 매핑 ---
 
+  /**
+   * 완료된 진단 조건을 listing 공개 추천 쿼리의 값 객체로 변환한다.
+   *
+   * <p>대학 그룹은 diagnosis 모듈의 개념이므로 이 경계에서 개별 대학 코드로 펼친다. 예를 들어 {@code HONGIK_YONSEI_EWHA}는 {@code
+   * HONGIK}, {@code YONSEI}, {@code EWHA}로 전달되고, listing은 이 코드들을 {@code nearbyUniversityCodes}와 ANY
+   * 매칭한다. {@code ETC}는 빈 집합이라 listing에서 대학 필터가 생략된다.
+   *
+   * <p>월세는 진단 저장값인 하한/상한을 모두 넘긴다. listing은 같은 활성 roomOffer가 가격 범위와 주거 조건을 동시에 만족하는지 검사한다.
+   */
   private RecommendationCriteria toCriteria(Diagnosis d, int page, int size, String sort) {
-    // TODO(ADR-0032 그룹화): listing.api.RecommendationCriteria가 아직 단일 university String·단일 예산만 받는다.
-    // 대학 그룹→소속 멤버 코드 Set(d.getUniversity().memberCodes())·월세 하한(min) 전달은 listing 모듈 계약 확장
-    // (별도 패스) 후 연결한다. 그때까지 university 필터는 임시 비활성(STUDY도 지역 기반 추천), 예산은 상한(max)만 전달한다.
     return new RecommendationCriteria(
         d.getRegion() == null ? null : d.getRegion().name(),
-        d.getMonthlyRentMax() == null ? 0 : d.getMonthlyRentMax(),
+        d.getMonthlyRentMin(),
+        d.getMonthlyRentMax(),
         d.getConditions() == null
             ? Set.of()
             : d.getConditions().stream().map(Enum::name).collect(Collectors.toSet()),
-        null,
+        d.getUniversity() == null ? Set.of() : d.getUniversity().memberCodes(),
         d.getDistrict() == null ? null : d.getDistrict().name(),
         page,
         size,

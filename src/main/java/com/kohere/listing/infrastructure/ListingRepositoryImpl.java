@@ -107,13 +107,22 @@ public class ListingRepositoryImpl implements ListingRepository {
     return new ListingMapSearchResult(content, totalElements);
   }
 
-  /** 진단 조건을 지역·학교·예산·방 태그 조건으로 조합해 추천 매물을 조회한다. */
+  /**
+   * 진단 조건을 지역·학교·예산·방 태그 조건으로 조합해 추천 매물을 조회한다.
+   *
+   * <p>진단의 대학 그룹은 이 메서드에 도달하기 전에 개별 대학 코드 집합으로 펼쳐져 있다. 따라서 listing은 그룹 이름을 해석하지 않고, 저장된 {@code
+   * nearbyUniversityCodes}가 전달받은 코드 중 하나라도 포함하는지만 확인한다.
+   *
+   * <p>월세와 방 태그, 즉시 입주 재고 조건은 모두 같은 {@code roomOffers[]} 원소가 만족해야 한다. 서로 다른 방 상품의 가격과 태그가 섞여 매칭되는
+   * 것을 막기 위해 기존 추천 조회와 동일하게 {@code $elemMatch} 안에서 월세 하한/상한과 roomOffer 태그 조건을 함께 묶는다.
+   */
   @Override
   public PageResponse<Listing> recommend(
       String region,
-      int monthlyBudgetMax,
+      Integer monthlyRentMin,
+      Integer monthlyRentMax,
       Set<ConditionTag> conditions,
-      String university,
+      Set<String> universityCodes,
       String district,
       int page,
       int size,
@@ -123,16 +132,20 @@ public class ListingRepositoryImpl implements ListingRepository {
     if (region != null && !region.isBlank()) {
       rootCriteria.add(Criteria.where("address.city").is(region));
     }
-    if (university != null && !university.isBlank()) {
-      rootCriteria.add(Criteria.where("nearbyUniversityCodes").is(university));
+    if (universityCodes != null && !universityCodes.isEmpty()) {
+      rootCriteria.add(Criteria.where("nearbyUniversityCodes").in(universityCodes));
     }
     if (district != null && !district.isBlank()) {
       rootCriteria.add(Criteria.where("address.district").is(district));
     }
 
-    Criteria roomOfferCriteria = Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name());
-    if (monthlyBudgetMax > 0) {
-      roomOfferCriteria = roomOfferCriteria.and("pricing.monthlyRent").lte(monthlyBudgetMax);
+    List<Criteria> roomOfferCriteria = new ArrayList<>();
+    roomOfferCriteria.add(Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name()));
+    if (monthlyRentMin != null) {
+      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").gte(monthlyRentMin));
+    }
+    if (monthlyRentMax != null) {
+      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(monthlyRentMax));
     }
     Set<ConditionTag> requestedConditions = conditions == null ? Set.of() : conditions;
     if (requestedConditions.contains(ConditionTag.NO_ARC)) {
@@ -141,15 +154,15 @@ public class ListingRepositoryImpl implements ListingRepository {
 
     Set<ConditionTag> roomOfferConditions = roomOfferConditions(requestedConditions);
     if (!roomOfferConditions.isEmpty()) {
-      roomOfferCriteria =
-          roomOfferCriteria
-              .and("filterTags")
-              .all(roomOfferConditions.stream().map(Enum::name).toList());
+      roomOfferCriteria.add(
+          Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
       if (roomOfferConditions.contains(ConditionTag.MOVE_IN_NOW)) {
-        roomOfferCriteria = roomOfferCriteria.and("inventory.availableCount").gt(0);
+        roomOfferCriteria.add(Criteria.where("inventory.availableCount").gt(0));
       }
     }
-    rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria));
+    rootCriteria.add(
+        Criteria.where("roomOffers")
+            .elemMatch(new Criteria().andOperator(roomOfferCriteria.toArray(Criteria[]::new))));
 
     Criteria criteria = new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
     return findPage(criteria, page, size, sortBy(sort));

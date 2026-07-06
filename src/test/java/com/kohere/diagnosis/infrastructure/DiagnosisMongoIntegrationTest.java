@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
@@ -289,6 +290,41 @@ class DiagnosisMongoIntegrationTest {
     assertThat(rec.markers().get(0).lat()).isEqualTo(37.5);
     assertThat(rec.markers().get(0).lng()).isEqualTo(126.9);
     assertThat(rec.suggestions()).isNull();
+  }
+
+  @Test
+  @DisplayName("진단 추천 조건은 대학 그룹을 개별 코드로 펼치고 월세 하한·상한을 함께 전달한다")
+  void recommendationsPassExpandedUniversityCodesAndRentRange() {
+    long userId = 24L;
+    completeStudyFlow(userId);
+    DiagnosisCreatedResponse created = diagnosisService.submit(userId);
+    given(listingRecommendationService.recommendByCriteria(any()))
+        .willReturn(
+            pageOf(
+                new RecommendedListingView(
+                    "6858e2000000000000000002",
+                    "Matched Room",
+                    "GOSIWON",
+                    300000,
+                    500000,
+                    "http://img",
+                    37.4,
+                    126.9,
+                    List.of("FEMALE_ONLY"))));
+
+    diagnosisService.getRecommendations(userId, created.diagnosisId(), 0, 20, null);
+
+    ArgumentCaptor<RecommendationCriteria> captor =
+        ArgumentCaptor.forClass(RecommendationCriteria.class);
+    then(listingRecommendationService).should().recommendByCriteria(captor.capture());
+    RecommendationCriteria criteria = captor.getValue();
+    assertThat(criteria.region()).isEqualTo("SEOUL");
+    assertThat(criteria.monthlyRentMin()).isEqualTo(200000);
+    assertThat(criteria.monthlyRentMax()).isEqualTo(500000);
+    assertThat(criteria.conditions()).containsExactly("FEMALE_ONLY");
+    assertThat(criteria.universityCodes()).containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
+    assertThat(criteria.district()).isNull();
+    assertThat(criteria.sort()).isEqualTo("recommended,desc");
   }
 
   @Test

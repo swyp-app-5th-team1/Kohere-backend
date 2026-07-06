@@ -25,15 +25,22 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
 
   private final ListingRepository listingRepository;
 
-  /** 진단 조건을 매물 저장소 조회 조건으로 변환하고 추천 응답 view로 매핑한다. */
+  /**
+   * 진단 조건을 매물 저장소 조회 조건으로 변환하고 추천 응답 view로 매핑한다.
+   *
+   * <p>diagnosis는 모듈 경계를 넘기 위해 조건 태그와 대학 코드를 문자열로 전달한다. 이 서비스는 listing 도메인이 이해하는 {@link
+   * ConditionTag}로 조건 태그만 변환하고, 대학 코드는 listing 저장 모델의 {@code nearbyUniversityCodes} 값과 같은 원시 코드라
+   * 그대로 저장소에 넘긴다.
+   */
   @Override
   public PageResponse<RecommendedListingView> recommendByCriteria(RecommendationCriteria criteria) {
     PageResponse<Listing> listings =
         listingRepository.recommend(
             criteria.region(),
-            criteria.monthlyBudgetMax(),
+            criteria.monthlyRentMin(),
+            criteria.monthlyRentMax(),
             parseConditionTags(criteria.conditions()),
-            criteria.university(),
+            criteria.universityCodes(),
             criteria.district(),
             criteria.page(),
             criteria.size(),
@@ -43,7 +50,12 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
         listings.page());
   }
 
-  /** 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다(diagnosis가 UI 필터 코드로 전달). */
+  /**
+   * 문자열 조건 태그를 listing 도메인의 ConditionTag enum으로 변환한다.
+   *
+   * <p>diagnosis의 {@code DiagnosisCondition}과 listing의 {@link ConditionTag} 이름은 최신 UI 필터 코드 기준으로
+   * 1:1 통일되어 있다. 이 메서드는 모듈 경계를 문자열로 넘긴 조건을 listing 도메인 enum으로 복원한다.
+   */
   private static Set<ConditionTag> parseConditionTags(Set<String> conditions) {
     if (conditions == null || conditions.isEmpty()) {
       return Collections.emptySet();

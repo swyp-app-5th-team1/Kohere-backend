@@ -13,7 +13,7 @@ import java.util.List;
  * <p>docs/api/specs/02-diagnosis-recommendation.md.
  *
  * @param step 질문의 단계 번호(1..6)
- * @param field 제출 필드명(예: region·purpose·university·district·conditions·monthlyBudgetMax·arcStatus)
+ * @param field 제출 필드명(예: region·purpose·university·district·conditions·monthlyRent·arcStatus)
  * @param question 등록 국가 언어로 번역된 질문 라벨
  * @param select 선택 방식(단일/다중·최대 개수)
  * @param options 선택지 목록(③ 단계는 purpose에 따라 대학 또는 지역구 목록만 담는다)
