@@ -14,7 +14,8 @@ import java.util.List;
  * @param type 매물 유형 이름(예: {@code "GOSIWON"})
  * @param monthlyRentMin 월세 범위 하한(KRW 정수) — 활성 방 상품 중 최저 월세
  * @param monthlyRentMax 월세 범위 상한(KRW 정수) — 활성 방 상품 중 최고 월세
- * @param deposit 보증금(KRW 정수) — 대표(최저 월세) 방 상품 기준
+ * @param minDeposit 보증금 범위 하한(KRW 정수) — 활성 방 상품 중 최저 보증금
+ * @param maxDeposit 보증금 범위 상한(KRW 정수) — 활성 방 상품 중 최고 보증금
  * @param thumbnailUrl 대표 이미지 URL
  * @param lat 위도(지도 마커)
  * @param lng 경도(지도 마커)
@@ -26,7 +27,8 @@ public record RecommendedListingView(
     String type,
     int monthlyRentMin,
     int monthlyRentMax,
-    int deposit,
+    int minDeposit,
+    int maxDeposit,
     String thumbnailUrl,
     double lat,
     double lng,

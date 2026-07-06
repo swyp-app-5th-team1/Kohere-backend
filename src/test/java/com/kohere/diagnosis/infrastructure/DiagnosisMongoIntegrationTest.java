@@ -276,6 +276,7 @@ class DiagnosisMongoIntegrationTest {
                     550000,
                     650000,
                     1_000_000,
+                    1_500_000,
                     "http://img",
                     37.5,
                     126.9,
@@ -287,6 +288,8 @@ class DiagnosisMongoIntegrationTest {
     assertThat(rec.content()).hasSize(1);
     assertThat(rec.content().get(0).listingId()).isEqualTo("6858e2000000000000000001");
     assertThat(rec.content().get(0).type()).isEqualTo("CO_LIVING");
+    assertThat(rec.content().get(0).minDeposit()).isEqualTo(1_000_000);
+    assertThat(rec.content().get(0).maxDeposit()).isEqualTo(1_500_000);
     assertThat(rec.markers()).hasSize(1);
     assertThat(rec.markers().get(0).lat()).isEqualTo(37.5);
     assertThat(rec.markers().get(0).lng()).isEqualTo(126.9);
@@ -309,6 +312,7 @@ class DiagnosisMongoIntegrationTest {
                     300000,
                     450000,
                     500000,
+                    700000,
                     "http://img",
                     37.4,
                     126.9,

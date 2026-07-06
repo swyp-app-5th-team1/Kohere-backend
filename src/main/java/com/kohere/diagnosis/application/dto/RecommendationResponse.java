@@ -25,7 +25,8 @@ public record RecommendationResponse(
 
   /**
    * 추천 매물 요약(listing 공개 뷰에서 매핑). type·conditions는 원시 문자열. 월세는 매물의 활성 방 상품 범위를 {@code
-   * monthlyRentMin}/{@code monthlyRentMax} 두 필드로 노출한다.
+   * monthlyRentMin}/{@code monthlyRentMax} 두 필드로 노출하고, 보증금도 같은 방식으로 {@code minDeposit}/{@code
+   * maxDeposit} 범위를 노출한다.
    */
   public record RecommendedListing(
       String listingId,
@@ -33,7 +34,8 @@ public record RecommendationResponse(
       String type,
       int monthlyRentMin,
       int monthlyRentMax,
-      int deposit,
+      int minDeposit,
+      int maxDeposit,
       String thumbnailUrl,
       double lat,
       double lng,

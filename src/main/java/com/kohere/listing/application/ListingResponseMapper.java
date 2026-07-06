@@ -60,8 +60,8 @@ final class ListingResponseMapper {
    * diagnosis 모듈에 전달할 추천 매물 published view를 만든다.
    *
    * <p>추천 조회는 방 상품이 아니라 매물 단위 카드로 내려가므로, 월세는 단일 값이 아니라 활성 방 상품 전체의 최저~최고 범위({@code
-   * monthlyRentMin}/{@code monthlyRentMax})로 집계한다(목록·최근 본 매물 카드와 동일 규칙). 보증금·대표 조건 태그는 대표(최저 월세) 방
-   * 상품 기준으로 채운다.
+   * monthlyRentMin}/{@code monthlyRentMax})로 집계한다(목록·최근 본 매물 카드와 동일 규칙). 보증금도 같은 규칙으로 {@code
+   * minDeposit}/{@code maxDeposit} 범위를 내려주고, 조건 태그는 대표(최저 월세) 방 상품 기준으로 채운다.
    */
   static RecommendedListingView toRecommendedView(Listing listing) {
     List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
@@ -72,7 +72,8 @@ final class ListingResponseMapper {
         listing.getType().name(),
         minMonthlyRent(activeOffers),
         maxMonthlyRent(activeOffers),
-        representative.pricing().deposit(),
+        minDeposit(activeOffers),
+        maxDeposit(activeOffers),
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
@@ -250,7 +251,7 @@ final class ListingResponseMapper {
    * 매물당 카드가 하나만 필요한 흐름에서 사용할 기본 방 상품을 고른다.
    *
    * <p>일반 목록 조회는 더 이상 이 메서드를 쓰지 않는다. 목록은 조건에 맞는 모든 roomOffer를 카드로 펼친다. 이 메서드는 아직 roomOffer 단위로 바뀌지
-   * 않은 찜 목록이나 진단 추천 published view의 기본 가격을 만들 때만 사용한다.
+   * 않은 찜 목록이나 진단 추천 published view의 대표 조건 태그를 만들 때만 사용한다.
    */
   private static Listing.RoomOffer representativeOffer(Listing listing) {
     return listing.getRoomOffers().stream()
