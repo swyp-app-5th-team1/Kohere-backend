@@ -413,7 +413,7 @@
 
 - **인증**: 필수. **본인 소유가 아니면 `403 FORBIDDEN`.**
 - **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria` 류)를 동기 호출하고, `ListingSummaryResponse` 목록 + 좌표를 수신해 위 응답으로 조립한다(엔티티 비공유, DTO/포트로만). 두 변경의 cross-module 계약 영향: (1) **대학** — `RecommendationCriteria.university`는 단일 `String`이 아니라 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 `pricing.monthlyRent >= monthlyRentMin` AND `<= monthlyRentMax`를 **별개 조건**으로 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — ⑥ `arcStatus`가 `NO_ARC`(미발급)이면 `diagnosis`가 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions` 집합에 넣어 전달하고, `listing`은 이를 `propertyPolicies.arcRequired=false` 필터로 해석한다(ARC 불요 매물만 매칭). `ARC_ISSUED`이면 `NO_ARC`를 넣지 않아 ARC 조건 없이 매칭한다. **`listing` 내부 스키마·매칭 로직은 본 스펙 범위 밖**이며 여기서는 진단이 호출할 인터페이스 수준만 기술한다 — 매물 요약 DTO(`ListingSummaryResponse`)의 정본은 매물 탐색 스펙이다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria` 류)를 동기 호출하고, `ListingSummaryResponse` 목록 + 좌표를 수신해 위 응답으로 조립한다(엔티티 비공유, DTO/포트로만). 두 변경의 cross-module 계약 영향: (1) **대학** — `RecommendationCriteria.university`는 단일 `String`이 아니라 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 `pricing.monthlyRent >= monthlyRentMin` AND `<= monthlyRentMax`를 **별개 조건**으로 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — ⑥ `arcStatus`가 `NO_ARC`(미발급)이면 `diagnosis`가 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions` 집합에 넣어 전달하고, `listing`은 이를 `propertyPolicies.arcRequired=false` 필터로 해석한다(ARC 불요 매물만 매칭). `ARC_ISSUED`이면 `NO_ARC`를 넣지 않아 ARC 조건 없이 매칭한다. 추천 결과의 `conditions`는 listing이 응답용으로 계산한 매물 단위 조건 배지 목록이다. ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합에 `propertyPolicies.arcRequired=false`에서 파생한 `NO_ARC` 같은 매물 정책 조건을 더해 내려준다. **`listing` 내부 스키마·매칭 로직은 본 스펙 범위 밖**이며 여기서는 진단이 호출할 인터페이스 수준만 기술한다 — 매물 요약 DTO(`ListingSummaryResponse`)의 정본은 매물 탐색 스펙이다.
 
 #### Path 파라미터
 
@@ -446,7 +446,7 @@
         "maxDeposit": 1500000,
         "lat": 37.555134,
         "lng": 126.936893,
-        "conditions": ["FEMALE_ONLY", "PRIVATE_BATH"],
+        "conditions": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_ARC"],
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
       }
     ],

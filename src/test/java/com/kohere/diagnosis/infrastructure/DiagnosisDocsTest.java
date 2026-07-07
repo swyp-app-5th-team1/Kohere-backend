@@ -758,7 +758,10 @@ class DiagnosisDocsTest {
         optField("data.content[].thumbnailUrl", JsonFieldType.STRING, "썸네일 URL(없으면 null)"),
         field("data.content[].lat", JsonFieldType.NUMBER, "위도(WGS84)"),
         field("data.content[].lng", JsonFieldType.NUMBER, "경도(WGS84)"),
-        field("data.content[].conditions", JsonFieldType.ARRAY, "매물 조건 코드 목록(원시 문자열)"),
+        field(
+            "data.content[].conditions",
+            JsonFieldType.ARRAY,
+            "추천 카드 조건 배지 목록. listing 모듈이 ACTIVE 방 타입들의 filterTags 합집합에 NO_ARC 같은 매물 정책 조건을 더해 내려주는 원시 문자열 코드"),
         field("data.markers[].listingId", JsonFieldType.STRING, "마커 매물 식별자(ObjectId hex 문자열)"),
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커 위도"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커 경도"),

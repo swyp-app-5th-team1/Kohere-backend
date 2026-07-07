@@ -19,7 +19,8 @@ import java.util.List;
  * @param thumbnailUrl 대표 이미지 URL
  * @param lat 위도(지도 마커)
  * @param lng 경도(지도 마커)
- * @param conditions 주거 조건 태그 이름 목록(예: {@code "PRIVATE_BATH"})
+ * @param conditions 추천 카드 조건 배지에 사용할 매물 단위 조건 이름 목록. ACTIVE 방 상품의 {@code filterTags} 합집합에 {@code
+ *     NO_ARC} 같은 매물 정책 파생 조건을 더한 값이다.
  */
 public record RecommendedListingView(
     String listingId,

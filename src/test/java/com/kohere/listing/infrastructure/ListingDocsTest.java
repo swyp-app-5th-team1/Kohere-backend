@@ -73,7 +73,8 @@ class ListingDocsTest {
   private static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
   private static final String LISTINGS_LIST_DESCRIPTION =
       "지도 화면의 바텀시트나 리스트 화면에 보여줄 매물 목록을 가져온다. "
-          + "카드에는 title, imageUrls[0], address.fullAddress, nearestTransit, roomOffers[].pricing, contract, favorited를 주로 쓰면 된다. "
+          + "카드에는 title, imageUrls[0], address.fullAddress, nearestTransit, roomOffers[].pricing, contract, conditions, favorited를 주로 쓰면 된다. "
+          + "conditions는 매물의 ACTIVE 방 타입들이 가진 filterTags 합집합에 NO_ARC 같은 매물 정책 조건을 더한 값이라, 카드의 조건 배지/Property Details features에 바로 사용할 수 있다. "
           + "필터를 보낸 경우 content[].roomOffers[]에는 실제로 조건을 통과한 방 타입만 들어오므로, 카드 가격은 이 배열의 pricing 값으로 최저~최고 범위를 계산하면 된다. "
           + "distanceMeters가 있으면 '320m', '1.2km' 같은 거리 라벨로 표시할 수 있고, 없으면 거리 라벨을 숨기면 된다. "
           + "목록 항목을 눌렀을 때는 listingId로 상세 API를 호출하거나, 같은 listingId의 지도 마커를 선택 상태로 맞추면 된다.";
@@ -89,13 +90,14 @@ class ListingDocsTest {
           + "matchedPlace가 있으면 그 좌표로 지도를 이동하고, content[]를 주변 매물 리스트로 보여주면 된다. "
           + "content[].distanceMeters는 검색된 장소에서 매물까지의 직선거리이므로 검색 결과 카드의 거리 라벨에 사용한다. "
           + "matchedPlace=null이면 검색어와 일치하는 장소가 없는 상태이고, matchedPlace가 있는데 content=[]이면 장소는 찾았지만 주변 매물이 없는 상태다. "
-          + "목록 API와 마찬가지로 roomOffers[]에는 화면에 표시 가능한 방 타입만 들어온다.";
+          + "목록 API와 마찬가지로 conditions는 카드 조건 배지에, roomOffers[]는 가격 범위와 방 타입 목록 계산에 사용하면 된다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
       "목록 카드나 지도 마커에서 매물을 선택한 뒤 상세 화면을 그릴 때 사용한다. "
           + "상단 제목/하트는 title, favorited, favoriteCount를 쓰고, 사진 갤러리는 imageUrls와 roomOffers[].roomImageUrls를 사용한다. "
           + "가격 영역은 roomOffers[].pricing, 계약기간은 contract, 주소/지도는 address와 location, 교통 정보는 nearestTransit으로 표시한다. "
-          + "시설/정책 섹션은 building, propertyPolicies, facilities를 사용하고, 난방은 building이 아니라 facilities.heatingSystem[]에서 읽는다. "
+          + "Property Details의 features/조건 배지는 conditions를 사용하면 되고, 시설/정책 섹션은 building, propertyPolicies, facilities를 사용한다. "
+          + "난방은 building이 아니라 facilities.heatingSystem[]에서 읽는다. "
           + "roomOffers[]는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.";
   private static final String FAVORITE_ADD_SUMMARY = "매물 찜 등록";
   private static final String FAVORITE_ADD_DESCRIPTION =
@@ -926,6 +928,12 @@ class ListingDocsTest {
     fields.add(field(prefix + ".facilities.providedSupplies", JsonFieldType.ARRAY, "제공 물품 칩 목록"));
     fields.add(
         field(
+            prefix + ".conditions",
+            JsonFieldType.ARRAY,
+            "매물 단위 조건 배지 목록. ACTIVE roomOffers[].filterTags의 합집합이며, propertyPolicies.arcRequired=false이면 NO_ARC가 추가됨. "
+                + "카드 조건 배지나 상세 Property Details의 features에 바로 사용하고, 방 타입별 조건은 roomOffers[].filterTags를 사용"));
+    fields.add(
+        field(
             prefix + ".roomOffers[].roomOfferId",
             JsonFieldType.STRING,
             "방 타입 선택, 예약/문의 진입에 사용할 방 타입 ID"));
@@ -966,7 +974,10 @@ class ListingDocsTest {
             JsonFieldType.NULL,
             "다음 입주 가능일. null이면 별도 날짜 문구를 숨김"));
     fields.add(
-        field(prefix + ".roomOffers[].filterTags", JsonFieldType.ARRAY, "방 타입에 붙일 옵션 배지 목록"));
+        field(
+            prefix + ".roomOffers[].filterTags",
+            JsonFieldType.ARRAY,
+            "해당 방 타입에만 붙는 조건 배지 목록. 매물 전체 조건 배지는 상위 conditions를 사용"));
     fields.add(
         field(
             prefix + ".roomOffers[].roomImageUrls",

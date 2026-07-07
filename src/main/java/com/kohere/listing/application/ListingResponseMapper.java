@@ -7,12 +7,15 @@ import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
+import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.RecentListingView;
-import java.util.Comparator;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /** Listing 도메인 모델을 클라이언트 응답 DTO와 모듈 간 published view로 변환한다. */
 final class ListingResponseMapper {
@@ -43,6 +46,7 @@ final class ListingResponseMapper {
         listing.getBuilding(),
         listing.getPropertyPolicies(),
         listing.getFacilities(),
+        listingConditions(listing),
         result.roomOffers().stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
         listing.getDescriptions(),
         listing.getImageUrls(),
@@ -58,11 +62,10 @@ final class ListingResponseMapper {
    *
    * <p>추천 조회는 방 상품이 아니라 매물 단위 카드로 내려가므로, 월세는 단일 값이 아니라 활성 방 상품 전체의 최저~최고 범위({@code
    * monthlyRentMin}/{@code monthlyRentMax})로 집계한다. 보증금도 같은 규칙으로 {@code minDeposit}/{@code
-   * maxDeposit} 범위를 내려주고, 조건 태그는 대표(최저 월세) 방 상품 기준으로 채운다.
+   * maxDeposit} 범위를 내려준다. 조건 태그는 추천 카드의 Property Details 배지에 바로 쓸 수 있도록 매물의 활성 방 상품 전체 기준으로 계산한다.
    */
   static RecommendedListingView toRecommendedView(Listing listing) {
     List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
-    Listing.RoomOffer representative = representativeOffer(listing);
     return new RecommendedListingView(
         listing.getId(),
         listing.getTitle(),
@@ -74,7 +77,7 @@ final class ListingResponseMapper {
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
-        representative.filterTags().stream().map(Enum::name).toList());
+        listingConditions(listing).stream().map(Enum::name).toList());
   }
 
   /**
@@ -125,6 +128,7 @@ final class ListingResponseMapper {
         listing.getBuilding(),
         listing.getPropertyPolicies(),
         listing.getFacilities(),
+        listingConditions(listing),
         activeRoomOfferResponses(listing),
         listing.getDescriptions(),
         listing.getImageUrls(),
@@ -159,6 +163,7 @@ final class ListingResponseMapper {
         listing.getBuilding(),
         listing.getPropertyPolicies(),
         listing.getFacilities(),
+        listingConditions(listing),
         activeRoomOfferResponses(listing),
         listing.getDescriptions(),
         listing.getImageUrls(),
@@ -198,6 +203,7 @@ final class ListingResponseMapper {
         listing.getBuilding(),
         listing.getPropertyPolicies(),
         listing.getFacilities(),
+        listingConditions(listing),
         activeOffers.stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
         listing.getDescriptions(),
         listing.getImageUrls(),
@@ -219,6 +225,26 @@ final class ListingResponseMapper {
         .toList();
   }
 
+  /**
+   * 매물 카드와 상세의 Property Details 배지에 사용할 매물 단위 조건 목록을 만든다.
+   *
+   * <p>{@code roomOffers[].filterTags}는 방 타입마다 다른 조건이다. 프론트가 매물 카드나 상세 상단에서 "이 매물이 제공하는 조건"을 한 줄로
+   * 보여줄 때는 활성 방 상품 전체의 태그 합집합이 필요하다. 그래서 INACTIVE 방은 제외하고 ACTIVE 방의 태그만 합친다.
+   *
+   * <p>{@code NO_ARC}는 방 상품 태그가 아니라 매물 정책({@code propertyPolicies.arcRequired=false})에서 파생되는 조건이다.
+   * 따라서 방 태그 합집합을 만든 뒤 ARC가 필요 없는 매물이면 별도로 {@code NO_ARC}를 추가한다.
+   */
+  private static Set<ConditionTag> listingConditions(Listing listing) {
+    EnumSet<ConditionTag> conditions = EnumSet.noneOf(ConditionTag.class);
+    activeRoomOffers(listing).stream()
+        .map(Listing.RoomOffer::filterTags)
+        .forEach(conditions::addAll);
+    if (!listing.getPropertyPolicies().arcRequired()) {
+      conditions.add(ConditionTag.NO_ARC);
+    }
+    return Collections.unmodifiableSet(conditions);
+  }
+
   /** 방 상품 하나를 상세 응답의 roomOffers 항목으로 변환한다. */
   private static ListingDetailResponse.RoomOfferResponse toRoomOfferResponse(
       Listing.RoomOffer roomOffer) {
@@ -230,19 +256,6 @@ final class ListingResponseMapper {
         roomOffer.inventory(),
         roomOffer.filterTags(),
         roomOffer.roomImageUrls());
-  }
-
-  /**
-   * 매물당 카드가 하나만 필요한 흐름에서 사용할 기본 방 상품을 고른다.
-   *
-   * <p>일반 목록·찜 목록·최근 본 조회는 더 이상 이 메서드를 쓰지 않고, 조건에 맞는 roomOffer를 응답의 {@code roomOffers[]}에 그대로 싣는다.
-   * 이 메서드는 진단 추천 published view의 대표 조건 태그를 만들 때만 사용한다.
-   */
-  private static Listing.RoomOffer representativeOffer(Listing listing) {
-    return listing.getRoomOffers().stream()
-        .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
-        .min(Comparator.comparingInt(offer -> offer.pricing().monthlyRent()))
-        .orElseGet(() -> listing.getRoomOffers().getFirst());
   }
 
   /**

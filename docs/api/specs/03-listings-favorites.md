@@ -114,6 +114,7 @@ Request Body: 없음
           "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
           "providedSupplies": ["Bedding"]
         },
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION", "NO_ARC"],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
@@ -162,7 +163,9 @@ Request Body: 없음
 - 카드 제목은 `title`, 대표 이미지는 `imageUrls[0]`, 주소는 `address.fullAddress`, 교통 배지는 `nearestTransit.name`과 `nearestTransit.walkMinutes`를 사용한다.
 - 가격/보증금/관리비는 `roomOffers[].pricing`에서 읽는다. 여러 방 타입이 있으면 프론트에서 최저~최고 범위를 계산해 카드에 표시한다.
 - 계약기간은 방 타입이 아니라 매물 공통 값인 `contract.minStayMonths/maxStayMonths`를 사용한다.
+- 조건 배지/Property Details features는 상위 `conditions`를 사용한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이며, `propertyPolicies.arcRequired=false`이면 `NO_ARC`가 함께 포함된다.
 - 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
+- 방 타입별 세부 조건 배지가 필요하면 각 `roomOffers[].filterTags`를 사용한다.
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
 - `distanceMeters`가 있으면 거리 라벨로 표시하고, 없으면 숨긴다.
 - `favorited`는 하트 상태, `favoriteCount`는 찜 수 표시값이다. 비로그인 목록에서는 `favorited=false`로 표시하면 된다.
@@ -345,6 +348,7 @@ Request Body: 없음
       "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
       "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
     },
+    "conditions": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE", "NO_ARC"],
     "roomOffers": [
       {
         "roomOfferId": "6858e2000000000000000101",
@@ -388,6 +392,7 @@ Request Body: 없음
 - 상단 제목/하트는 `title`, `favorited`, `favoriteCount`를 사용한다.
 - 사진 갤러리는 `imageUrls`와 `roomOffers[].roomImageUrls`를 사용한다. 카드 대표 이미지는 `imageUrls[0]`를 우선 사용한다.
 - 가격 영역은 `roomOffers[].pricing`, 계약기간은 `contract`, 주소/지도는 `address`와 `location`, 교통 정보는 `nearestTransit`으로 표시한다.
+- Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
 - 시설/정책 섹션은 `building`, `propertyPolicies`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
 - 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
@@ -538,6 +543,7 @@ Request Body: 없음
           "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
           "providedSupplies": ["Bedding"]
         },
+        "conditions": ["ENGLISH_OK", "NO_ARC"],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
@@ -655,6 +661,7 @@ Request Body: 없음
           "commonSpaces": [{ "type": "LOUNGE", "count": 1 }],
           "providedSupplies": ["Toilet Paper"]
         },
+        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION", "NO_ARC"],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000201",

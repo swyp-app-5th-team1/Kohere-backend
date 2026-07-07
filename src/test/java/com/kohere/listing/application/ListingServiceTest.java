@@ -8,14 +8,20 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kohere.common.response.PageInfo;
+import com.kohere.common.response.PageResponse;
+import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingType;
 import com.kohere.listing.domain.RecentListingRepository;
 import com.kohere.listing.domain.SearchPlaceRepository;
+import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -105,6 +111,14 @@ class ListingServiceTest {
     assertThat(response.contract().maxStayMonths()).isEqualTo(12);
     assertThat(response.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
     assertThat(response.propertyPolicies().arcRequired()).isFalse();
+    assertThat(response.conditions())
+        .containsExactlyInAnyOrder(
+            ConditionTag.FEMALE_ONLY,
+            ConditionTag.ADDRESS_REGISTRATION,
+            ConditionTag.PRIVATE_BATH,
+            ConditionTag.NO_MAINT_FEE,
+            ConditionTag.NO_ARC);
+    assertThat(response.conditions()).doesNotContain(ConditionTag.MOVE_IN_NOW);
     assertThat(response.facilities().heatingSystem())
         .containsExactly(Listing.HeatingSystem.CENTRAL);
     assertThat(response.imageUrls()).hasSize(2);
@@ -114,6 +128,43 @@ class ListingServiceTest {
     assertThat(response.roomOffers())
         .allSatisfy(
             roomOffer -> assertThat(roomOffer.status()).isEqualTo(Listing.RoomOfferStatus.ACTIVE));
+  }
+
+  /** 목록 카드의 conditions는 필터를 통과한 방만이 아니라 매물의 ACTIVE 방 전체 기준으로 계산한다. */
+  @Test
+  void getListings_conditions는_ACTIVE방_전체_합집합과_NO_ARC를_반환한다() {
+    Listing listing = sampleListing();
+    when(listingRepository.search(any()))
+        .thenReturn(
+            PageResponse.of(
+                List.of(new ListingSearchResult(listing, List.of(sampleRoomOffer()))),
+                new PageInfo(0, 20, 1, 1, false)));
+
+    ListingSummaryResponse response =
+        listingService.getListings(new ListingSearchRequest()).content().getFirst();
+
+    assertThat(response.roomOffers())
+        .extracting(ListingDetailResponse.RoomOfferResponse::roomOfferId)
+        .containsExactly(ROOM_OFFER_ID);
+    assertThat(response.conditions())
+        .containsExactlyInAnyOrder(
+            ConditionTag.FEMALE_ONLY,
+            ConditionTag.ADDRESS_REGISTRATION,
+            ConditionTag.PRIVATE_BATH,
+            ConditionTag.NO_MAINT_FEE,
+            ConditionTag.NO_ARC);
+    assertThat(response.conditions()).doesNotContain(ConditionTag.MOVE_IN_NOW);
+  }
+
+  /** 진단 추천 view도 목록/상세와 같은 매물 단위 conditions 계산 규칙을 사용한다. */
+  @Test
+  void toRecommendedView_conditions는_ACTIVE방_전체_합집합과_NO_ARC를_반환한다() {
+    RecommendedListingView response = ListingResponseMapper.toRecommendedView(sampleListing());
+
+    assertThat(response.conditions())
+        .containsExactlyInAnyOrder(
+            "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC");
+    assertThat(response.conditions()).doesNotContain("MOVE_IN_NOW");
   }
 
   /** 테스트에서 사용할 공개 매물 도메인 객체다. */
