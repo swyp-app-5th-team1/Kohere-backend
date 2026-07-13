@@ -364,7 +364,7 @@
 
 | enum | 값 | 의미 |
 | --- | --- | --- |
-| `ListingType` | `GOSIWON` | 고시원 |
+| `ListingType` | `GOSHIWON` | 고시원 |
 | | `CO_LIVING` | 코리빙 |
 | | `SHARE_HOUSE` | 셰어하우스 |
 | | `OTHER` | 기타 |
@@ -378,7 +378,7 @@
 | `Currency` | `KRW` | 원화 |
 | `TransitType` | `SUBWAY` | 지하철 |
 | | `BUS` | 버스 |
-| `BuildingType` | `GOSIWON` | 고시원 |
+| `BuildingType` | `GOSHIWON` | 고시원 |
 | | `VILLA` | 빌라 |
 | | `APARTMENT` | 아파트 |
 | | `OFFICETEL` | 오피스텔 |

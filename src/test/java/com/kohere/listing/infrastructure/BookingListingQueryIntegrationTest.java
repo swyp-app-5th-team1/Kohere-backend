@@ -140,7 +140,7 @@ class BookingListingQueryIntegrationTest {
         .schemaVersion(2)
         .landlordId(1L)
         .title("테스트 고시원")
-        .type(ListingType.GOSIWON)
+        .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(

@@ -4,7 +4,7 @@
     "schemaVersion": 2,
     "landlordId": 1,
     "title": "고시원001",
-    "type": "GOSIWON",
+    "type": "GOSHIWON",
     "status": "PUBLISHED",
     "rentalType": "MONTHLY_RENT",
     "refundPolicy": {

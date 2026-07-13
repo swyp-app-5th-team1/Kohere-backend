@@ -11,7 +11,7 @@ import java.util.List;
  *
  * @param listingId 매물 식별자
  * @param title 매물 제목
- * @param type 매물 유형 이름(예: {@code "GOSIWON"})
+ * @param type 매물 유형 이름(예: {@code "GOSHIWON"})
  * @param monthlyRentMin 월세 범위 하한(KRW 정수) — 활성 방 상품 중 최저 월세
  * @param monthlyRentMax 월세 범위 상한(KRW 정수) — 활성 방 상품 중 최고 월세
  * @param minDeposit 보증금 범위 하한(KRW 정수) — 활성 방 상품 중 최저 보증금

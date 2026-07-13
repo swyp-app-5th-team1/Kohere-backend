@@ -119,6 +119,40 @@ class ListingMongoIntegrationTest {
     assertThat(saved.getRoomOffers().getFirst().roomOfferId()).hasSize(24);
   }
 
+  /** 레거시 고시원 enum 문자열은 루트 매물 유형과 중첩 건물 유형에서 모두 정식 값으로 이행한다. */
+  @Test
+  void migration_GOSIWON을_GOSHIWON으로_이행한다() {
+    Listing legacySource =
+        sampleListingBuilder()
+            .building(new Listing.Building(Listing.BuildingType.GOSHIWON, 1, 2, 4, true, true))
+            .build();
+    listingRepository.save(legacySource);
+
+    mongoTemplate
+        .getCollection(ListingDocument.COLLECTION_NAME)
+        .updateOne(
+            new Document("_id", new ObjectId(LISTING_ID)),
+            new Document(
+                "$set", new Document("type", "GOSIWON").append("building.type", "GOSIWON")));
+
+    ListingGoshiwonRenameChangeUnit changeUnit = new ListingGoshiwonRenameChangeUnit();
+    changeUnit.execution(mongoTemplate);
+    changeUnit.execution(mongoTemplate);
+
+    Document migrated =
+        mongoTemplate
+            .getCollection(ListingDocument.COLLECTION_NAME)
+            .find(new Document("_id", new ObjectId(LISTING_ID)))
+            .first();
+    assertThat(migrated).isNotNull();
+    assertThat(migrated.getString("type")).isEqualTo("GOSHIWON");
+    assertThat(migrated.get("building", Document.class).getString("type")).isEqualTo("GOSHIWON");
+
+    Listing found = listingRepository.findById(LISTING_ID).orElseThrow();
+    assertThat(found.getType()).isEqualTo(ListingType.GOSHIWON);
+    assertThat(found.getBuilding().type()).isEqualTo(Listing.BuildingType.GOSHIWON);
+  }
+
   /** v1 문서는 Mongock 이행 후 v2 저장 구조로 바뀌고, 새 도메인 매퍼로 문제없이 읽힌다. */
   @Test
   void migration_v1_문서를_v2_저장구조로_이행한다() {
@@ -130,6 +164,7 @@ class ListingMongoIntegrationTest {
             new InsertOneOptions().bypassDocumentValidation(true));
 
     new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingGoshiwonRenameChangeUnit().execution(mongoTemplate);
 
     Document migrated =
         mongoTemplate
@@ -137,6 +172,7 @@ class ListingMongoIntegrationTest {
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
+    assertThat(migrated.getString("type")).isEqualTo("GOSHIWON");
     assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
     assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
     assertThat(migrated.getString("genderPolicy")).isEqualTo("FEMALE_ONLY");
@@ -349,7 +385,7 @@ class ListingMongoIntegrationTest {
     assertThat(response.matchedPlace().name()).isEqualTo("서울대학교");
     assertThat(response.content()).hasSize(1);
     assertThat(response.content().getFirst().listingId())
-        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+        .isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
     assertThat(response.content().getFirst().roomOffers().getFirst().pricing().monthlyRent())
         .isEqualTo(300000);
     assertThat(response.content().getFirst().contract().minStayMonths()).isEqualTo(2);
@@ -420,7 +456,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 null,
                 500000,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
                 ListingSort.PRICE_ASC,
                 null,
@@ -430,10 +466,10 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().listing().getId())
-        .isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+        .isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
     assertThat(result.content().getFirst().roomOffers())
         .extracting(Listing.RoomOffer::roomOfferId)
-        .containsExactly(ListingSeedFixtures.GOSIWON_001_ROOM_OFFER_ID);
+        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ROOM_OFFER_ID);
   }
 
   /** 필터가 없으면 공개 매물 안의 모든 active roomOffer가 매물 카드의 범위 계산 대상이 된다. */
@@ -483,7 +519,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
@@ -537,7 +573,7 @@ class ListingMongoIntegrationTest {
                 600000,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
                 ListingSort.PRICE_ASC,
                 null,
@@ -612,7 +648,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
-            Set.of(ListingType.GOSIWON),
+            Set.of(ListingType.GOSHIWON),
             Set.of(),
             ListingSort.RECOMMENDED,
             null,
@@ -627,7 +663,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
-            Set.of(ListingType.GOSIWON),
+            Set.of(ListingType.GOSHIWON),
             Set.of(),
             ListingSort.RECOMMENDED,
             null,
@@ -682,7 +718,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.MOVE_IN_NOW),
                 ListingSort.RECOMMENDED,
                 null,
@@ -730,7 +766,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.ADDRESS_REGISTRATION),
                 ListingSort.RECOMMENDED,
                 null,
@@ -774,7 +810,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
-            Set.of(ListingType.GOSIWON),
+            Set.of(ListingType.GOSHIWON),
             Set.of(),
             ListingSort.RECOMMENDED,
             null,
@@ -789,7 +825,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             null,
-            Set.of(ListingType.GOSIWON),
+            Set.of(ListingType.GOSHIWON),
             Set.of(ConditionTag.NO_ARC),
             ListingSort.RECOMMENDED,
             null,
@@ -853,7 +889,7 @@ class ListingMongoIntegrationTest {
     request.setNeLat(37.50);
     request.setNeLng(127.00);
     request.setConditions(Set.of(ConditionTag.FEMALE_ONLY));
-    request.setType(Set.of(ListingType.GOSIWON));
+    request.setType(Set.of(ListingType.GOSHIWON));
 
     PageResponse<ListingSummaryResponse> result = listingService.getListings(request);
 
@@ -948,7 +984,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 null,
                 500000,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
                 ListingSort.RECOMMENDED,
                 null,
@@ -959,7 +995,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.total()).isEqualTo(1);
     assertThat(result.listings()).hasSize(1);
-    assertThat(result.listings().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+    assertThat(result.listings().getFirst().getId()).isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
   }
 
   /** 지도 마커는 roomOffer 카드 수가 아니라 조건에 맞는 Listing 건물 수 기준으로 1개만 반환한다. */
@@ -994,7 +1030,7 @@ class ListingMongoIntegrationTest {
                 null,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
                 ListingSort.RECOMMENDED,
                 null,
@@ -1361,7 +1397,7 @@ class ListingMongoIntegrationTest {
                 200000,
                 null,
                 null,
-                Set.of(ListingType.GOSIWON),
+                Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
                 ListingSort.RECOMMENDED,
                 null,
@@ -1392,7 +1428,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     RecommendedListingView listing = result.content().getFirst();
-    assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSIWON_001_ID);
+    assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
     assertThat(listing.monthlyRentMin()).isEqualTo(300000);
     assertThat(listing.monthlyRentMax()).isEqualTo(300000);
     assertThat(listing.minDeposit()).isEqualTo(300000);
@@ -1422,11 +1458,11 @@ class ListingMongoIntegrationTest {
 
     assertThat(matchedByGroupMember.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
     assertThat(notMatchedByDifferentUniversity.content()).isEmpty();
     assertThat(noUniversityFilter.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
   }
 
   /** 추천 월세 하한과 상한은 같은 active roomOffer의 pricing.monthlyRent에 함께 적용된다. */
@@ -1449,7 +1485,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(inRange.content())
         .extracting(RecommendedListingView::listingId)
-        .containsExactly(ListingSeedFixtures.GOSIWON_001_ID);
+        .containsExactly(ListingSeedFixtures.GOSHIWON_001_ID);
     assertThat(belowMinimum.content()).isEmpty();
     assertThat(aboveMaximum.content()).isEmpty();
   }
@@ -1540,6 +1576,7 @@ class ListingMongoIntegrationTest {
         .append("schemaVersion", 1)
         .append("landlordId", 1L)
         .append("title", "레거시 고시원")
+        // 신규 enum으로 읽기 전에 ChangeUnit이 바꿔야 하는 실제 레거시 저장값이다.
         .append("type", "GOSIWON")
         .append("status", "PUBLISHED")
         .append(
@@ -1629,7 +1666,7 @@ class ListingMongoIntegrationTest {
         .schemaVersion(2)
         .landlordId(1L)
         .title("테스트 고시원")
-        .type(ListingType.GOSIWON)
+        .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(

@@ -7,7 +7,7 @@
 
 공통 enum:
 
-- `ListingType`: `GOSIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
+- `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
 - `ListingSort`(이름 기반 정렬 프리셋): `RECOMMENDED`(기본), `PRICE_ASC`, `DISTANCE`
 - `ConditionTag`(매물 옵션 필터 9종): `MOVE_IN_NOW`(즉시 입주), `FEMALE_ONLY`(여성 전용), `MEALS_INCLUDED`(식사 제공), `DOUBLE_ROOM`(2인실), `PRIVATE_BATH`(개인 욕실), `ENGLISH_OK`(영어 소통 가능), `ADDRESS_REGISTRATION`(전입신고 가능), `NO_MAINT_FEE`(관리비 없음), `NO_ARC`(ARC 없이 가능)
 - `ContractTerm`(계약기간, 개월): `ONE_MONTH`, `THREE_MONTHS`, `SIX_MONTHS`, `TWELVE_MONTHS`
@@ -49,7 +49,7 @@ Query 파라미터:
 | `maxBudget` | integer(KRW) | 선택 | — | 월세 최대값. 카드 가격은 응답의 `roomOffers[].pricing`으로 계산한다 |
 | `minDeposit` | integer(KRW) | 선택 | — | 보증금 최소값 |
 | `maxDeposit` | integer(KRW) | 선택 | — | 보증금 최대값 |
-| `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSIWON,CO_LIVING`) |
+| `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSHIWON,CO_LIVING`) |
 | `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION`, `NO_ARC` 등을 반복 파라미터 또는 콤마로 전송 |
 | `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED` 추천순, `PRICE_ASC` 낮은 월세순, `DISTANCE` 현재 지도 중심에서 가까운 순 |
 | `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호. 무한스크롤의 다음 페이지 요청에 사용 |
@@ -67,7 +67,7 @@ Request Body: 없음
       {
         "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
-        "type": "GOSIWON",
+        "type": "GOSHIWON",
         "status": "PUBLISHED",
         "rentalType": "MONTHLY_RENT",
         "refundPolicy": {
@@ -298,7 +298,7 @@ Request Body: 없음
   "data": {
     "listingId": "6858e2000000000000000001",
     "title": "신촌 도보 5분 1인실 고시원",
-    "type": "GOSIWON",
+    "type": "GOSHIWON",
     "status": "PUBLISHED",
     "rentalType": "MONTHLY_RENT",
     "refundPolicy": {
@@ -496,7 +496,7 @@ Request Body: 없음
       {
         "listingId": "6858e2000000000000000001",
         "title": "신촌 도보 5분 1인실 고시원",
-        "type": "GOSIWON",
+        "type": "GOSHIWON",
         "status": "PUBLISHED",
         "rentalType": "MONTHLY_RENT",
         "refundPolicy": {

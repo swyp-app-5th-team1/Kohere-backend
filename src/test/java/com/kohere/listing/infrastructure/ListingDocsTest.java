@@ -68,7 +68,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Import(TestcontainersConfiguration.class)
 class ListingDocsTest {
 
-  private static final String LISTING_ID = ListingSeedFixtures.GOSIWON_001_ID;
+  private static final String LISTING_ID = ListingSeedFixtures.GOSHIWON_001_ID;
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
   private static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
   private static final String LISTINGS_LIST_DESCRIPTION =
@@ -176,7 +176,7 @@ class ListingDocsTest {
                 .param("neLng", "126.95141")
                 .param("maxBudget", "500000")
                 .param("maxDeposit", "500000")
-                .param("type", "GOSIWON")
+                .param("type", "GOSHIWON")
                 .param("conditions", "FEMALE_ONLY")
                 .param("conditions", "ADDRESS_REGISTRATION")
                 .param("conditions", "NO_ARC")
@@ -185,6 +185,7 @@ class ListingDocsTest {
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].type").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].rentalType").value("MONTHLY_RENT"))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0]").value("CENTRAL"))
@@ -253,7 +254,7 @@ class ListingDocsTest {
                 .param("neLng", "126.95141")
                 .param("maxBudget", "500000")
                 .param("maxDeposit", "500000")
-                .param("type", "GOSIWON")
+                .param("type", "GOSHIWON")
                 .param("conditions", "FEMALE_ONLY")
                 .param("conditions", "ADDRESS_REGISTRATION")
                 .param("conditions", "NO_ARC"))
@@ -276,6 +277,7 @@ class ListingDocsTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.listingId").value(LISTING_ID))
         .andExpect(jsonPath("$.data.title").value("고시원001"))
+        .andExpect(jsonPath("$.data.type").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.rentalType").value("MONTHLY_RENT"))
         .andExpect(jsonPath("$.data.building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.facilities.heatingSystem[0]").value("CENTRAL"))
@@ -332,6 +334,7 @@ class ListingDocsTest {
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].type").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].favorited").value(true))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0]").value("CENTRAL"))
@@ -351,6 +354,7 @@ class ListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.content[0].type").value("GOSHIWON"))
         .andExpect(jsonPath("$.data.content[0].favorited").value(true))
         .andExpect(jsonPath("$.data.content[0].building.heatingSystem").doesNotExist())
         .andExpect(jsonPath("$.data.content[0].facilities.heatingSystem[0]").value("CENTRAL"))
@@ -381,9 +385,9 @@ class ListingDocsTest {
                 responseFields(favoriteToggleResponseFields())));
   }
 
-  /** 프론트 호환 별칭 GOSHIWON을 목록·지도 필터에서 받아 기존 GOSIWON 매물을 조회한다. */
+  /** 정식 매물 유형 GOSHIWON으로 목록·지도 필터가 정상 동작하는지 검증한다. */
   @Test
-  void acceptsGoshiwonAliasForListingFilters() throws Exception {
+  void filtersListingsByCanonicalGoshiwonType() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
 
     mockMvc
@@ -395,7 +399,7 @@ class ListingDocsTest {
                 .param("size", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listingId").value(LISTING_ID))
-        .andExpect(jsonPath("$.data.content[0].type").value("GOSIWON"));
+        .andExpect(jsonPath("$.data.content[0].type").value("GOSHIWON"));
 
     mockMvc
         .perform(
@@ -702,7 +706,7 @@ class ListingDocsTest {
       parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW). 보증금 필터 슬라이더/입력값의 상한"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. 예: GOSIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
+          .description("매물 유형 필터 칩. 예: GOSHIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
       parameterWithName("conditions")
           .optional()
           .description(
@@ -735,7 +739,7 @@ class ListingDocsTest {
       parameterWithName("maxDeposit").optional().description("보증금 최대값(KRW)"),
       parameterWithName("type")
           .optional()
-          .description("매물 유형 필터 칩. 예: GOSIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
+          .description("매물 유형 필터 칩. 예: GOSHIWON, CO_LIVING, SHARE_HOUSE, OTHER"),
       parameterWithName("conditions")
           .optional()
           .description("옵션 필터 칩 코드. 목록 API와 같은 필터를 보내면 지도 마커와 바텀시트 목록을 같은 조건으로 맞출 수 있음")
@@ -856,7 +860,7 @@ class ListingDocsTest {
         field(
             prefix + ".type",
             JsonFieldType.STRING,
-            "매물 유형 배지. 예: GOSIWON, CO_LIVING, SHARE_HOUSE"));
+            "매물 유형 배지. 예: GOSHIWON, CO_LIVING, SHARE_HOUSE"));
     fields.add(
         field(
             prefix + ".status",

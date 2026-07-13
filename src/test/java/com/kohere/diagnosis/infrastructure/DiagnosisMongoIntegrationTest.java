@@ -308,7 +308,7 @@ class DiagnosisMongoIntegrationTest {
                 new RecommendedListingView(
                     "6858e2000000000000000002",
                     "Matched Room",
-                    "GOSIWON",
+                    "GOSHIWON",
                     300000,
                     450000,
                     500000,

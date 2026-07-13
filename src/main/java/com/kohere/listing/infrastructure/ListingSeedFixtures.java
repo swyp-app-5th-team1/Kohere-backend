@@ -10,21 +10,21 @@ import java.util.Set;
 /** 로컬 개발과 테스트에서 사용할 매물 seed 도메인 객체를 만든다. */
 final class ListingSeedFixtures {
 
-  static final String GOSIWON_001_ID = "6858e2000000000000000001";
-  static final String GOSIWON_001_ROOM_OFFER_ID = "6858e2000000000000000101";
+  static final String GOSHIWON_001_ID = "6858e2000000000000000001";
+  static final String GOSHIWON_001_ROOM_OFFER_ID = "6858e2000000000000000101";
 
   private ListingSeedFixtures() {}
 
   /** seed로 적재할 매물 목록이다. 새 임시 매물은 이 목록에 추가한다. */
   static List<Listing> listings() {
-    return List.of(gosiwon001());
+    return List.of(goshiwon001());
   }
 
   /** Numbers 첫 번째 예시 행을 바탕으로 만든 고시원 seed 매물이다. */
-  static Listing gosiwon001() {
+  static Listing goshiwon001() {
     Listing.RoomOffer roomOffer =
         new Listing.RoomOffer(
-            GOSIWON_001_ROOM_OFFER_ID,
+            GOSHIWON_001_ROOM_OFFER_ID,
             "스탠다드 1인실",
             Listing.RoomOfferStatus.ACTIVE,
             new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
@@ -37,11 +37,11 @@ final class ListingSeedFixtures {
             List.of());
 
     return Listing.builder()
-        .id(GOSIWON_001_ID)
+        .id(GOSHIWON_001_ID)
         .schemaVersion(2)
         .landlordId(1L)
         .title("고시원001")
-        .type(ListingType.GOSIWON)
+        .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(

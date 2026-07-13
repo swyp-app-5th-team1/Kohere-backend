@@ -117,7 +117,7 @@ public class Listing {
   /** 건물의 물리적 형태 또는 주거 유형이다. */
   public enum BuildingType {
     /** 고시원 또는 고시텔 유형이다. */
-    GOSIWON,
+    GOSHIWON,
 
     /** 빌라 유형이다. */
     VILLA,
