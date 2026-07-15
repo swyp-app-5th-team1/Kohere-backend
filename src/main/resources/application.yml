@@ -78,6 +78,12 @@ app:
     client-secret-ttl-seconds: 1800 # client_secret 캐시 만료(≤6개월, 만료 전 재서명)
     connect-timeout-millis: 3000 # Apple 외부 호출 connect 타임아웃(탈퇴·로그인 비차단용 짧은 값)
     read-timeout-millis: 5000 # Apple 외부 호출 read 타임아웃
+  naver:
+    search:
+      # 네이버 지역 검색의 비밀이 아닌 네트워크 기본값. Client ID/Secret은 환경별 프로파일에서만 주입한다.
+      base-url: https://openapi.naver.com
+      connect-timeout-millis: 3000
+      read-timeout-millis: 5000
 
 # MongoDB 1회성 마이그레이션(Mongock @ChangeUnit) — Flyway의 MongoDB 대응(ADR-0032).
 # @ChangeUnit은 컬렉션 소유 모듈의 infrastructure에 두고 com.kohere 하위를 스캔한다. test는 비활성(application-test.yml).

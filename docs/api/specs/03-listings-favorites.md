@@ -20,6 +20,7 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
+| GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) | 필수 | 200 |
 | GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
 | GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
 | GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 + 최근 본 매물 기록 | 필수 | 200 |
@@ -176,6 +177,61 @@ Request Body: 없음
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
 | 400 | `MALFORMED_REQUEST` | 타입 불일치(숫자 파라미터에 비숫자 등) |
+
+### GET /api/v1/listings/places — 네이버 장소 후보 검색
+
+- 설명: 지도 검색창의 키워드를 네이버 지역 검색 API로 조회하고, 사용자가 선택할 장소 후보를 정확도순 최대 5개 반환한다.
+- 인증: 필수
+- 책임 범위: 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다. 프론트가 후보 좌표로 지도를 이동한 뒤 계산한 bounds를 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 전달한다.
+
+Query 파라미터:
+
+| 이름 | 타입 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- | --- |
+| `keyword` | string | 필수 | — | 지도 검색창 입력값. 앞뒤 공백 제거 후 1~50자 |
+
+서버가 네이버 호출에 고정하는 값:
+
+| 이름 | 값 | 설명 |
+| --- | --- | --- |
+| `display` | `5` | 한 번에 받을 최대 장소 후보 수 |
+| `start` | `1` | 지역 검색 API가 허용하는 검색 시작 위치 |
+| `sort` | `random` | 네이버 문서상 정확도 내림차순 |
+
+Request Body: 없음
+
+성공 Response (200):
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "title": "<b>경희대학교</b> 서울캠퍼스",
+        "address": "서울특별시 동대문구 회기동 1-5",
+        "roadAddress": "서울특별시 동대문구 경희대로 26",
+        "lat": 37.5964494,
+        "lng": 127.0525009
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+- 네이버 원본의 `mapx/mapy`는 서버가 WGS84 십진수 `lng/lat`으로 변환한다.
+- `title`은 검색어 강조를 위한 네이버의 `<b>` 태그를 그대로 유지한다.
+- 정상적으로 검색 결과가 없으면 `200 OK`와 `data.items=[]`를 반환한다.
+- 네이버 응답의 `lastBuildDate`, `total`, `start`, `display`, `link`, `category`, `description`, `telephone`은 공개하지 않는다.
+
+발생 가능한 에러:
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~50자) 위반 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 인증 토큰 누락·위조·만료 |
+| 502 | `UPSTREAM_ERROR` | 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
 
 ### GET /api/v1/listings/map — 지도 마커 조회
 

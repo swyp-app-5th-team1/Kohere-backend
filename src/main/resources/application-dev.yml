@@ -61,3 +61,8 @@ app:
     # 사업자번호 검증(비즈노, ADR-0033). enabled·API 키 모두 SSM→refresh-env(.env)로 주입(폴백 없음).
     enabled: ${BIZNO_ENABLED}
     api-key: ${BIZNO_API_KEY} # 시크릿(SSM)
+  naver:
+    search:
+      # SSM→refresh-env(.env)→compose 환경변수로 주입하며 누락 시 dev 기동을 실패시킨다.
+      client-id: ${NAVER_SEARCH_CLIENT_ID}
+      client-secret: ${NAVER_SEARCH_CLIENT_SECRET}

@@ -107,6 +107,9 @@ services:
       # 실 검증 테스트 시 BIZNO_ENABLED=true + API 키를 채운다.
       BIZNO_ENABLED: ${BIZNO_ENABLED:-false}
       BIZNO_API_KEY: ${BIZNO_API_KEY:-local-dev-bizno-key}
+      # 네이버 지역 검색 API — 실제 값은 gitignore된 .env에서 읽어 컨테이너 환경변수로만 전달한다.
+      NAVER_SEARCH_CLIENT_ID: ${NAVER_SEARCH_CLIENT_ID:-}
+      NAVER_SEARCH_CLIENT_SECRET: ${NAVER_SEARCH_CLIENT_SECRET:-}
     ports:
       - "8080:8080"
 

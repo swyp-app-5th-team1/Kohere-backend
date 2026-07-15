@@ -71,4 +71,8 @@ app:
     # API KEY는 환경변수 관리 — 로컬은 폴백값(운영 미사용). 실검증 테스트 시 env로 실제 값 주입.
     enabled: ${BIZNO_ENABLED:false}
     api-key: ${BIZNO_API_KEY:local-dev-bizno-key}
-
+  naver:
+    search:
+      # 로컬은 프로젝트 루트 .env에서 주입한다. 빈 값이면 다른 기능은 기동되고 장소 검색 호출만 502로 실패한다.
+      client-id: ${NAVER_SEARCH_CLIENT_ID:}
+      client-secret: ${NAVER_SEARCH_CLIENT_SECRET:}

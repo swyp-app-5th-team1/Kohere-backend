@@ -50,3 +50,8 @@ app:
     # 사업자번호 검증(비즈노, ADR-0033). enabled·API 키 모두 env/SSM로 주입(폴백 없음).
     enabled: ${BIZNO_ENABLED}
     api-key: ${BIZNO_API_KEY} # 시크릿(SSM)
+  naver:
+    search:
+      # 운영 인증정보는 환경변수/Secrets Manager에서만 주입하고 저장소에는 값을 남기지 않는다.
+      client-id: ${NAVER_SEARCH_CLIENT_ID}
+      client-secret: ${NAVER_SEARCH_CLIENT_SECRET}

@@ -4,6 +4,7 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.docume
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -22,6 +23,9 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.listing.domain.ListingRepository;
+import com.kohere.listing.domain.PlaceSearchClient;
+import com.kohere.listing.domain.PlaceSearchResult;
+import com.kohere.listing.domain.PlaceSearchUpstreamException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +51,7 @@ import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultMatcher;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -91,6 +96,12 @@ class ListingDocsTest {
           + "content[].distanceMeters는 검색된 장소에서 매물까지의 직선거리이므로 검색 결과 카드의 거리 라벨에 사용한다. "
           + "matchedPlace=null이면 검색어와 일치하는 장소가 없는 상태이고, matchedPlace가 있는데 content=[]이면 장소는 찾았지만 주변 매물이 없는 상태다. "
           + "목록 API와 마찬가지로 conditions는 카드 조건 배지에, roomOffers[]는 가격 범위와 방 타입 목록 계산에 사용하면 된다.";
+  private static final String LISTING_PLACES_SUMMARY = "네이버 장소 후보 검색";
+  private static final String LISTING_PLACES_DESCRIPTION =
+      "지도 검색창에 입력한 keyword로 네이버 지역 검색 API를 호출해 정확도순 장소 후보를 최대 5개 반환한다. "
+          + "프론트는 items[].title/address/roadAddress를 검색 결과 목록에 표시하고, 사용자가 선택한 items[].lat/lng로 지도 카메라를 이동한다. "
+          + "카메라 이동이 끝나면 지도 SDK에서 bounds를 계산해 /api/v1/listings와 /api/v1/listings/map을 호출한다. "
+          + "이 API는 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다.";
   private static final String LISTING_DETAIL_SUMMARY = "매물 상세 조회";
   private static final String LISTING_DETAIL_DESCRIPTION =
       "목록 카드나 지도 마커에서 매물을 선택한 뒤 상세 화면을 그릴 때 사용한다. "
@@ -142,6 +153,7 @@ class ListingDocsTest {
   @Autowired private JwtProperties jwtProperties;
   @Autowired private JwtTokenService jwtTokenService;
   @Autowired private ListingRepository listingRepository;
+  @MockitoBean private PlaceSearchClient placeSearchClient;
 
   private MockMvc mockMvc;
 
@@ -385,6 +397,49 @@ class ListingDocsTest {
                 responseFields(favoriteToggleResponseFields())));
   }
 
+  /** 네이버 장소 후보의 정상·빈 응답을 검증하고 새 장소 검색 API의 Swagger 스니펫을 생성한다. */
+  @Test
+  void generatesListingPlaceSnippets() throws Exception {
+    String token = jwtTokenService.issueAccessToken(1L);
+    PlaceSearchResult place =
+        new PlaceSearchResult(
+            "<b>경희대학교</b> 서울캠퍼스",
+            "서울특별시 동대문구 회기동 1-5",
+            "서울특별시 동대문구 경희대로 26",
+            37.5964494,
+            127.0525009);
+    when(placeSearchClient.search("경희대")).thenReturn(List.of(place));
+
+    mockMvc
+        .perform(
+            get("/api/v1/listings/places")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("keyword", "경희대"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items[0].title").value("<b>경희대학교</b> 서울캠퍼스"))
+        .andExpect(jsonPath("$.data.items[0].address").value("서울특별시 동대문구 회기동 1-5"))
+        .andExpect(jsonPath("$.data.items[0].roadAddress").value("서울특별시 동대문구 경희대로 26"))
+        .andExpect(jsonPath("$.data.items[0].lat").value(37.5964494))
+        .andExpect(jsonPath("$.data.items[0].lng").value(127.0525009))
+        .andDo(
+            document(
+                "listing-places",
+                resourceDetails()
+                    .summary(LISTING_PLACES_SUMMARY)
+                    .description(LISTING_PLACES_DESCRIPTION),
+                queryParameters(placeQueryParameters()),
+                responseFields(placeResponseFields())));
+
+    when(placeSearchClient.search("없는장소")).thenReturn(List.of());
+    mockMvc
+        .perform(
+            get("/api/v1/listings/places")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("keyword", "없는장소"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items").isEmpty());
+  }
+
   /** 정식 매물 유형 GOSHIWON으로 목록·지도 필터가 정상 동작하는지 검증한다. */
   @Test
   void filtersListingsByCanonicalGoshiwonType() throws Exception {
@@ -420,6 +475,41 @@ class ListingDocsTest {
   void generatesListingErrorSnippets() throws Exception {
     String token = jwtTokenService.issueAccessToken(1L);
     String expiredToken = expiredAccessToken();
+
+    // ===== GET /listings/places =====
+    perform(
+        get("/api/v1/listings/places")
+            .header(HttpHeaders.AUTHORIZATION, bearer(FORGED_TOKEN))
+            .param("keyword", "경희대"),
+        status().isUnauthorized(),
+        "UNAUTHENTICATED",
+        "listing-places-unauthenticated",
+        LISTING_PLACES_SUMMARY,
+        LISTING_PLACES_DESCRIPTION);
+
+    perform(
+        get("/api/v1/listings/places")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("keyword", "   "),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listing-places-invalid-keyword",
+        LISTING_PLACES_SUMMARY,
+        LISTING_PLACES_DESCRIPTION);
+
+    when(placeSearchClient.search("경희대"))
+        .thenThrow(
+            new PlaceSearchUpstreamException(
+                new IllegalStateException("Naver test upstream unavailable")));
+    perform(
+        get("/api/v1/listings/places")
+            .header(HttpHeaders.AUTHORIZATION, bearer(token))
+            .param("keyword", "경희대"),
+        status().isBadGateway(),
+        "UPSTREAM_ERROR",
+        "listing-places-upstream-error",
+        LISTING_PLACES_SUMMARY,
+        LISTING_PLACES_DESCRIPTION);
 
     // ===== GET /listings =====
     perform(
@@ -685,6 +775,14 @@ class ListingDocsTest {
         + "(error-response-guide §1·§4).";
   }
 
+  /** 네이버 장소 후보 API가 프론트에서 받는 유일한 검색 조건을 문서화한다. */
+  private static ParameterDescriptor[] placeQueryParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("keyword")
+          .description("지도 검색창 입력값(1~50자). 서버가 trim한 뒤 네이버 지역 검색 API의 query로 전달")
+    };
+  }
+
   /** 목록 API의 query parameter 문서 정의다. */
   private static ParameterDescriptor[] listQueryParameters() {
     return new ParameterDescriptor[] {
@@ -720,6 +818,18 @@ class ListingDocsTest {
       parameterWithName("page").optional().description("0부터 시작하는 페이지 번호. 무한스크롤이면 다음 페이지 요청에 사용"),
       parameterWithName("size").optional().description("한 번에 가져올 매물 수. 기본 20, 최대 100")
     };
+  }
+
+  /** 네이버 원본 메타데이터를 제외하고 프론트에 공개하는 장소 후보 필드만 문서화한다. */
+  private static List<FieldDescriptor> placeResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
+        field("data.items[].title", JsonFieldType.STRING, "검색어 강조 <b> 태그를 포함할 수 있는 네이버 장소명"),
+        field("data.items[].address", JsonFieldType.STRING, "지번 주소. 네이버가 제공하지 않으면 빈 문자열"),
+        field("data.items[].roadAddress", JsonFieldType.STRING, "도로명 주소. 네이버가 제공하지 않으면 빈 문자열"),
+        field("data.items[].lat", JsonFieldType.NUMBER, "선택 시 지도 중심 이동에 사용할 WGS84 위도"),
+        field("data.items[].lng", JsonFieldType.NUMBER, "선택 시 지도 중심 이동에 사용할 WGS84 경도"),
+        errorNull());
   }
 
   /** 지도 마커 API의 query parameter 문서 정의다. */

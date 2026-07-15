@@ -29,6 +29,11 @@ app:
     team-id: test-team-id
     key-id: test-key-id
     private-key: test-apple-private-key-placeholder
+  naver:
+    search:
+      # 테스트 컨텍스트 기동용 더미 값. HTTP 어댑터 단위 테스트는 MockRestServiceServer로 실제 네트워크를 차단한다.
+      client-id: test-naver-client-id
+      client-secret: test-naver-client-secret
 
 # Mongock 비활성 — 테스트는 Mongo 미가용(슬라이스 테스트만 Testcontainers). 1회성 마이그레이션은 test에서 돌리지 않는다.
 mongock:
