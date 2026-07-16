@@ -1,4 +1,4 @@
-# US-3-3 — 키워드 검색(학교명·지역명·지하철역명)
+# US-3-3 — 네이버 장소 검색 및 주변 매물 조회
 
 > 모듈: 매물 탐색 · 찜 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/03-listings-favorites.md)
 
@@ -7,26 +7,53 @@ sequenceDiagram
     actor U as 사용자
     participant C as 앱(클라이언트)
     participant LIST as listing 모듈
+    participant NAVER as 네이버 지역 검색 API
     participant DB as MongoDB
 
-    U->>C: 키워드 입력 (예 연세대학교)
-    C->>LIST: GET /api/v1/listings/search<br/>keyword=연세대학교&sort=DISTANCE<br/>&page=0&size=20<br/>(Authorization 선택)
-    Note over LIST: 키워드를 POI 사전(학교/지역/역)에 매칭<br/>매칭 위치 좌표 기준으로 주변 매물 조회<br/>비로그인은 favorited=false
-    alt 키워드 길이 위반 (누락/공백/1~50자 초과)
+    U->>C: 키워드 입력 (예 경희대)
+    C->>LIST: GET /api/v1/listings/places?keyword=경희대<br/>Authorization: Bearer accessToken
+    alt 인증 실패
+        LIST-->>C: 401 Unauthorized<br/>error.code=UNAUTHENTICATED 또는 TOKEN_EXPIRED
+        C-->>U: 로그인 또는 토큰 재발급 안내
+    else 키워드 위반 (누락/공백/50자 초과)
         LIST-->>C: 400 Bad Request<br/>error.code=INVALID_INPUT
         C-->>U: 검색어 입력 오류 안내
-    else POI 매칭 (주변 매물 조회)
-        LIST->>DB: 매칭 위치 좌표 기준 키워드 매물 조회
-        DB-->>LIST: 주변 매물 페이지
-        LIST-->>C: 200 OK<br/>data.matchedPlace( type, name, lat, lng )<br/>data.content[]( 주변 매물 ), data.page
-        C-->>U: 매칭 위치 + 주변 매물 표시
+    else 유효한 검색 요청
+        LIST->>NAVER: GET /v1/search/local.json<br/>query=경희대&display=5&start=1&sort=random<br/>X-Naver-Client-Id / X-Naver-Client-Secret
+        alt 네이버 호출 또는 응답 처리 실패
+            NAVER--xLIST: HTTP 오류, 타임아웃 또는 잘못된 응답
+            LIST-->>C: 502 Bad Gateway<br/>error.code=UPSTREAM_ERROR
+            C-->>U: 장소 검색 실패 및 재시도 안내
+        else 네이버 정상 응답
+            NAVER-->>LIST: items[] (title, address, roadAddress, mapx, mapy)
+            Note over LIST: mapx/mapy를 WGS84 lng/lat으로 변환<br/>프론트 공개 필드만 최대 5개 반환
+            LIST-->>C: 200 OK<br/>data.items[](title, address, roadAddress, lat, lng)
+            alt 장소 후보 없음
+                C-->>U: 검색 결과 없음 표시<br/>(data.items=[])
+            else 사용자가 장소 후보 선택
+                U->>C: 원하는 장소 선택
+                Note over C: 선택한 lat/lng로 지도 카메라 이동<br/>지도 SDK에서 sw/ne bounds 계산
+                par 매물 목록 조회
+                    C->>LIST: GET /api/v1/listings<br/>swLat, swLng, neLat, neLng, 필터/정렬/페이지
+                    LIST->>DB: bounds 및 필터 기준 매물 조회
+                    DB-->>LIST: 매물 페이지
+                    LIST-->>C: 200 OK<br/>data.content[], data.page
+                and 지도 마커 조회
+                    C->>LIST: GET /api/v1/listings/map<br/>swLat, swLng, neLat, neLng, 필터
+                    LIST->>DB: bounds 및 필터 기준 좌표 조회
+                    DB-->>LIST: 매물 좌표
+                    LIST-->>C: 200 OK<br/>data.markers[], data.total
+                end
+                C-->>U: 선택한 장소 주변의 지도 마커와 매물 목록 표시
+            end
+        end
     end
-    Note over LIST: POI 사전에 없으면 404 아닌 200 OK<br/>matchedPlace=null, content=[]
 ```
 
 ## 흐름 요약
 
-- `GET /api/v1/listings/search?keyword=...`로 `listing` 모듈이 학교/지역/역 키워드를 POI 사전에 매칭해 매칭 위치 기준으로 MongoDB에서 주변 매물을 조회하고 `data.matchedPlace`와 `data.content[]`(오프셋 페이지)를 반환한다.
-- 검색 결과의 `content[]`는 `/api/v1/listings`와 같은 매물 카드 스키마다. 같은 매물 안에 조건을 만족하는 roomOffer가 여러 개 있어도 `listingId`는 한 번만 내려가며, 가격·보증금·관리비·계약기간은 조건을 통과한 roomOffer들의 범위로 내려간다.
-- 키워드 누락/공백/길이(1~50자) 위반은 `listing` 모듈이 `400 INVALID_INPUT`으로 거부한다(검증 실패 분기는 MongoDB 접근 없음).
-- POI 매칭이 없으면 에러가 아니라 `200 OK` + `matchedPlace=null`·`content=[]`로 응답한다.
+- `GET /api/v1/listings/places?keyword=...`는 인증 필수이며, 백엔드가 네이버 지역 검색 API를 호출해 장소 후보를 최대 5개 반환한다. 이 단계에서는 MongoDB 매물을 조회하지 않는다.
+- 네이버 원본의 `mapx/mapy`는 백엔드가 WGS84 `lng/lat`으로 변환하고, `title`·`address`·`roadAddress`·`lat`·`lng`만 공개한다. 검색 결과가 없으면 에러가 아닌 `200 OK`와 `data.items=[]`를 반환한다.
+- 사용자가 후보를 선택하면 앱이 해당 좌표로 지도 카메라를 이동하고 bounds를 계산한다. 이후 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 같은 bounds·필터를 전달해 매물 목록과 지도 마커를 조회한다.
+- 키워드 누락·공백·50자 초과는 `400 INVALID_INPUT`, 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 형식 이상은 `502 UPSTREAM_ERROR`로 구분한다.
+- 기존 `GET /api/v1/listings/search`는 호환성을 위해 유지하지만, 이 사용자 흐름에서는 사용하지 않는다.

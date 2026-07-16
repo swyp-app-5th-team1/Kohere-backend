@@ -742,33 +742,43 @@
   When 검색을 호출하면
   Then 결과 수가 상한을 초과하는 경우 `400 Bad Request`, `error.code=LISTING_AREA_TOO_LARGE`로 범위 축소를 유도한다
 
-### US-3-3 — 키워드 검색(학교명·지역명·지하철역명)
+### US-3-3 — 네이버 장소 검색 및 주변 매물 조회
 
-**As a** 다닐 학교·동네·역 이름만 아는 외국인 사용자
-**I want** 키워드 하나로 학교명/지역명/지하철역명을 검색해 해당 위치 주변 매물을 받기
-**So that** 좌표를 몰라도 익숙한 장소 이름으로 매물을 찾을 수 있다
+**As a** 학교·동네·시설 이름만 아는 외국인 사용자
+**I want** 키워드로 장소 후보를 검색하고 원하는 장소를 선택해 주변 매물을 조회하기
+**So that** 정확한 주소나 좌표를 몰라도 익숙한 장소 이름을 기준으로 집을 찾을 수 있다
 
-- 메타: 우선순위 **Mid**, 관련 NFR — 검색 인덱싱/오타 허용 범위(NFR 미정)
-- 데이터 관점: `keyword`는 학교/지역/역 사전(POI)에 매칭해 좌표로 변환 후 매물 조회, 매칭 0건과 매칭은 됐으나 주변 매물 0건을 구분(`matchedPlace`로 표현)
+- 메타: 우선순위 **Mid**, 관련 NFR — 네이버 지역 검색 API 응답시간·가용성, 외부 API 인증정보 보호
+- 데이터 관점: `GET /api/v1/listings/places`는 네이버 장소 후보만 최대 5개 반환하고 MongoDB 매물은 조회하지 않는다. 백엔드는 `mapx/mapy`를 WGS84 `lng/lat`으로 변환하며, 사용자가 후보를 선택한 뒤 앱이 계산한 bounds로 기존 `/api/v1/listings`와 `/api/v1/listings/map`을 호출한다.
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 키워드 검색
-  Given "연세대학교"가 POI 사전에 존재하고
-  When `GET /api/v1/listings/search?keyword=연세대학교&page=0&size=20`을 호출하면
-  Then `200 OK`로 매칭된 위치 정보(`data.matchedPlace`)와 주변 매물 목록(`data.content[]`, 오프셋 페이지)을 반환한다
+- 시나리오: 정상 장소 후보 검색
+  Given 유효한 access token을 가진 사용자가 "경희대"를 입력하고
+  When `GET /api/v1/listings/places?keyword=경희대`를 Bearer access token과 함께 호출하면
+  Then `200 OK`로 `data.items[]`에 `title`·`address`·`roadAddress`·`lat`·`lng`를 포함한 장소 후보를 최대 5개 반환한다
+- 시나리오: 장소 선택 후 주변 매물 조회
+  Given 사용자가 장소 후보 하나를 선택해 앱이 해당 `lat/lng`로 지도를 이동하고 현재 bounds를 계산하면
+  When 같은 `swLat`·`swLng`·`neLat`·`neLng`를 `/api/v1/listings`와 `/api/v1/listings/map`에 전달하면
+  Then 매물 목록(`data.content[]`)과 지도 마커(`data.markers[]`)를 각각 `200 OK`로 반환한다
 - 시나리오: 입력 검증 실패(빈/과도 키워드)
   Given 클라이언트가
-  When `keyword`를 누락하거나 공백만, 또는 허용 길이(1~50자)를 벗어나게 보내면
+  When `keyword`를 누락하거나 공백만, 또는 50자를 초과해 보내면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다
-- 시나리오: 매칭 없음(경계)
-  Given POI 사전에 없는 키워드가 주어지면
-  When 검색을 호출하면
-  Then `200 OK`로 `data.matchedPlace=null`이며 `data.content`는 빈 배열을 반환한다(404 아님)
-- 시나리오: 인증 선택
-  Given 비로그인 사용자가
-  When 키워드 검색을 호출하면
-  Then `200 OK`로 정상 조회되며 각 항목 `favorited=false`로 내려간다
+- 시나리오: 장소 후보 없음(경계)
+  Given 네이버 지역 검색 결과가 없는 키워드가 주어지고
+  When 장소 검색 API를 호출하면
+  Then 에러가 아닌 `200 OK`로 `data.items=[]`를 반환한다
+- 시나리오: 인증 실패
+  Given access token이 누락·위조 또는 만료되었고
+  When 장소 검색 API를 호출하면
+  Then 누락·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`를 반환한다
+- 시나리오: 네이버 연동 실패
+  Given 네이버 API가 4xx/5xx를 반환하거나 타임아웃·인증정보 누락·응답 형식 이상이 발생하고
+  When 장소 검색 API를 호출하면
+  Then `502 Bad Gateway`, `error.code=UPSTREAM_ERROR`를 반환한다
+
+> 기존 `GET /api/v1/listings/search`는 호환성을 위해 유지하지만, 본 사용자 스토리의 신규 지도 검색 흐름에서는 사용하지 않는다.
 
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
