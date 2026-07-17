@@ -265,6 +265,7 @@ class AuthOnboardingDocsTest {
     mockMvc
         .perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.lang").value("ko"))
         .andDo(
             document(
                 "user-get-me",
@@ -277,12 +278,13 @@ class AuthOnboardingDocsTest {
             patch("/api/v1/users/me")
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"marketingAgreed\":true}"))
+                .content("{\"lang\":\"en\",\"marketingAgreed\":true}"))
         .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.lang").value("en"))
         .andDo(
             document(
                 "user-patch-me",
-                resourceDetails().summary("내 프로필 부분 수정 — 전송한 필드만 변경"),
+                resourceDetails().summary("내 프로필 부분 수정 — 전송한 필드만 변경(예: 표시 언어 lang)"),
                 requestFields(patchRequestFields()),
                 responseFields(profileResponseFields())));
 
@@ -1060,7 +1062,11 @@ class AuthOnboardingDocsTest {
         field(
             "visaType",
             JsonFieldType.STRING,
-            "비자유형 enum(필수): SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC"));
+            "비자유형 enum(필수): SHORT_TERM_VISIT|STUDENTS_TRAINEES|NON_PROFESSIONAL_WORKERS|WORKING_HOLIDAY_WORK_AND_VISIT|OVERSEAS_KOREANS|FAMILY_MARRIAGE_MIGRANTS|PERMANENT_RESIDENTS|PROFESSIONALS|DIPLOMATIC_OFFICIAL_AND_OTHERS|ETC"),
+        optField(
+            "lang",
+            JsonFieldType.STRING,
+            "표시 언어 ISO 639-1 소문자 en|ko|ja(선택 — 미전송 시 미설정, 표시 시 en 폴백)"));
   }
 
   private static List<FieldDescriptor> refreshTokenRequestField(String description) {
@@ -1076,6 +1082,7 @@ class AuthOnboardingDocsTest {
         optField("country", JsonFieldType.STRING, "국적 ISO 코드(세입자·선택)"),
         optField("occupation", JsonFieldType.STRING, "직업 enum(세입자·선택)"),
         optField("visaType", JsonFieldType.STRING, "비자유형 enum(세입자·선택)"),
+        optField("lang", JsonFieldType.STRING, "표시 언어 en|ko|ja(세입자·선택 — 위반 시 INVALID_INPUT)"),
         optField("name", JsonFieldType.STRING, "이름(임대인 전체 이름·선택)"),
         optField(
             "phoneNumber",
@@ -1105,6 +1112,7 @@ class AuthOnboardingDocsTest {
         field(prefix + "country", JsonFieldType.STRING, "국적 ISO 코드"),
         field(prefix + "countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
         field(prefix + "countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
+        optField(prefix + "lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
         field(prefix + "occupation", JsonFieldType.STRING, "직업 enum"),
         field(prefix + "email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field(prefix + "visaType", JsonFieldType.STRING, "비자유형 enum"));
@@ -1124,6 +1132,7 @@ class AuthOnboardingDocsTest {
         field("data.country", JsonFieldType.STRING, "국적 ISO 코드"),
         field("data.countryName", JsonFieldType.STRING, "국가 표시명(countries resolve)"),
         field("data.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(countries resolve)"),
+        optField("data.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(세입자 선택 시 — 미선택이면 생략)"),
         field("data.occupation", JsonFieldType.STRING, "직업 enum"),
         field("data.email", JsonFieldType.STRING, "인증된 연락 이메일"),
         field("data.visaType", JsonFieldType.STRING, "비자유형 enum"),
@@ -1266,7 +1275,8 @@ class AuthOnboardingDocsTest {
           "country": "KR",
           "occupation": "UNDERGRADUATE_STUDENT",
           "email": "%s",
-          "visaType": "SHORT_TERM_VISIT"
+          "visaType": "SHORT_TERM_VISIT",
+          "lang": "ko"
         }
         """
         .formatted(email);

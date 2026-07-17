@@ -1,6 +1,7 @@
 package com.kohere.user.infrastructure;
 
 import com.kohere.user.domain.Gender;
+import com.kohere.user.domain.Language;
 import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.UserStatus;
 import com.kohere.user.domain.UserType;
@@ -48,6 +49,11 @@ public class UserJpaEntity {
 
   private LocalDate birthDate;
   private String country;
+
+  // 사용자가 고른 표시 언어(en/ko/ja). DB엔 소문자 코드 저장(LanguageConverter). NULL=미선택 → 표시 시 en 폴백(#141).
+  @Convert(converter = LanguageConverter.class)
+  @Column(length = 8)
+  private Language lang;
 
   @Enumerated(EnumType.STRING)
   private Occupation occupation;

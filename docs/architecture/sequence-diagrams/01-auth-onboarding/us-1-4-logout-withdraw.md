@@ -32,7 +32,7 @@ sequenceDiagram
             USER-->>C: 409 USER_ALREADY_WITHDRAWN
             C-->>U: 이미 탈퇴된 계정 안내
         else 정상 탈퇴
-            Note over USER: status=WITHDRAWN 전이<br/>withdrawn_at(UTC) 기록<br/>식별 PII(이름·생년월일·국적·직업·이메일·비자·닉네임) 즉시 익명화(복구불가)
+            Note over USER: status=WITHDRAWN 전이<br/>withdrawn_at(UTC) 기록<br/>식별 PII(이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임) 즉시 익명화(복구불가)
             USER->>SQL: 사용자 WITHDRAWN 갱신 + PII 익명화
             SQL-->>USER: 갱신 완료 (행 보존)
             Note over USER,AUTH: UserWithdrawnEvent 발행 — @EventListener 동기 처리<br/>(같은 트랜잭션 내, 커밋·204 응답 전에 정리 완료)
@@ -60,7 +60,7 @@ sequenceDiagram
 ## 흐름 요약
 
 - 로그아웃은 access 토큰으로 `auth 모듈`의 `POST /api/v1/auth/logout`에 `refreshToken`을 담아 호출하면 Redis에서 해당 **refreshToken을 무효화**하고 `204 No Content`를 반환한다(이미 무효화면 멱등).
-- 회원 탈퇴는 `user 모듈`의 `DELETE /api/v1/users/me` 호출 시 MySQL에서 **상태를 WITHDRAWN으로 전이**하고 `withdrawn_at`(UTC)을 기록하며 식별 PII(이름·생년월일·국적·직업·이메일·비자·닉네임)를 **즉시 익명화(복구불가)**한다(행 보존). 이어 `UserWithdrawnEvent`를 발행하는데, [`UserWithdrawnEventListener`](../../../../src/main/java/com/kohere/auth/application/UserWithdrawnEventListener.java)가 `@EventListener`로 **같은 트랜잭션 안에서 동기 처리**하므로 아래 auth 정리까지 끝나야 커밋되고 `204 No Content`가 반환된다(운영에서 비동기 분리가 필요하면 `@ApplicationModuleListener`로 전환).
+- 회원 탈퇴는 `user 모듈`의 `DELETE /api/v1/users/me` 호출 시 MySQL에서 **상태를 WITHDRAWN으로 전이**하고 `withdrawn_at`(UTC)을 기록하며 식별 PII(이름·생년월일·국적·표시 언어(`lang`)·직업·이메일·비자·닉네임)를 **즉시 익명화(복구불가)**한다(행 보존). 이어 `UserWithdrawnEvent`를 발행하는데, [`UserWithdrawnEventListener`](../../../../src/main/java/com/kohere/auth/application/UserWithdrawnEventListener.java)가 `@EventListener`로 **같은 트랜잭션 안에서 동기 처리**하므로 아래 auth 정리까지 끝나야 커밋되고 `204 No Content`가 반환된다(운영에서 비동기 분리가 필요하면 `@ApplicationModuleListener`로 전환).
 - `auth 모듈`은 `UserWithdrawnEvent`를 구독해 정리한다. **Apple 연동이면 매핑 삭제 전에** `social_accounts`에서 `apple_refresh_token`을 읽어 Apple `POST /auth/revoke`(`token_type_hint=refresh_token`)로 앱↔Apple ID 연동을 폐기한다(App Store 5.1.1(v), [ADR-0031](../../../adr/0031-apple-sign-in-authorization-code-flow.md)). 이 폐기는 **best-effort** — HTTP 200과 `invalid_grant`/`invalid_token`(이미 폐기)은 성공으로 보고, 그 외 실패(타임아웃·5xx)는 WARN 로그·메트릭만 남기고 **탈퇴를 막지 않는다**(외부 호출은 짧은 타임아웃으로 제한; durable 재시도는 후속). 이어 MySQL의 **`social_accounts` 매핑(provider, provider_user_id)을 삭제**하고 Redis에서 **해당 user의 refresh 토큰을 일괄 무효화(status=REVOKED)**한다 — 이 로컬 정리는 동기·같은 트랜잭션이라 실패하면 탈퇴 전체가 롤백된다(외부 Apple 폐기는 예외). 마이그레이션 이전 Apple 사용자는 `apple_refresh_token`이 없어 폐기를 스킵하며, 다음 로그인 때 백필된다.
 - 이미 WITHDRAWN 상태이면 `409 USER_ALREADY_WITHDRAWN`을 반환한다.
 - 두 동작 모두 인증 필수이며, 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 모듈로 전달한다. 온보딩 스코프(PENDING·TERMS_AGREED) 사용자도 탈퇴는 허용된다.

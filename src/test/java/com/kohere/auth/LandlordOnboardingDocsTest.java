@@ -705,10 +705,10 @@ class LandlordOnboardingDocsTest {
   }
 
   /**
-   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·country·countryName·countryFlag·
-   * occupation·email·visaType)는 {@code null}이라 응답에서 생략된다(UserProfileView
-   * {@code @JsonInclude(NON_NULL)}). 임대인은 단일 {@code name}·생년월일({@code birthDate})·마스킹된 {@code
-   * phoneNumber}를 받는다(spec §5-2, #131).
+   * 임대인 온보딩 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·occupation·email·visaType)는 {@code null}이라
+   * 응답에서 생략된다(UserProfileView {@code @JsonInclude(NON_NULL)}). 국적({@code country})·표시 언어({@code
+   * lang})는 서버가 KR·ko로 고정 부여하므로 응답에 포함된다(ADR-0034 개정·#141). 임대인은 단일 {@code name}·생년월일({@code
+   * birthDate})·마스킹된 {@code phoneNumber}를 받는다(spec §5-2, #131).
    */
   private static List<FieldDescriptor> landlordOnboardingResponseFields() {
     return List.of(
@@ -717,6 +717,10 @@ class LandlordOnboardingDocsTest {
         field("data.user.name", JsonFieldType.STRING, "임대인 이름(요청 name — 성·이름 합친 전체 이름)"),
         field("data.user.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
         field("data.user.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
+        field("data.user.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
+        field("data.user.countryName", JsonFieldType.STRING, "국가 표시명(countries 참조 — South Korea)"),
+        field("data.user.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(flagcdn.com SVG)"),
+        field("data.user.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(임대인은 서버 고정 ko)"),
         field("data.user.phoneNumber", JsonFieldType.STRING, "마스킹된 연락처(예: 010-****-5678)"),
         field("data.user.userType", JsonFieldType.STRING, "회원 역할(LANDLORD)"),
         field("data.user.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
@@ -733,9 +737,10 @@ class LandlordOnboardingDocsTest {
   }
 
   /**
-   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·country·countryName·
-   * countryFlag·occupation·email·visaType)는 {@code null}이라 생략된다(UserProfileResponse
-   * {@code @JsonInclude(NON_NULL)}). 본인 조회이므로 {@code phoneNumber}는 평문이다(spec §8, #131).
+   * 임대인 프로필 조회(GET /users/me) 응답 필드 — 세입자 전용 필드(firstName·lastName·gender·occupation·email·
+   * visaType)는 {@code null}이라 생략된다(UserProfileResponse {@code @JsonInclude(NON_NULL)}). 국적({@code
+   * country})·표시 언어({@code lang})는 서버가 KR·ko로 고정 부여하므로 포함된다(ADR-0034 개정·#141). 본인 조회이므로 {@code
+   * phoneNumber}는 평문이다(spec §8, #131).
    */
   private static List<FieldDescriptor> landlordProfileResponseFields() {
     return List.of(
@@ -745,6 +750,10 @@ class LandlordOnboardingDocsTest {
         field("data.name", JsonFieldType.STRING, "임대인 이름(성·이름 합친 전체 이름)"),
         field("data.nickname", JsonFieldType.STRING, "닉네임(서버 배정)"),
         field("data.birthDate", JsonFieldType.STRING, "생년월일(YYYY-MM-DD)"),
+        field("data.country", JsonFieldType.STRING, "국적 ISO 코드(임대인은 서버 고정 KR)"),
+        field("data.countryName", JsonFieldType.STRING, "국가 표시명(South Korea)"),
+        field("data.countryFlag", JsonFieldType.STRING, "국기 이미지 URL(flagcdn.com SVG)"),
+        field("data.lang", JsonFieldType.STRING, "표시 언어 ISO 639-1(임대인은 서버 고정 ko)"),
         field("data.phoneNumber", JsonFieldType.STRING, "연락처(본인 조회는 평문)"),
         field("data.status", JsonFieldType.STRING, "회원 상태(ACTIVE)"),
         field("data.termsOfServiceAgreed", JsonFieldType.BOOLEAN, "이용약관 동의 여부"),

@@ -29,7 +29,7 @@
 | GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
 | GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
-> 인증 "선택"인 탐색 API는 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 상세·찜·찜 목록·최근 본 매물은 인증 필수이며, `me` 스코프 API는 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(인증 실패는 `401`).
+> 인증 "선택"인 탐색 API는 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 상세·장소 후보 검색·찜·찜 목록·최근 본 매물은 인증 필수이며, `me` 스코프 API는 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(장소 후보 검색은 무상태로 어떤 리소스도 조회하지 않아 마찬가지, 인증 실패는 `401`).
 
 ## 상세
 
@@ -183,6 +183,7 @@ Request Body: 없음
 - 설명: 지도 검색창의 키워드를 네이버 지역 검색 API로 조회하고, 사용자가 선택할 장소 후보를 정확도순 최대 5개 반환한다.
 - 인증: 필수
 - 책임 범위: 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다. 프론트가 후보 좌표로 지도를 이동한 뒤 계산한 bounds를 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 전달한다.
+- 외부 연동: 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient` — 네이버 지역 검색 API)로 **동기 호출**한다. 네이버 API 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(공통 코드 — [error-response-guide](../error-response-guide.md)). 인증정보는 환경변수 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString)로 주입한다.
 
 Query 파라미터:
 

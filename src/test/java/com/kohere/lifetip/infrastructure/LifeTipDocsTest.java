@@ -96,7 +96,9 @@ class LifeTipDocsTest {
     topicRepository.deleteAll();
     tipRepository.deleteAll();
     seed();
-    // 표시 언어는 user 공개 query로 취득(ADR-0029) — 등록 국가(KR→ko)를 가정해 한국어 라벨을 내려받는다.
+    // 생활 팁은 세입자 전용(US-8) — 조회 진입 게이트가 userType을 확인한다.
+    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
+    // 표시 언어는 user 공개 query로 취득 — 사용자가 고른 ko(users.lang)를 가정해 한국어 라벨을 내려받는다.
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
   }
 
@@ -116,7 +118,7 @@ class LifeTipDocsTest {
         .andDo(
             document(
                 "life-tips-topics",
-                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 등록 국가 언어로 번역(비페이지, ROLE_USER)"),
+                resourceDetails().summary("생활 팁 주제 목록 — 노출 순서, 사용자 표시 언어로 번역(비페이지, ROLE_USER)"),
                 responseFields(topicsResponseFields())));
 
     mockMvc

@@ -10,8 +10,8 @@
 #      └ 로컬은 GOOGLE_CLIENT_ID 미설정이라 audience 검증을 건너뛴다 → 유효한 Google 서명 idToken 이면 통과.
 #   4) "1. 소셜 로그인"을 먼저 보내 accessToken 을 받는다(이후 요청에 자동 전달).
 #      └ 진단 엔드포인트는 인증만 요구하므로(.anyRequest().authenticated()) 온보딩을 끝내지 않은
-#        임시 토큰으로도 호출된다. 단, 등록 국가가 없으면(미온보딩) 라벨은 영어로 내려온다.
-#        한국어 등으로 보려면 auth-onboarding.http 로 온보딩까지 마친 토큰을 쓴다(country=KR → ko).
+#        임시 토큰으로도 호출된다. 단, 표시 언어(users.lang)가 미설정이면 라벨은 영어(en)로 내려온다(#141).
+#        한국어 등으로 보려면 auth-onboarding-tenant.http 온보딩에서 lang=ko 를 보낸 토큰을 쓴다(국적과 무관).
 #   5) 각 요청 위의 "Send Request" 를 위에서부터 순서대로 클릭한다.
 #
 # 참고:

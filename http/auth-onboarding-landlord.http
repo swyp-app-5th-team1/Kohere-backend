@@ -108,7 +108,9 @@ Content-Type: application/json
   "businessRegistrationNumber": "{{bizNumber}}"
 }
 
-### 7. 내 프로필 조회 (5단계의 정식 access 토큰 필요) — userType=LANDLORD, 연락처·생년월일(birthDate) 노출, 세입자 전용 필드(gender·country 등)는 null
+### 7. 내 프로필 조회 (5단계의 정식 access 토큰 필요) — userType=LANDLORD, 연락처·생년월일(birthDate) 노출.
+#    #141: 국적·표시 언어는 서버가 고정 부여하므로 "country":"KR"·countryName·countryFlag·"lang":"ko" 가 응답에 포함된다.
+#    세입자 전용 필드(gender·occupation·visaType)·email 만 미포함(null 생략). 임대인은 lang 을 바꿀 수 없다(세입자 전용).
 GET {{baseUrl}}/api/v1/users/me
 Authorization: Bearer {{landlordOnboarding.response.body.$.data.accessToken}}
 

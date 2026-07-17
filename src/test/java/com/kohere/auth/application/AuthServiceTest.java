@@ -631,6 +631,7 @@ class AuthServiceTest {
         "KR",
         "South Korea",
         "https://flagcdn.com/kr.svg",
+        null,
         "UNDERGRADUATE_STUDENT",
         "gil@example.com",
         "SHORT_TERM_VISIT",
@@ -650,12 +651,13 @@ class AuthServiceTest {
         "KR",
         "UNDERGRADUATE_STUDENT",
         "gil@example.com",
-        "SHORT_TERM_VISIT");
+        "SHORT_TERM_VISIT",
+        null);
   }
 
   /**
-   * 임대인 온보딩 응답 프로필 — 성별·국적·직업·비자·생년월일·이메일 미수집(null), 전체 이름은 {@code name}에, 마스킹된 연락처를 {@code
-   * phoneNumber}에, userType=LANDLORD.
+   * 임대인 온보딩 응답 프로필 — 성별·직업·비자·이메일 미수집(null), 국적(`KR`)·표시 언어(`ko`)는 서버가 고정 부여, 전체 이름은 {@code name}에,
+   * 마스킹된 연락처를 {@code phoneNumber}에, userType=LANDLORD.
    */
   private static UserProfileView landlordProfileView(long id) {
     return new UserProfileView(
@@ -666,9 +668,10 @@ class AuthServiceTest {
         "CalmFox",
         null,
         LocalDate.of(1990, 1, 1),
-        null,
-        null,
-        null,
+        "KR",
+        "South Korea",
+        "https://flagcdn.com/kr.svg",
+        "ko",
         null,
         null,
         null,

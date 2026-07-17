@@ -17,7 +17,7 @@
 # 참고:
 #   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
 #   - 정답 판정은 서버 전용이다. 조회(§6) 응답에는 correctChoice/explanation 이 없고, 채점(§7~) 응답에서만 내려온다 — explanation 은 정답·오답 모두, correctChoice 는 오답 시에만.
-#   - 표시 언어는 온보딩 국가로 결정된다(country=KR→ko, 그 외 미지원 언어는 en 폴백). 아래 온보딩은 country=VN(→en 폴백) 예시다.
+#   - 표시 언어는 users.lang(사용자가 고른 값)으로 결정된다(#141). 아래 온보딩은 lang=ko 예시라 퀴즈가 한국어로 온다. lang 을 빼면 en 폴백(국적과 무관).
 
 @baseUrl = http://localhost:8080
 @idToken = PASTE_GOOGLE_ID_TOKEN_HERE
@@ -70,7 +70,7 @@ Content-Type: application/json
 }
 
 ### 5. 세입자 온보딩 제출 — 성공 시 정식 access/refresh 발급(=ACTIVE·TENANT)
-#    country=KR 로 바꾸면 이후 퀴즈가 한국어(ko)로, 그 외(예: VN)는 영어(en)로 내려온다.
+#    lang=ko 로 보내면 이후 퀴즈가 한국어(ko)로, lang 을 빼거나 en 이면 영어(en)로 내려온다(국적 country 는 무관, #141).
 # @name onboarding
 POST {{baseUrl}}/api/v1/auth/onboarding
 Authorization: Bearer {{login.response.body.$.data.accessToken}}
@@ -84,7 +84,8 @@ Content-Type: application/json
   "country": "KR",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "{{email}}",
-  "visaType": "STUDENTS_TRAINEES"
+  "visaType": "STUDENTS_TRAINEES",
+  "lang": "ko"
 }
 
 ### 6. 랜덤 퀴즈 조회 — 활성 풀에서 무작위 1개(사용자 언어 번역, 정답·해설 미포함)

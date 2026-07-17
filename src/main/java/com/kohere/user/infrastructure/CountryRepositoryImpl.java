@@ -25,6 +25,6 @@ public class CountryRepositoryImpl implements CountryRepository {
     }
     return jpaRepository
         .findById(code)
-        .map(e -> new Country(e.getCode(), e.getName(), e.getFlag(), e.getLang()));
+        .map(e -> new Country(e.getCode(), e.getName(), e.getFlag()));
   }
 }

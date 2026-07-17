@@ -32,7 +32,7 @@
 | `error.message` | string | 필수 | 사람이 읽는 설명. 민감정보·스택트레이스 노출 금지 |
 | `error.errors[]` | array | 선택 | 입력 검증 실패 시 `field`/`reason` 목록 |
 
-- `message`는 사용자에게 그대로 노출될 수 있으니 **내부 구현·민감정보를 담지 않는다.** `message`는 **서버가 `Accept-Language`로 번역**해 내려간다 — `ErrorCode` 코드를 키로 하는 리소스 번들(`messages[_<lang>].properties`)에서 해소하고, 미지원 언어·키 부재는 영어로 폴백한다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 클라이언트 분기는 언어 무관 `code`로 하며(메시지로 분기 금지), 추가 다국어 처리도 `code`로 매핑할 수 있다. (참고: 진단 표시 콘텐츠는 등록 국가 기반 번역 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md). 언어 결정 출처 단일화는 후속 과제.)
+- `message`는 사용자에게 그대로 노출될 수 있으니 **내부 구현·민감정보를 담지 않는다.** `message`는 **서버가 `Accept-Language`로 번역**해 내려간다 — `ErrorCode` 코드를 키로 하는 리소스 번들(`messages[_<lang>].properties`)에서 해소하고, 미지원 언어·키 부재는 영어로 폴백한다([ADR-0030](../adr/0030-error-message-i18n-resource-bundle.md)). 클라이언트 분기는 언어 무관 `code`로 하며(메시지로 분기 금지), 추가 다국어 처리도 `code`로 매핑할 수 있다. (참고: 진단 표시 콘텐츠는 사용자 표시 언어(`users.lang`) 기반 번역 — [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141). 언어 결정 출처 단일화는 후속 과제.)
 
 ## 2. 예외 분류
 

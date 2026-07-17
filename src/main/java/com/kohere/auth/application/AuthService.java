@@ -227,7 +227,8 @@ public class AuthService {
                 request.country(),
                 request.occupation(),
                 request.email(),
-                request.visaType()));
+                request.visaType(),
+                request.lang()));
     TokenResponse tokens = issueFullTokens(userId);
     return new OnboardingResponse(
         user, tokens.tokenType(), tokens.accessToken(), tokens.refreshToken(), tokens.expiresIn());

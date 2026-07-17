@@ -73,8 +73,8 @@ services:
       MAIL_FROM: ${mail_from}
       APP_IMAGES_BUCKET: ${images_bucket}
       APP_IMAGES_CDN_DOMAIN: ${images_cdn_domain}
-      # 연락처 SMS(SOLAPI)·사업자번호(비즈노) 설정은 enabled·from·API 키 모두 .env(SSM→refresh-env, env_file)로만 주입한다.
-      # compose(부팅 1회 렌더)에 박지 않아 tfvars 변경이 재배포(refresh-env 재실행 + app recreate)만으로 반영된다(ADR-0024/0034/0033).
+      # 연락처 SMS(SOLAPI)·사업자번호(비즈노)·네이버 지역 검색(#160/#162) 설정은 enabled·from·API 키·Client ID/Secret 모두
+      # .env(SSM→refresh-env, env_file)로만 주입한다. compose(부팅 1회 렌더)에 박지 않아 tfvars 변경이 재배포(refresh-env 재실행 + app recreate)만으로 반영된다(ADR-0024/0034/0033).
 volumes:
   caddy_data:
   caddy_config:

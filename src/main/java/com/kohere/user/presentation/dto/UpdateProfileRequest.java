@@ -29,6 +29,7 @@ public record UpdateProfileRequest(
     String country,
     Occupation occupation,
     VisaType visaType,
+    String lang,
     String name,
     String phoneNumber,
     Boolean marketingAgreed) {}

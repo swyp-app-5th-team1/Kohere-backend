@@ -136,6 +136,9 @@ module "secrets" {
   solapi_api_key    = var.solapi_api_key
   solapi_api_secret = var.solapi_api_secret
   bizno_api_key     = var.bizno_api_key
+  # 네이버 지역 검색 API 인증정보(Client ID/Secret 모두 시크릿, #160/#162)
+  naver_search_client_id     = var.naver_search_client_id
+  naver_search_client_secret = var.naver_search_client_secret
 }
 
 # ===== IAM (ECS 역할 + GitHub OIDC) =====
@@ -210,6 +213,9 @@ locals {
     { name = "SOLAPI_API_KEY", valueFrom = module.secrets.param_arns["SOLAPI_API_KEY"] },
     { name = "SOLAPI_API_SECRET", valueFrom = module.secrets.param_arns["SOLAPI_API_SECRET"] },
     { name = "BIZNO_API_KEY", valueFrom = module.secrets.param_arns["BIZNO_API_KEY"] },
+    # 네이버 지역 검색 API(지도 장소 검색, #160/#162) — Client ID/Secret 모두 SSM SecureString(valueFrom).
+    { name = "NAVER_SEARCH_CLIENT_ID", valueFrom = module.secrets.param_arns["NAVER_SEARCH_CLIENT_ID"] },
+    { name = "NAVER_SEARCH_CLIENT_SECRET", valueFrom = module.secrets.param_arns["NAVER_SEARCH_CLIENT_SECRET"] },
   ]
 }
 

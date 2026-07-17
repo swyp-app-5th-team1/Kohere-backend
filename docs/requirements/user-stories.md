@@ -27,7 +27,7 @@
 
 외국인 사용자가 Apple/Google 소셜 계정으로 진입해 서버 자체 JWT를 발급받고, 신규 회원은 **약관 동의 → 본인 확인 → 온보딩** 순서로 가입 단계를 거친 뒤에야 보호 API를 사용할 수 있게 한다(본인 확인은 세입자 이메일 인증·임대인 연락처 SMS 인증으로 갈린다). 사용자 상태는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의 완료) → `ACTIVE`(온보딩 완료)로 전이한다(약관 동의와 온보딩은 분리된 단계). 세입자 온보딩 필수 정보는 이름·성별·생년월일·국적(국가 코드 — 화면엔 국가만 받지만 국기까지 수집, `countries` 참조)·직업·이메일·비자정보이며, 닉네임은 서버가 `형용사 + 사물`로 자동 배정한다. 토큰 재발급·로그아웃·탈퇴·프로필 조회/수정까지 인증 생애주기 전체를 다룬다.
 
-사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·국적·직업·비자정보와 **이메일을 수집하지 않으며(생년월일은 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — [ADR-0034](../adr/0034-landlord-phone-sms-verification.md). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
+사용자는 **세입자(외국인)와 임대인** 두 역할(`userType`: `TENANT`/`LANDLORD`)로 나뉜다. 소셜 로그인(US-1-1)·약관 동의(US-1-7)까지는 **두 역할이 같은 공통 흐름**을 타고, **이후 본인 확인·온보딩 단계에서 역할이 갈린다** — 세입자는 이메일 인증(US-1-6)을 거쳐 위 정보를 `POST /auth/onboarding`(US-1-2)으로 제출하고, 임대인은 이름(성·이름을 합친 단일 `name`)·생년월일·연락처(전화)를 `POST /auth/landlord/onboarding`(US-1-9)으로 제출하되 그 선행으로 **연락처를 SMS 인증번호로 검증**(US-1-10)하는 단계만 거친다(약관 동의 + 연락처 인증만으로 온보딩이 완료된다). **사업자등록번호 검증**(US-1-8)은 온보딩 선행 단계가 아니라 **온보딩을 마친(ACTIVE) 임대인이 나중에(매물 등록 시점) 정식 access 토큰으로 호출하는 온보딩과 분리된 무상태(stateless) 검증 API**다(국세청 사업자등록정보 기반 외부 검증 API 사용). 임대인은 성별·직업·비자정보와 **이메일을 수집하지 않으며(생년월일은 세입자와 동일하게 수집), 사업자등록번호도 온보딩에서 수집하지 않는다** — 단 국적(`country`=`KR`)·표시 언어(`lang`=`ko`)는 클라이언트가 보내지 않고 **서버가 온보딩 시 고정 부여**한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 "임대인 `country` 미수집" 결정을 개정). `userType`은 온보딩 제출 엔드포인트로 확정되며, 그 이전(소셜 로그인·약관) 단계는 역할을 강제하지 않는다. 아래 US-1-1·US-1-3 ~ US-1-5·US-1-7은 별도 표기가 없으면 두 역할 공통이고, **US-1-2·US-1-6은 세입자(외국인) 전용**, **US-1-9·US-1-10은 임대인 온보딩 전용**, **US-1-8은 임대인 온보딩 후(ACTIVE) 매물 등록 시점의 임대인 전용 단계**다.
 
 > 관련 NFR: [non-functional-requirements](non-functional-requirements.md) — 4. 보안(토큰/민감정보 보호), 1. 성능(소셜 검증 응답시간), 5. 관측성(인증 실패 로깅·마스킹). 구체 목표값은 NFR 문서 확정 전이라 (확인 필요).
 
@@ -85,7 +85,7 @@
 
 - **정상 — 온보딩 완료**
   Given 약관 동의를 마친(`TERMS_AGREED`) 사용자의 유효한 온보딩 토큰을 보유하고 제출 `email`이 사전 인증(US-1-6)되어 있으며
-  When 모든 필수 필드(`firstName`·`lastName`·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`)를 담아 `POST /api/v1/auth/onboarding`을 호출하면(약관 필드는 담지 않음 — 이미 US-1-7에서 동의·기록)
+  When 모든 필수 필드(`firstName`·`lastName`·`gender`·`birthDate`·`country`·`occupation`·`email`·`visaType`)를 담아(표시 언어 `lang`은 **선택** — 보내면 그 값으로, 안 보내면 미설정으로 두어 표시 시 `en` 폴백) `POST /api/v1/auth/onboarding`을 호출하면(약관 필드는 담지 않음 — 이미 US-1-7에서 동의·기록)
   Then `200 OK` + `data`에 완성된 프로필(서버가 자동 배정한 `nickname` 포함)과 정식 `accessToken`/`refreshToken`을 내려주고, 사용자 상태를 `TERMS_AGREED` → `ACTIVE`로 전이한다. (상태 전이 액션이므로 신규 리소스 생성이 아닌 `200`을 쓴다. `nickname`은 서버가 형용사 풀·사물 풀에서 골라 `형용사 + 사물`로 조합하고 전역 유니크 충돌 시 재조합해 배정하며 요청 본문에 담지 않는다)
 - **입력 검증 실패**
   Given `firstName`/`lastName`/`country`가 비었거나(`country`가 `countries`에 없는 ISO 코드이거나), `gender`가 `MALE`/`FEMALE` 외 값이거나, `occupation`이 정의된 enum(`UNDERGRADUATE_STUDENT`·`GRADUATE_STUDENT`·`EXCHANGE_STUDENT`·`LANGUAGE_TEACHING`·`MANUFACTURING_PRODUCTION`·`BUSINESS_TRADE`·`ETC`) 외 값이거나, `birthDate`가 `YYYY-MM-DD` 형식 위반/미래 날짜이거나, `visaType`이 정의된 enum(상수명: `SHORT_TERM_VISIT`·`STUDENTS_TRAINEES`·`NON_PROFESSIONAL_WORKERS`·`WORKING_HOLIDAY_WORK_AND_VISIT`·`OVERSEAS_KOREANS`·`FAMILY_MARRIAGE_MIGRANTS`·`PERMANENT_RESIDENTS`·`PROFESSIONALS`·`DIPLOMATIC_OFFICIAL_AND_OTHERS`·`ETC`) 외 값이거나, `email` 형식이 어긋나면
@@ -187,8 +187,8 @@
 - 우선순위: **Mid**
 - 관련 NFR: 보안(본인 리소스만 접근), 보안(민감정보 응답 마스킹 정책 — 확인 필요)
 - 백엔드 관점: `GET`/`PATCH /api/v1/users/me`는 세입자·임대인 **공통 엔드포인트**이며, `userType`(`TENANT`/`LANDLORD`)에 따라 응답·수정 가능 필드가 갈린다.
-  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`)와 `birthDate`(임대인과 공통)를 포함한다(기존 동작 그대로).
-  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
+  - **세입자(`TENANT`)**: 응답·수정에 세입자 전용 필드(`gender`·`country`(코드)+`countryName`·`countryFlag`·`occupation`·`visaType`)와 `birthDate`(임대인과 공통)·`lang`을 포함한다. `lang`(표시 언어, ISO 639-1 소문자, 지원 `en`·`ko`·`ja`)은 사용자가 앱 **지구본**에서 직접 고르는 **선택** 필드이며, 미설정이면(NULL) 표시 시 `en`으로 폴백한다. 다국어 화면(진단 문항·퀴즈·생활 팁) 번역이 이 값을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6·US-6-3·US-8-3). **임대인은 서버가 `'ko'` 고정이며 변경할 수 없다.**
+  - **임대인(`LANDLORD`)**: 단일 `name`(내부 저장은 세입자와 동일한 `FullName` VO의 `firstName` 재사용 — `lastName`은 미사용/`null`, 별도 `name` 컬럼/필드를 두지 않음. API 요청·응답 필드명은 `name` 유지)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태·`createdAt`·`country`+`countryName`·`countryFlag`·`lang`을 조회하고, 수정은 `name`·`marketingAgreed`를 자유 수정하며 `phoneNumber`는 SMS 재인증을 거쳐 변경한다. **임대인은 `email`을 수집하지 않아 응답에 포함하지 않는다**([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). **임대인의 `lang`(`'ko'`)·`country`(`'KR'`)는 서버가 온보딩에서 고정으로 심는 값이라 응답에는 나오되 이 경로로 수정할 수 없다**(ADR-0034의 "임대인 country 미수집" 결정을 개정한다). 세입자 전용 필드(`gender`/`occupation`/`visaType`)는 **임대인 응답에 포함하지 않지만, `birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다**. `businessRegistrationNumber`는 원문 비저장이라 응답에 포함하지 않고 이 경로로 수정할 수 없다(변경 시 외부 사업자등록정보 재검증 필요). `phoneNumber`는 SMS 인증(US-1-10)된 값으로 본인 조회 시 평문 반환하되 타 사용자/로그 노출은 마스킹하며, **변경 시 SMS 재인증(US-1-10)이 필요하다 — 새 번호를 재인증해 VERIFIED된 뒤에만 반영하고 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다**.
   - 두 역할 공통으로 `userType`·`nickname`은 불변이고, 세입자 `email`은 재인증이 필요해 이 경로로 수정하지 않는다(임대인은 `email` 미보유).
 
 **AC (Given / When / Then)**
@@ -196,25 +196,29 @@
 - **정상 — 조회(세입자)**
   Given 유효한 access 토큰을 보유한 `ACTIVE` 세입자(`userType=TENANT`)가
   When `GET /api/v1/users/me`를 호출하면
-  Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·약관 동의 상태)을 반환한다.
+  Then `200 OK` + `data`에 본인 프로필(이름·`nickname`·성별·생년월일·`country`(코드)+서버 resolve `countryName`·`countryFlag`·`occupation`·`email`·`visaType`·`lang`(표시 언어 — 미설정이면 응답에서 생략)·약관 동의 상태)을 반환한다.
 - **정상 — 부분 수정(세입자)**
   Given 유효한 access 토큰을 보유한 세입자(`userType=TENANT`)가
-  When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `marketingAgreed`)만 담아 호출하면
+  When `PATCH /api/v1/users/me`에 변경할 필드(예: `country`, `occupation`, `visaType`, `lang`, `marketingAgreed`)만 담아 호출하면
   Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `nickname`은 시스템 배정값이라 수정 대상이 아니며, `email` 변경은 재인증이 필요해 이 엔드포인트로는 처리하지 않는다(확인 필요).
+- **정상 — 표시 언어 직접 선택(세입자)**
+  Given 유효한 access 토큰을 보유한 세입자가
+  When `PATCH /api/v1/users/me`에 `{ "lang": "en" }`만 담아 호출하면
+  Then `200 OK` + `lang="en"`을 반환하고 `country`는 변경하지 않으며, 이후 진단 문항·퀴즈·생활 팁 표시 텍스트가 `en`으로 내려온다(등록 국가와 무관 — US-2-6·US-6-3·US-8-3).
 - **정상 — 조회(임대인)**
   Given 유효한 access 토큰을 보유한 `ACTIVE` 임대인(`userType=LANDLORD`)이
   When `GET /api/v1/users/me`를 호출하면
-  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`을 반환한다. 세입자 전용 필드(`gender`/`country`/`countryName`/`countryFlag`/`occupation`/`visaType`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다(`birthDate`는 임대인도 수집·반환).
+  Then `200 OK` + `data`에 `userType="LANDLORD"`·`name`(=`FullName.firstName`)·`birthDate`·`nickname`·`phoneNumber`·`status`·약관 동의 상태(`termsOfServiceAgreed`/`privacyPolicyAgreed`/`marketingAgreed`)·`createdAt`과 함께 서버 고정값인 `country="KR"`+서버 resolve `countryName`·`countryFlag`·`lang="ko"`를 반환한다. 세입자 전용 필드(`gender`/`occupation`/`visaType`)와 `email`(임대인 미수집)·`businessRegistrationNumber`는 응답에 포함하지 않는다(`birthDate`는 임대인도 수집·반환).
 - **정상 — 부분 수정(임대인)**
   Given 유효한 access 토큰을 보유한 임대인(`userType=LANDLORD`)이
   When `PATCH /api/v1/users/me`에 자유 수정 필드(`name`·`marketingAgreed`) 중 일부(예: `name`)만 담아 호출하면
-  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`은 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
+  Then `200 OK` + 수정된 프로필을 반환하고, 전송하지 않은 필드는 변경하지 않는다(미전송 ≠ 값 비움). `name`은 내부적으로 `FullName.firstName`에 매핑해 저장한다. `birthDate`(온보딩에서 확정, 조회 전용)·`businessRegistrationNumber`(변경 시 외부 사업자등록정보 재검증 필요)·`userType`·`nickname`·`lang`·`country`(서버 고정 `'ko'`/`'KR'` — 표시 언어 변경은 세입자만 가능, [ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141))는 이 경로로 수정할 수 없다(임대인은 `email` 미보유). `phoneNumber`는 변경 시 SMS 재인증(US-1-10)이 필요하다(아래 "연락처 변경 시 재인증" 참조).
 - **비즈니스 규칙 — 임대인 연락처 변경 시 SMS 재인증(임대인)**
   Given 임대인이 새 `phoneNumber`로 변경하려 하나 그 번호를 SMS 재인증(US-1-10)하지 않았으면(VERIFIED 마커 없음·불일치)
   When `PATCH /api/v1/users/me`에 새 `phoneNumber`를 담아 호출하면
   Then `422` + `error.code=AUTH_PHONE_NOT_VERIFIED`를 반환하고 연락처를 변경하지 않는다. 새 번호를 SMS 인증번호로 재인증(`POST /auth/phone/verification-code`·`/auth/phone/verify`)해 VERIFIED된 뒤에 다시 호출하면 변경이 반영된다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용).
 - **입력 검증 실패**
-  Given 수정 본문의 `gender`/`visaType`/`occupation`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `country`가 빈값이면
+  Given 수정 본문의 `gender`/`visaType`/`occupation`이 정의된 enum 외 값이거나 `birthDate`가 형식/범위 위반이거나 `country`가 빈값이거나 `lang`이 지원 목록(`en`·`ko`·`ja`) 밖 코드(예: `"xx"`·`"KO"`(대문자)·`"ko-KR"`(지역 태그)·`"zh"`(콘텐츠 미시드))이면
   When `PATCH /api/v1/users/me`를 호출하면
   Then `400` + `error.code=INVALID_INPUT` + `errors[]`를 반환한다.
 - **인증·권한 — 온보딩 미완료 접근**
@@ -450,7 +454,7 @@
 
 > 관련 API 스펙: [02-diagnosis-recommendation](../api/specs/02-diagnosis-recommendation.md)
 
-외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자의 등록 국가에 따라 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
+외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자 표시 언어로 번역되어 내려간다(US-2-5·US-2-6). 진단은 제출 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(새 진단 생성)할 수 있다.
 
 - 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`가 `NO_ARC`(ARC 미발급)이면 서버가 추천용 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가해 ARC 불요 매물만 매칭한다(사용자가 ④에서 직접 고르는 값 아님, 최대 3개 제한에서 제외).
 - MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
@@ -504,7 +508,7 @@
 
 - **우선순위**: High
 - **관련 NFR**: 성능(추천 쿼리·좌표 집계 응답시간 목표, 확인 필요 — NFR 문서 미확정), 보안(본인 진단만 조회)
-- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 등록 국가 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 국가 취득, 미지원=영어 폴백 — US-2-6 일관).
+- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 사용자 표시 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 언어 취득, 미지원=영어 폴백 — US-2-6 일관).
 
 **AC (Given / When / Then)**
 
@@ -648,21 +652,21 @@
   - **When** `POST /api/v1/diagnoses/answers`를 호출한다
   - **Then** 미정의 그룹 코드를 무시하지 않고 명시적으로 거부해 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드(`university`)를 담는다
 
-### US-2-6 — 사용자 국가 기반 진단 문항·선택지 번역 제공
+### US-2-6 — 사용자 표시 언어 기반 진단 문항·선택지 번역 제공
 
 **As a** 한국어가 익숙하지 않은 외국인 사용자
-**I want** 진단 문항·선택지를 내 국가(언어)에 맞게 번역된 텍스트로 받고
+**I want** 진단 문항·선택지를 내 표시 언어에 맞게 번역된 텍스트로 받고
 **So that** 모국어 또는 영어로 질문을 이해하고 정확히 답할 수 있다
 
 - **우선순위**: High (외국인 대상 서비스의 핵심 접근성)
-- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 폴백), 보안(본인 국가 정보 기반 — 온보딩 수집값)
-- **백엔드 관점**: 번역 기준은 **사용자의 등록 국가**(온보딩 수집값)다 — 클라이언트가 언어를 지정하지 않고, 서버가 등록 국가→언어 매핑으로 정한 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 가입 시 확보한 국가가 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. `country→language` 매핑은 `user`의 `countries.lang`이 보유한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). 신규 6개 대학 그룹(`UniversityGroup`) 코드(`HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)도 동일하게 UPPER_SNAKE 불변 코드이며 코드로 검증하고, 그룹의 표시 라벨(예 "서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil")은 다른 선택지와 똑같이 언어-키 맵으로 번역 대상이 된다. US-2-5와 동일 엔드포인트에서 처리한다.
+- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 폴백), 보안(본인 표시 언어 기반 — 사용자 선택값)
+- **백엔드 관점**: 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)) — 사용자가 앱 지구본에서 언어를 직접 고르면 그 값이 기준이 되고 고르지 않았으면 `en`이 기준이 되며, 서버가 그 언어의 문항·선택지 **표시 라벨**을 채워 반환한다(`Accept-Language` 헤더에 의존하지 않음; 사용자 선택값이 기기 설정보다 안정적). 표시 언어는 `diagnosis`가 **`user` 모듈 공개 query(`getLanguage`)를 동기 호출**해 취득한다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; 토큰 클레임 분기는 사용하지 않음; ADR-0002 Decision 5 — 모듈 의존 `diagnosis→user` 추가). 진단은 **세입자·임대인 모두 이용할 수 있다**(별도 역할 게이트 없음) — 임대인은 서버 고정 `lang='ko'`라 진단을 한국어로 본다. 번역은 별도 컬렉션·키 없이 **`diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": ..., "ja": ..., "ko": ... }`, 선택지는 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버는 사용자 언어 키(예 `ja`)로 message·label을 고르고, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다. 선택지 **코드는 언어와 무관하게 동일·불변**(UPPER_SNAKE)하며 언어-키 맵의 값(표시 문자열)만 언어별이다(제출은 코드로 검증). 신규 6개 대학 그룹(`UniversityGroup`) 코드(`HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)도 동일하게 UPPER_SNAKE 불변 코드이며 코드로 검증하고, 그룹의 표시 라벨(예 "서울대·중앙대·숭실대" / "Seoul National · Chung-Ang · Soongsil")은 다른 선택지와 똑같이 언어-키 맵으로 번역 대상이 된다. US-2-5와 동일 엔드포인트에서 처리한다.
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 — 국가에 맞는 번역 제공
+- 시나리오: 정상 — 표시 언어에 맞는 번역 제공
 
-  - **Given** 등록 국가가 일본인 사용자가 진단 문항을 조회한다
+  - **Given** 표시 언어가 일본어(`ja`)인 사용자(`lang="ja"`를 직접 고른 경우)가 진단 문항을 조회한다
   - **When** 진단 문항 조회 엔드포인트를 호출한다
   - **Then** 질문·선택지 표시 라벨이 해당 언어로 번역되어 반환되고, 선택지 코드는 언어와 무관하게 동일하다
 - 시나리오: 폴백 — 미지원 언어
@@ -1319,9 +1323,9 @@
 
 > **범위 변경(이전 모델 대체)**: 이전 범위의 "오늘의 퀴즈(하루 1개)"·포인트 적립(`QUIZ_CORRECT`)·`/points` 합계·내역 조회 모델은 본 범위에서 **랜덤·무상태·다국어 학습 퀴즈로 대체**된다. 따라서 포인트 관련 스토리·엔드포인트는 제외되고, `QUIZ_NOT_TODAY`·`QUIZ_ALREADY_SUBMITTED` 도메인 에러는 발생하지 않는다. 이 대체 모델은 API 스펙([06-gamification](../api/specs/06-gamification.md))·시퀀스 다이어그램(`sequence-diagrams/06-gamification/`)·도메인 모델·DB 설계·[ADR-0035](../adr/0035-gamification-quiz-random-stateless-catalog.md)에 반영 완료됐다("한 도메인 = 네 곳" 정합, [CLAUDE.md](../../CLAUDE.md)). 남은 후속은 스캐폴드 코드(`src/main/java/com/kohere/gamification/**`) 재구현이다.
 >
-> **다국어 번역이 기반**이다. 퀴즈 문항·보기·해설의 **표시 텍스트**는 사용자의 **등록 국가에 대응하는 언어**로 번역해 반환한다 — 표시 언어는 `gamification`이 `user` 모듈 공개 query(`getLanguage`)를 호출해 취득하고(등록 국가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임에 의존하지 않음), 해당 언어 번역이 없으면 **영어(`en`)로 폴백**한다(에러 아님). 보기 **키(A~D)는 언어와 무관하게 불변**이며 표시 텍스트만 언어별이다(채점은 키로 검증). 번역 저장은 `diagnosis`와 동일하게 문항 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하는 방식을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6와 동일 패턴).
+> **다국어 번역이 기반**이다. 퀴즈 문항·보기·해설의 **표시 텍스트**는 사용자의 **표시 언어**로 번역해 반환한다 — 표시 언어는 `gamification`이 `user` 모듈 공개 query(`getLanguage`)를 호출해 취득하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); `Accept-Language`·토큰 클레임에 의존하지 않음). 해당 언어 번역이 없으면 **영어(`en`)로 폴백**한다(에러 아님). 보기 **키(A~D)는 언어와 무관하게 불변**이며 표시 텍스트만 언어별이다(채점은 키로 검증). 번역 저장은 `diagnosis`와 동일하게 문항 도큐먼트 안 **인라인 언어-키 맵**으로 임베드하는 방식을 따른다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6와 동일 패턴).
 >
-> 인증 표기 기준: 본 기능은 **외국인 세입자(`userType=TENANT`)** 대상이다 — 조회·채점 모두 **온보딩을 완료한(`ACTIVE`) 세입자** 전용이다(정식 access 토큰 = `ROLE_USER`). 다국어 번역 기준인 등록 국가(언어)도 세입자 온보딩 수집값이라 임대인에게는 적용되지 않는다. 상태를 저장하지 않으므로 타인 리소스 접근 개념이 없고 인증만 강제한다. `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
+> 인증 표기 기준: 본 기능은 **외국인 세입자(`userType=TENANT`)** 대상이다 — 조회·채점 모두 **온보딩을 완료한(`ACTIVE`) 세입자** 전용이다(정식 access 토큰 = `ROLE_USER`). **한국 주거 지식을 학습하려는 외국인 세입자를 위한 기능이라 임대인은 대상이 아니다** — 임대인도 `country`·`lang`(`'KR'`/`'ko'` 고정)을 갖게 되었으므로([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) "임대인은 등록 국가가 없어서"가 아니라 **대상 액터 정의**가 게이트의 근거다. 상태를 저장하지 않으므로 타인 리소스 접근 개념이 없고 인증만 강제한다. `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅하고 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
 
 ### US-6-1 — 랜덤 퀴즈 조회
 
@@ -1330,7 +1334,7 @@
 **So that** 매번 새로운 문제로 횟수 제한 없이 반복 학습할 수 있다 (정답·해설은 조회 응답에 싣지 않고 채점 요청에서만 공개한다)
 
 - 우선순위: High
-- 관련 NFR: 국제화(문항·보기 표시 언어는 등록 국가 기준, 영어 폴백), 성능(자주 호출되는 조회, p95 응답시간 목표 — 확인 필요), 보안(정답/해설은 조회 응답에 미포함)
+- 관련 NFR: 국제화(문항·보기 표시 언어는 `users.lang`이 있으면 그 값, 없으면 영어 폴백), 성능(자주 호출되는 조회, p95 응답시간 목표 — 확인 필요), 보안(정답/해설은 조회 응답에 미포함)
 
 **AC (Given/When/Then)**
 
@@ -1407,20 +1411,20 @@
   - When `POST /api/v1/quizzes/{quizId}/answer`를 반복 호출한다
   - Then 매번 채점 결과만 반환하고 제출 기록·포인트 적립 등 상태 변경이 없다(하루 1회 제한·`409 QUIZ_ALREADY_SUBMITTED` 없음)
 
-### US-6-3 — 사용자 국가 기반 퀴즈 문항·해설 번역 제공
+### US-6-3 — 사용자 표시 언어 기반 퀴즈 문항·해설 번역 제공
 
 **As a** 한국어가 익숙하지 않은 외국인 세입자(`ACTIVE`·`userType=TENANT`)
-**I want** 퀴즈 문항·보기·해설을 내 국가(언어)에 맞게 번역된 텍스트로 받기
-**So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (번역 기준은 등록 국가→언어이며 `user` 공개 query `getLanguage`로 취득, 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
+**I want** 퀴즈 문항·보기·해설을 내 표시 언어에 맞게 번역된 텍스트로 받기
+**So that** 모국어 또는 영어로 문제를 이해하고 정확히 답할 수 있다 (번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이며 `user` 공개 query `getLanguage`로 취득([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 미지원 언어는 영어로 폴백, 보기 키 A~D는 언어와 무관하게 불변)
 
 - 우선순위: High
-- 관련 NFR: 국제화(i18n), 일관성(번역 누락 시 영어 폴백), 보안(본인 국가 정보 기반 — 온보딩 수집값)
+- 관련 NFR: 국제화(i18n), 일관성(번역 누락 시 영어 폴백), 보안(본인 표시 언어·국가 정보 기반 — 사용자 선택값 또는 온보딩 수집값)
 
 **AC (Given/When/Then)**
 
-- 시나리오: 정상 — 국가에 맞는 번역 제공
+- 시나리오: 정상 — 표시 언어에 맞는 번역 제공
 
-  - Given 등록 국가가 일본(언어 `ja`)인 세입자가 퀴즈를 조회한다
+  - Given 표시 언어가 일본어(`ja`)인 세입자(`lang="ja"`를 직접 고른 경우)가 퀴즈를 조회한다
   - When `GET /api/v1/quizzes/random`을 호출한다
   - Then 문항·보기 표시 텍스트가 해당 언어로 번역되어 반환되고, 보기 키(A~D)는 언어와 무관하게 동일하다
 - 시나리오: 폴백 — 미지원 언어
@@ -1430,7 +1434,7 @@
   - Then 기본 언어(영어)로 폴백해 반환한다(에러 아님)
 - 시나리오: 채점 해설도 번역 제공 (정답·오답 공통)
 
-  - Given 등록 국가 언어가 `ja`인 세입자가 정답 또는 오답을 제출한다
+  - Given 표시 언어가 `ja`인 세입자가 정답 또는 오답을 제출한다
   - When `POST /api/v1/quizzes/{quizId}/answer`를 호출한다
   - Then 정답·오답 모두 `explanation`(해설)이 사용자 언어로 번역되어 반환되고(번역이 없으면 영어 폴백), 오답이면 `correctChoice`가 함께 반환된다
 - 시나리오: 키 불변 — 번역과 무관한 채점
@@ -1601,9 +1605,11 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
 온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 읽기 전용 큐레이션 기능이다. 홈 화면 진입점([project-brief §4](../project/project-brief.md))에서 시작하며, 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(5절)와 구분된다).
 
-**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
+**번역이 이 기능의 바탕이다** — 주제명·주제 설명(짧은·긴)·제목·내용 표시 텍스트는 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한 언어로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141), US-2-6): 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). `Accept-Language` 헤더·토큰 클레임은 쓰지 않는다. 주제·팁의 식별자(`code`/`id`)와 이미지 URL(주제의 카드 이미지 `LifeTipTopic.imageUrl`·배경 이미지 `backgroundImageUrl`, 팁의 사진 `LifeTip.imageUrl`)은 언어 무관 불변이고, 표시 텍스트(주제명·주제 설명·제목·내용)만 언어별이다.
 
-> **인증·상태 게이트 기준**: 표시 언어를 **등록 국가에서 도출**하려면 온보딩으로 국가·언어가 확정된 사용자여야 한다. 따라서 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다(임대인·온보딩 미완료 사용자는 등록 국가가 없어 대상이 아니다) — 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+> **인증·상태 게이트 기준**: 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자**이고, 모든 조회는 **정식 인증(ROLE_USER)** 을 요구한다. **한국 생활 정보가 필요한 외국인 세입자를 위한 기능이라 임대인은 대상이 아니며**, 온보딩 미완료 사용자는 표시 언어를 정할 프로필 자체가 확정되지 않아 대상이 아니다 — 임대인도 `country`·`lang`(`'KR'`/`'ko'` 고정)을 갖게 되었으므로([ADR-0034](../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) "임대인은 등록 국가가 없어서"가 아니라 **대상 액터 정의**가 게이트의 근거다. 온보딩 미완료(PENDING/TERMS_AGREED, ROLE_ONBOARDING) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/만료는 `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`다(진단 보호 엔드포인트와 동일 게이트). 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+>
+> **註 — 세입자 게이트 미구현(기존 결함, #141에서 수정)**: 현재 코드에는 생활 팁의 `userType=TENANT` 검사가 **없어 임대인도 조회를 통과한다**(퀴즈(6절)에는 `assertTenant` 게이트가 이미 있다). 이 문서가 정본이며, 응용 계층에 TENANT 게이트를 **신설**해 코드가 문서를 따라가게 한다. 반면 **진단(2절)은 세입자·임대인 모두 이용 가능**해 게이트를 두지 않는다(임대인은 진단을 `ko`로 본다).
 
 > **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 모듈 경계(`lifetip` 신설 여부)·저장소·MVP 편입 시점 확정은 이슈 #79에서 다룬다.
 
@@ -1614,14 +1620,14 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 **So that** 홈 화면에서 주제 카드(이미지 + 짧은 설명)를 훑어보고, 관심 있는 주제를 골라 상세 상단(배경 이미지 + 긴 설명)과 관련 생활 정보로 들어갈 수 있다
 
 - **우선순위**: Mid (홈 진입 콘텐츠, 보호 핵심(진단·추천) 아님)
-- **관련 NFR**: 국제화(i18n — 등록 국가 기반 번역·`en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
+- **관련 NFR**: 국제화(i18n — `users.lang`이 있으면 그 값, 없으면 `en` 폴백), 성능(소규모 고정 카탈로그 조회), 유지보수성(주제 카탈로그 단일 출처)
 - **백엔드 관점**: 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그다. 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며, 표시명(`name`)·짧은 설명(`shortDescription`)·긴 설명(`longDescription`)은 언어-키 맵으로 임베드되고, 카드 이미지(`LifeTipTopic.imageUrl`)·배경 이미지(`backgroundImageUrl`)는 언어 무관 절대 CDN URL이다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`·`shortDescription`·`longDescription`을 채우며 두 이미지 URL은 그대로 실어, 노출 순서대로 주제당 6필드(`code`·`name`·`shortDescription`·`longDescription`·`imageUrl`·`backgroundImageUrl`)를 한 응답에 반환한다. 설명 2종·이미지 2종은 **모두 필수(값 없는 주제 없음)** 라 홈 카드·상세 상단이 항상 이미지·설명을 그린다(팁의 `LifeTip.imageUrl`은 '사진 없는 팁'이 있어 nullable이지만 주제의 이 4필드는 이와 구분된다). `order` 자체는 응답에 노출하지 않는다. 주제 수는 고정·소규모라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 메타 — api-design-guide §4 목록 규약 미적용, US-7-3과 동일 성격). 앱은 목록에서 받은 주제 객체를 상세 화면까지 그대로 들고 가므로(주제는 소규모 고정, 과다 전송 부담 없음) 6필드가 이 한 응답에 함께 실린다. `code`는 US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다.
 
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 — 주제 목록을 내 언어로 조회
 
-  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
+  - **Given** 표시 언어가 일본어(`ja`)인 ACTIVE 세입자가 유효한 access token(ROLE_USER)을 보유한다
   - **When** `GET /api/v1/life-tips/topics`를 호출한다
   - **Then** `200 OK`와 함께 `topics[]`를 공통 래퍼로 반환한다 — 각 주제에 `code`(UPPER_SNAKE), 일본어로 번역된 `name`·`shortDescription`·`longDescription`, 언어 무관 절대 CDN URL `imageUrl`·`backgroundImageUrl`가 실려 **6필드가 한 응답에 함께** 담기며, `order` 오름차순 노출 순서대로·페이지 객체 없이 전체 배열을 한 번에 준다
 - 시나리오: 화면 구성 — 홈 카드·상세 상단
@@ -1664,7 +1670,7 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
 
 - 시나리오: 정상 — 주제별 팁 전체 조회
 
-  - **Given** 등록 국가가 일본인 ACTIVE 세입자와, 팁 3건이 속한 주제(`code=MOVING_IN`)가 있다
+  - **Given** 표시 언어가 일본어(`ja`)인 ACTIVE 세입자와, 팁 3건이 속한 주제(`code=MOVING_IN`)가 있다
   - **When** `GET /api/v1/life-tips/topics/MOVING_IN/tips`를 호출한다
   - **Then** `200 OK`와 함께 `tips[]`(각 `id`, 일본어로 번역된 `title`·`content`, `imageUrl`)가 노출 순서대로 3건 모두 반환되며, 페이지 객체 없이 전체 배열을 한 번에 준다
 - 시나리오: 폴백 — 미지원 언어
@@ -1693,30 +1699,30 @@ Then  405 Method Not Allowed, error.code="METHOD_NOT_ALLOWED" 가 반환된다.
   - **When** `GET /api/v1/life-tips/topics/{topicCode}/tips`를 호출한다
   - **Then** `401 Unauthorized`와 `error.code=UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)를 받는다
 
-### US-8-3 — 사용자 국가 기반 생활 팁 번역 제공
+### US-8-3 — 사용자 표시 언어 기반 생활 팁 번역 제공
 
 **As a** 한국어가 익숙하지 않은 ACTIVE 세입자(외국인) 사용자
-**I want** 주제명·제목·내용을 내 국가(언어)에 맞게 번역된 텍스트로 받고
+**I want** 주제명·제목·내용을 내 표시 언어에 맞게 번역된 텍스트로 받고
 **So that** 모국어 또는 영어로 생활 정보를 이해할 수 있다
 
 - **우선순위**: High (외국인 대상 서비스의 핵심 접근성 — 이 기능의 바탕)
-- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 `en` 폴백), 보안(본인 등록 국가 기반 — 온보딩 수집값)
-- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 번역 기준은 **사용자 등록 국가**(온보딩 수집값)이고, 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(`user`가 `countries.lang`으로 도출; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+- **관련 NFR**: 국제화(i18n), 일관성(번역 누락 시 `en` 폴백), 보안(본인 표시 언어 기반 — 사용자 선택값)
+- **백엔드 관점**: 번역 전략은 진단 i18n([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **동일**하며 별도 메커니즘을 만들지 않는다. 번역 기준은 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**이고([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)), 표시 언어는 `user` 모듈 공개 query `getLanguage(userId)`를 **동기 호출**해 취득한다(도출 규칙은 `user`가 캡슐화하며 query 시그니처는 불변; `Accept-Language`·토큰 클레임 미사용; [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가). 번역 텍스트는 별도 메시지 컬렉션·키 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**으로 임베드한다 — 주제는 `name: { "en": …, "ja": …, "ko": … }`, 팁은 `title`/`content` 각각 언어-키 맵. 서버는 사용자 언어 키로 문자열을 고르고 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. US-8-1·US-8-2와 동일 엔드포인트에서 처리하며 응답 스키마는 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 
 **AC (Given / When / Then)**
 
-- 시나리오: 정상 — 국가에 맞는 번역 제공
+- 시나리오: 정상 — 표시 언어에 맞는 번역 제공
 
-  - **Given** 등록 국가가 일본인 ACTIVE 세입자가 주제 목록 또는 주제별 팁을 조회한다
+  - **Given** 표시 언어가 일본어(`ja`)인 ACTIVE 세입자(`lang="ja"`를 직접 고른 경우)가 주제 목록 또는 주제별 팁을 조회한다
   - **When** 생활 팁 조회 엔드포인트를 호출한다
   - **Then** 주제명·제목·내용 표시 텍스트가 일본어로 번역되어 반환되고, `code`/`id`·`imageUrl`은 언어와 무관하게 동일하다
 - 시나리오: 폴백 — 미지원 언어
 
-  - **Given** 번역이 준비되지 않은 국가/언어의 사용자다(또는 국가→언어 매핑 미정의)
+  - **Given** 번역이 준비되지 않은 표시 언어의 사용자다(또는 `lang` 미설정)
   - **When** 생활 팁 조회 엔드포인트를 호출한다
   - **Then** 기본 언어(영어 `en`)로 폴백해 `200 OK`로 반환한다(에러 아님)
 - 시나리오: 언어 결정 출처 — 헤더 무관
 
-  - **Given** 사용자가 `Accept-Language`를 다른 값으로 보내도 등록 국가는 일본이다
+  - **Given** 사용자가 `Accept-Language`를 다른 값으로 보내도 그 사용자의 표시 언어는 일본어(`ja`)다
   - **When** 생활 팁 조회 엔드포인트를 호출한다
-  - **Then** 응답 언어는 헤더와 무관하게 등록 국가(일본어)로 결정된다(번역 언어 출처는 `user`의 `countries.lang`)
+  - **Then** 응답 언어는 헤더와 무관하게 표시 언어(일본어)로 결정된다(번역 언어 출처는 `user`의 `getLanguage(userId)` — `users.lang`이 있으면 그 값, 없으면 `en`)

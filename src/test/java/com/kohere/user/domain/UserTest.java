@@ -60,6 +60,7 @@ class UserTest {
             Occupation.UNDERGRADUATE_STUDENT,
             "gil@example.com",
             VisaType.SHORT_TERM_VISIT,
+            Language.EN,
             NOW);
 
     assertThat(active.getStatus()).isEqualTo(UserStatus.ACTIVE);
@@ -88,6 +89,7 @@ class UserTest {
                     Occupation.UNDERGRADUATE_STUDENT,
                     "gil@example.com",
                     VisaType.SHORT_TERM_VISIT,
+                    Language.EN,
                     NOW))
         .isInstanceOf(TermsAgreementRequiredException.class);
   }
@@ -108,6 +110,7 @@ class UserTest {
                     Occupation.ETC,
                     "a@example.com",
                     VisaType.STUDENTS_TRAINEES,
+                    Language.EN,
                     NOW))
         .isInstanceOf(OnboardingAlreadyCompletedException.class);
   }
@@ -116,7 +119,8 @@ class UserTest {
   void updateProfile_changesOnlyProvidedFields() {
     User active = activeUser();
 
-    User updated = active.updateProfile("Updated", null, null, null, null, null, null, null, NOW);
+    User updated =
+        active.updateProfile("Updated", null, null, null, null, null, null, null, null, NOW);
 
     assertThat(updated.getFirstName()).isEqualTo("Updated");
     assertThat(updated.getLastName()).isEqualTo(active.getLastName());
@@ -167,13 +171,15 @@ class UserTest {
     // 사업자번호 해시는 온보딩에서 확정하지 않는다(온보딩 후 매물 등록 시점에 채움, ADR-0033)
     assertThat(active.getBusinessRegistrationNumberHash()).isNull();
     assertThat(active.getNickname()).isEqualTo("CalmFox");
-    // 임대인은 성별·국적·직업·비자·이메일을 수집하지 않는다(생년월일은 세입자와 동일하게 수집 — #131)
+    // 임대인은 성별·직업·비자·이메일을 수집하지 않는다(생년월일은 세입자와 동일하게 수집 — #131)
     assertThat(active.getGender()).isNull();
-    assertThat(active.getCountry()).isNull();
     assertThat(active.getOccupation()).isNull();
     assertThat(active.getVisaType()).isNull();
     assertThat(active.getEmail()).isNull();
     assertThat(active.getBirthDate()).isEqualTo(LocalDate.of(1988, 5, 20));
+    // 국적·표시 언어는 서버가 KR·ko로 고정 부여한다(ADR-0034 개정, #141)
+    assertThat(active.getCountry()).isEqualTo("KR");
+    assertThat(active.getLang()).isEqualTo(Language.KO);
   }
 
   @Test
@@ -258,6 +264,7 @@ class UserTest {
             Occupation.UNDERGRADUATE_STUDENT,
             "gil@example.com",
             VisaType.SHORT_TERM_VISIT,
+            Language.EN,
             NOW);
   }
 }

@@ -38,6 +38,7 @@ flowchart LR
       BIZNO["비즈노(Bizno) API<br/>(국세청 사업자등록 진위·상태 · 임대인 사업자번호 검증)"]
       SOLAPI["SOLAPI<br/>(임대인 연락처 SMS 인증번호)"]
       MAIL["Gmail SMTP<br/>(세입자 이메일 인증번호)"]
+      NAVER["네이버 지역 검색 API<br/>(매물 장소 키워드 검색 · listing places)"]
     end
 
     subgraph Cloud["AWS — 백엔드"]
@@ -59,6 +60,7 @@ flowchart LR
     SRV -- "사업자번호 검증(임대인 전용·온보딩 후 무상태)" --> BIZNO
     SRV -- "임대인 연락처 SMS 인증번호 발송" --> SOLAPI
     SRV -- "세입자 이메일 인증번호 발송(SMTP)" --> MAIL
+    SRV -- "장소 키워드 검색(네이버 지역검색)" --> NAVER
     SRV --> MYSQL
     SRV --> MONGO
     SRV --> REDIS
@@ -118,9 +120,9 @@ flowchart TB
 
 > 추천 흐름(ADR-0005 Decision 2): `diagnosis`가 진단 조건을 값 객체 `RecommendationCriteria`로 만들어 넘기면 `listing`이 `recommendByCriteria(...)`로 **자기 Mongo 컬렉션만** 질의한다. 둘 다 Mongo지만 **cross-collection 조인은 하지 않는다**(co-location은 부수적).
 >
-> 문항·번역 흐름(US-2-5·US-2-6, ADR-0002 정합): 클라이언트는 `GET /api/v1/diagnoses/questions/{step}`(인증 필수)로 받을 단계 `step`(1~6)을 path로 지정해 그 단계 질문 1개를 받고(`{ step, field, question(사용자 언어 라벨 문자열), select{ type, max }, options[{ code, label }] }`), 그 단계 답을 `POST /api/v1/diagnoses/answers`(body `{ field, code }`, conditions처럼 다중은 `codes` 배열)로 보내면 서버가 **본인 in-progress 진단에 저장**한다(단계별 server-stateful, 누적 답 묶음 전송 없음; 다음 단계 번호는 클라이언트가 정한다). ③ 대학/지역 질문은 **서비스 비즈니스 로직**이 저장된 `purpose`로 골라 반환한다(`STUDY`→`university`, `NON_STUDY`→`district` — `diagnosisQuestions`에는 분기 메타 없음, 데이터만, 클라 분기 아님). 선택지 `code`는 제출 검증 enum과 **동일 출처**(1:1)·언어 무관 불변, 표시 `label`·`question`만 **사용자 언어로 채운다**(미지원 언어 키는 **영어 폴백**). 모든 단계 답이 저장되면 별도 제출(`POST /api/v1/diagnoses`)이 서버 저장 답을 재검증해 in-progress 진단을 `COMPLETED`로 확정한다(201, `data.diagnosisId`·status `COMPLETED`·`submittedAt`, `Location` 헤더). 번역에 필요한 **등록 국가는 `diagnosis`가 `user` 모듈 공개 query를 동기 호출**해 취득한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기 없음, 모듈 간 직접 호출/엔티티 공유 없이). **번역은 별도 컬렉션·키 없이 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버가 사용자 언어 키로 값을 고르고 부재 시 `en` 폴백한다(`code`는 언어 무관 불변). `country→language` 매핑도 서버에서 처리한다(Accept-Language 비의존).
+> 문항·번역 흐름(US-2-5·US-2-6, ADR-0002 정합): 클라이언트는 `GET /api/v1/diagnoses/questions/{step}`(인증 필수)로 받을 단계 `step`(1~6)을 path로 지정해 그 단계 질문 1개를 받고(`{ step, field, question(사용자 언어 라벨 문자열), select{ type, max }, options[{ code, label }] }`), 그 단계 답을 `POST /api/v1/diagnoses/answers`(body `{ field, code }`, conditions처럼 다중은 `codes` 배열)로 보내면 서버가 **본인 in-progress 진단에 저장**한다(단계별 server-stateful, 누적 답 묶음 전송 없음; 다음 단계 번호는 클라이언트가 정한다). ③ 대학/지역 질문은 **서비스 비즈니스 로직**이 저장된 `purpose`로 골라 반환한다(`STUDY`→`university`, `NON_STUDY`→`district` — `diagnosisQuestions`에는 분기 메타 없음, 데이터만, 클라 분기 아님). 선택지 `code`는 제출 검증 enum과 **동일 출처**(1:1)·언어 무관 불변, 표시 `label`·`question`만 **사용자 언어로 채운다**(미지원 언어 키는 **영어 폴백**). 모든 단계 답이 저장되면 별도 제출(`POST /api/v1/diagnoses`)이 서버 저장 답을 재검증해 in-progress 진단을 `COMPLETED`로 확정한다(201, `data.diagnosisId`·status `COMPLETED`·`submittedAt`, `Location` 헤더). 번역에 필요한 **표시 언어는 `diagnosis`가 `user` 모듈 공개 query `getLanguage(userId)`를 동기 호출**해 취득한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기 없음, 모듈 간 직접 호출/엔티티 공유 없이). **번역은 별도 컬렉션·키 없이 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**으로 둔다. 서버가 사용자 언어 키로 값을 고르고 부재 시 `en` 폴백한다(`code`는 언어 무관 불변). 표시 언어도 서버가 처리한다 — **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`** 으로 정한다(Accept-Language 비의존, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 >
-> 생활 팁 흐름(US-8-1 ~ US-8-3, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 정합): `lifetip`은 **1차 MVP 이후 홈 부가 기능**으로 **읽기 전용**이다(발행/구독 도메인 이벤트 없음). 클라이언트가 `GET /api/v1/life-tips/topics`(주제 전체 목록·비페이지)와 `GET /api/v1/life-tips/topics/{topicCode}/tips`(해당 주제 팁 전체·비페이지)로 조회하면(모두 정식 인증 `ROLE_USER`=`ACTIVE` 세입자, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`), 서버가 자기 Mongo 컬렉션(`lifeTipTopics`·`lifeTips`)만 질의한다(주제 : 팁 = 1 : N, `topicCode`로 **애플리케이션 레벨 조인**·DB 조인 없음). 존재하지 않는 주제 코드는 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 코드)다. **번역은 진단과 완전히 동일한 전략**을 재사용한다 — 표시 문자열(주제 `name`·`shortDescription`·`longDescription`, 팁 `title`·`content`)을 도큐먼트 안 인라인 언어-키 맵(`{ "en": .., "ja": .., "ko": .. }`)으로 임베드하고, 등록 국가로 정한 표시 언어는 **`lifetip`이 `user` 모듈 공개 query `getLanguage(userId)`를 동기 호출**해 취득한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5; `Accept-Language`·토큰 클레임 비의존, `user`가 `countries.lang`으로 도출). 미지원 언어 키는 `en` 폴백(에러 아님), 식별자(topic code / tip id)와 이미지 URL(주제 `imageUrl`·`backgroundImageUrl`, 팁 `imageUrl`)은 언어 무관 불변이다. 컬렉션 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)).
+> 생활 팁 흐름(US-8-1 ~ US-8-3, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 정합): `lifetip`은 **1차 MVP 이후 홈 부가 기능**으로 **읽기 전용**이다(발행/구독 도메인 이벤트 없음). 클라이언트가 `GET /api/v1/life-tips/topics`(주제 전체 목록·비페이지)와 `GET /api/v1/life-tips/topics/{topicCode}/tips`(해당 주제 팁 전체·비페이지)로 조회하면(모두 정식 인증 `ROLE_USER`=`ACTIVE` 세입자, 온보딩 미완료 토큰은 `403 AUTH_ONBOARDING_REQUIRED`), 서버가 자기 Mongo 컬렉션(`lifeTipTopics`·`lifeTips`)만 질의한다(주제 : 팁 = 1 : N, `topicCode`로 **애플리케이션 레벨 조인**·DB 조인 없음). 존재하지 않는 주제 코드는 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 코드)다. **번역은 진단과 완전히 동일한 전략**을 재사용한다 — 표시 문자열(주제 `name`·`shortDescription`·`longDescription`, 팁 `title`·`content`)을 도큐먼트 안 인라인 언어-키 맵(`{ "en": .., "ja": .., "ko": .. }`)으로 임베드하고, 표시 언어는 **`lifetip`이 `user` 모듈 공개 query `getLanguage(userId)`를 동기 호출**해 취득한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5; `Accept-Language`·토큰 클레임 비의존, `user`가 **`users.lang`이 있으면 그 값, 없으면 `en`** 으로 결정). 미지원 언어 키는 `en` 폴백(에러 아님), 식별자(topic code / tip id)와 이미지 URL(주제 `imageUrl`·`backgroundImageUrl`, 팁 `imageUrl`)은 언어 무관 불변이다. 컬렉션 시드는 진단 카탈로그와 동일하게 Mongock `@ChangeUnit`(모듈별)로 적재한다([ADR-0032](../adr/0032-mongodb-migration-runner.md)).
 
 ### 1-3. 아키텍처: 로컬 개발 ↔ 클라우드 배포
 
@@ -156,17 +158,17 @@ flowchart TB
       REDIS[("redis · :6379<br/>refresh token (TTL)")]
     end
 
-    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS)"]
+    EXT["외부 API (compose 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · 네이버(장소검색)"]
 
     DEV -- "REST /api/v1<br/>localhost:8080" --> APP
     CFG -. "DB 접속·시크릿 주입" .-> APP
     APP -- "JDBC  mysql:3306" --> MYSQL
     APP -- "mongo:27017" --> MONGO
     APP -- "redis:6379" --> REDIS
-    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS" .-> EXT
+    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·장소검색" .-> EXT
 ```
 
-> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)** 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다. 콘텐츠 이미지(매물·생활팁·국기 등)는 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
+> 컨테이너는 서로를 **서비스명**(`mysql`·`mongo`·`redis`)으로 부르고, 개발자만 `localhost:8080`으로 app에 접속한다. 클라우드 이전(§1-3-2) 시 **app 이미지는 그대로**, 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3·Secrets Manager)로 교체된다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·네이버 지역검색(장소) 는 제3자 외부 실호출이다. 이메일 인증 메일은 **로컬은 MailHog**, dev/prod는 **Gmail SMTP**다. 콘텐츠 이미지(매물·생활팁·국기 등)는 백엔드가 보관하지 않고 URL만 저장하며, 클라이언트가 S3/CloudFront(로컬은 동일 URL/시드 URL)에서 직접 로드한다.
 
 #### 1-3-2. prod 클라우드 배포 아키텍처 (운영 시 배포 예정, AWS)
 
@@ -195,7 +197,7 @@ AWS 배포 토폴로지 — GitHub Actions가 빌드한 **동일 이미지**가 
 ```mermaid
 flowchart TB
     APP["모바일 앱<br/>(iOS / Android · 클라이언트)"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -234,7 +236,7 @@ flowchart TB
     R53 --> IGW
     IGW --> ALB
     ALB --> FARGATE
-    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP)" --> NAT
+    FARGATE -- "outbound(ECR·OIDC·Apple·비즈노·SOLAPI·SMTP·네이버)" --> NAT
     NAT -- "egress" --> IGW
     SSM -. "시크릿 주입(태스크 시작 시·task exec role)" .-> FARGATE
     FARGATE -- "JDBC :3306" --> RDS
@@ -244,14 +246,14 @@ flowchart TB
     CF -. "오리진" .-> S3IMG
     APP -. "이미지 GET(cdn.kohere.app)" .-> R53
     R53 -. "alias → CloudFront" .-> CF
-    FARGATE -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)" .-> EXT
+    FARGATE -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)·장소검색" .-> EXT
     CW -. "지표 감시(ALB·ECS·RDS·DocDB·Redis)" .-> FARGATE
     CW -- "알람 발동" --> SNS
     SNS -- "lambda 구독" --> LMBD
     LMBD -. "알람 임베드 POST(웹훅)" .-> DISCORD
 ```
 
-> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
+> 로컬과 동일한 app 이미지를 GitHub Actions가 ECR에 push하고, **prod은 운영 시점에** Fargate로 deploy한다(현재 배포 예정) — 로컬 docker-compose(§1-3-1)와 같은 그림에서 접속 대상만 서비스명 → 매니지드 엔드포인트(RDS·DocumentDB·ElastiCache·S3+CloudFront·**SSM Parameter Store**)로 교체되고, 3-tier 서브넷이 app·DB를 감싼다. Google/Apple OIDC·비즈노(사업자검증)·**연락처 SMS(SOLAPI)**·Gmail SMTP(메일)·네이버 지역검색(장소)는 로컬·클라우드 공통으로 AWS 밖 외부 실호출이다.
 
 #### 1-3-3. dev 배포 아키텍처 (비용 최소화 — 단일 EC2 compose)
 
@@ -275,7 +277,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     DEV["개발자 / 테스터"]
-    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일)"]
+    EXT["외부 API (AWS 밖)<br/>Google OIDC·JWKS · Apple(code 교환/revoke)<br/>비즈노(사업자검증) · SOLAPI(SMS) · Gmail SMTP(메일) · 네이버(장소검색)"]
     DISCORD["Discord 웹훅<br/>(팀 채널 · AWS 밖)"]
 
     subgraph CICD["GitHub Actions · ECR (CI/CD)"]
@@ -312,7 +314,7 @@ flowchart TB
     DEV -- "HTTPS 443" --> R53
     R53 --> IGW
     IGW -- "공인 IP(EIP)" --> CADDY
-    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP)" --> IGW
+    EC2 -- "egress(ECR·ACME·OIDC·비즈노·SOLAPI·SMTP·네이버)" --> IGW
     CADDY -- "내부 :8080" --> APP
     APP --> MYSQL
     APP --> MONGO
@@ -324,7 +326,7 @@ flowchart TB
     DEV -. "이미지 GET(cdn.dev.kohere.app)" .-> R53
     R53 -. "alias → CloudFront" .-> CF
     APP -. "시크릿(.env, 부팅·배포 refresh)" .-> SSM
-    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)" .-> EXT
+    APP -. "OIDC 검증·Apple code/revoke·사업자검증·SMS·메일(SMTP)·장소검색" .-> EXT
 ```
 
 > dev는 클라우드 EC2 한 대에 각 서비스를 **컨테이너 박스**로 올린 구성이라 로컬↔dev 엔진이 일치한다(`SPRING_PROFILES_ACTIVE=dev`). MailHog는 로컬 전용이라 dev는 실 SMTP를 쓰고, HTTPS는 Caddy([ADR-0022](../adr/0022-dev-https-caddy.md))가, 시크릿은 SSM Parameter Store SecureString(무료·SM 미사용, [ADR-0023](../adr/0023-secrets-in-ssm-parameter-store.md))이 담당하며, **변경 반영은 배포(`refresh-env` + app recreate)** 경로로 한다([ADR-0024](../adr/0024-secret-change-propagation.md)). 단일 호스트 SPOF·인터넷 노출은 SG(80/443)·SSM 전용·IMDSv2·EBS 암호화로 통제하며 dev 단계에서 수용한다. 상태(state)는 prod·dev 공통 S3 + native lockfile([ADR-0020](../adr/0020-terraform-remote-state-s3-dynamodb.md)), `key`로 분리한다.
@@ -338,12 +340,12 @@ flowchart TB
 | application         | 유스케이스 조율, 트랜잭션 경계, 이벤트 발행                                                               | —                              | `@Service`, `@Transactional`                       |
 | domain              | Aggregate·VO·도메인 규칙,**Repository 인터페이스**                                                | —                              | POJO, enum                                             |
 | infrastructure      | **Repository 구현**, 외부 어댑터(OIDC)                                                              | 모듈별 저장소                   | Spring Data JPA / Data MongoDB / Data Redis            |
-| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순** | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회                          |
-| diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 국가 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
+| listing(매물)       | 카탈로그·탐색(학교·지역·지하철역 검색)·조건 필터·상세·찜·최근 본,**지도 bbox 마커 + 거리순**, 장소 키워드 검색(`PlaceSearchClient`→네이버 지역 검색 API·무상태) | **MongoDB**               | `2dsphere` + 프론트 SDK 클러스터링용 마커 조회 + 네이버 지역 검색 API 어댑터(`NaverPlaceSearchClient`)                          |
+| diagnosis(진단)     | 6단계 진단 도큐먼트[지역·입국목적·대학(그룹, 6개)/지역선택·주거조건·월세 범위(min/max)·ARC], 단계별 문항 조회(`GET /questions/{step}`)·답 서버 저장(`POST /answers` → in-progress draft → `POST /diagnoses` 제출 시 COMPLETED 확정), 문항·선택지 제공(분기=서비스 로직, `diagnosisQuestions`=데이터만, 표시 언어 기반 번역; ③ 대학은 6개 그룹 단일선택, ⑤ 월세는 NUMBER_RANGE 자유입력), 결과 생성, 추천 criteria 발행(③ 그룹→멤버 대학코드 집합, ⑤ monthlyRentMin/Max), **v2 서버 주도 흐름**(`POST /api/v2/diagnoses/start` + `POST /api/v2/diagnoses/next` + `GET /api/v2/diagnoses/{id}/recommendations` — 서버는 다음 질문·분기·확정 시점만 판단하고 시작·매물 조회 시점은 클라가 결정, ① 지역 0건이면 카탈로그의 `regionRetry` 문항을 일반 질문으로 내고 예=`RESTART`/아니오=`TERMINATED`, 확정은 매칭을 조회하지 않고 `diagnosisId`만 반환하며 0건은 추천 조회의 빈 목록으로 드러남(제안 없음), 진행 세션 `diagnosisFlowSessions` 별도 저장, issue #157·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)                           | **MongoDB**               | 단일 도큐먼트 원자 쓰기                                |
 | booking(매물 예약)  | 매물 예약(신청) 저장 + 내 예약 목록·상세 조회(독립). 조회 시 `listing`·`user` 공개 쿼리 실시간 조인. `BookingCreatedEvent` 발행은 (후속·이연) | (저장소 추후 결정)              | REST 조회 조인 / Application Events(후속)              |
 | chat(채팅)          | (후속·이연, 1차 MVP 제외) F-03 신청 후 인앱 채팅방 기록(이벤트 수신)                                      | (저장소 추후 결정)              | 이벤트 리스너                                          |
 | community(커뮤니티) | 게시글·댓글·좋아요, 키워드·해시태그 검색 (**MVP 이후로 이연**, 코드 골격만)                      | MySQL                           | FULLTEXT +**ngram**(한국어), 유니크·카운트 정합 |
-| lifetip(생활 팁)    | 주제별 생활 정보 조회(주제 목록 `GET /life-tips/topics`·주제별 팁 `GET /life-tips/topics/{topicCode}/tips`), 큐레이션 카탈로그(주제 `LifeTipTopic`·팁 `LifeTip`, 1:N) 읽기 전용 제공, 등록 국가 기반 번역(`user` `getLanguage` 동기 호출, 인라인 언어-키 맵·`en` 폴백) (**1차 MVP 이후 · 홈 부가 기능**, 발행/구독 이벤트 없음) — [US-8](../requirements/user-stories.md#8-생활-팁-주제별-생활-정보) | **MongoDB** | 소규모 고정 카탈로그 읽기(비페이지 전체 배열) |
+| lifetip(생활 팁)    | 주제별 생활 정보 조회(주제 목록 `GET /life-tips/topics`·주제별 팁 `GET /life-tips/topics/{topicCode}/tips`), 큐레이션 카탈로그(주제 `LifeTipTopic`·팁 `LifeTip`, 1:N) 읽기 전용 제공, 표시 언어 기반 번역(`user` `getLanguage` 동기 호출 — `users.lang`이 있으면 그 값, 없으면 `en`, 인라인 언어-키 맵·`en` 폴백) (**1차 MVP 이후 · 홈 부가 기능**, 발행/구독 이벤트 없음) — [US-8](../requirements/user-stories.md#8-생활-팁-주제별-생활-정보) | **MongoDB** | 소규모 고정 카탈로그 읽기(비페이지 전체 배열) |
 | auth·user          | 소셜 로그인→JWT,**세입자/임대인 온보딩 분기**(공통 약관 동의 후 세입자 이메일 인증·임대인 연락처 SMS 인증으로 본인 확인 분기, `userType` TENANT/LANDLORD 확정·이후 불변), 임대인 연락처 인증(`VerificationSmsSender`→SOLAPI)·사업자번호 검증(`BusinessRegistryVerifier`→비즈노, 온보딩과 분리·무상태), 프로필 | MySQL +**Redis**(refresh·인증 마커) | JPA + Nimbus(JWKS) + jjwt +**SOLAPI·비즈노 API 어댑터** |
 | 이벤트 버스         | 모듈 간 비동기 통신(**F-03 booking→chat(BookingCreatedEvent)는 후속·이연·1차 MVP 제외**)           | (도입 시)                       | Modulith Application Events                            |
 
@@ -392,11 +394,12 @@ flowchart TB
 
 | 영역                         | 채택                                                                                                                                                                                       | 상태   | 비고                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                                                                                                                                  | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 표시 언어**는 `diagnosis`→`user` **공개 query(`getLanguage`) 동기 호출**(user가 `countries.lang`으로 도출; ADR-0002 Decision 5; 토큰 클레임 분기 제거). **(1차 MVP 이후) `lifetip`→`user`도 동일하게 `getLanguage` 동기 호출**(읽기 전용이라 발행/구독 이벤트 없음)            |
+| 모듈 간 통신                 | 도메인 이벤트 + 즉시결과는 동기 공개 쿼리                                                                                                                                                  | 결정됨 | [ADR-0002](../adr/0002-inter-module-communication-via-events.md). 추천은 `diagnosis`→`listing` `RecommendationCriteria` 공개 쿼리. **번역용 표시 언어**는 `diagnosis`→`user` **공개 query(`getLanguage`) 동기 호출**(user가 `users.lang`이 있으면 그 값, 없으면 `en`; ADR-0002 Decision 5·[ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 토큰 클레임 분기 제거). **(1차 MVP 이후) `lifetip`→`user`도 동일하게 `getLanguage` 동기 호출**(읽기 전용이라 발행/구독 이벤트 없음)            |
 | 소셜 로그인 OIDC             | **Google**(idToken JWKS 검증) · **Apple**(authorization code 교환 `/auth/token`, 탈퇴 시 `/auth/revoke`) — 포트 `OidcTokenVerifier`/`AppleAuthClient`(인프라 어댑터) | 도입   | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md)·[ADR-0031](../adr/0031-apple-sign-in-authorization-code-flow.md). Apple은 code 플로우(idToken 미수신), 탈퇴 시 앱↔Apple 연동 폐기(best-effort)                                                                                                                                     |
 | 사업자등록번호 검증          | **비즈노(Bizno) API**(국세청 사업자등록정보 진위·상태 기반), 아웃바운드 포트 `BusinessRegistryVerifier`(인프라 어댑터)                                                            | 도입   | **임대인 전용·온보딩 후 무상태 검증**(`POST /api/v1/auth/business/verify`, 정식 토큰 `ROLE_USER`·`ACTIVE`). 정상(계속) 사업자면 `verified:true` 응답(결과 미저장). 미등록/휴폐업/진위실패 **422**(`AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`), 외부 장애 **502**(공통 `UPSTREAM_ERROR` 재사용). 타임아웃·재시도 정책은 ADR-0033 |
 | 연락처 SMS 인증(임대인)      | **SOLAPI**(국내 SMS API SDK), 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터)                                                                                                | 도입   | 임대인 온보딩·프로필 연락처 변경 선행(`POST /api/v1/auth/phone/verification-code`·`/verify`). 인증번호 6자리·5분·재발송 60초(이메일과 통일), 발송 실패 **502**(`UPSTREAM_ERROR`). [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)                                                                              |
 | 이메일 인증(세입자)          | **Gmail SMTP**(dev/prod 실 SMTP · 로컬은 MailHog), 아웃바운드 포트 `VerificationEmailSender`(인프라 어댑터)                                                                       | 도입   | 세입자 온보딩 선행(`POST /api/v1/auth/email/verification-code`·`/verify`). 발송 실패 **502**(`UPSTREAM_ERROR`)                                                                                                                                                                                                              |
+| 장소 키워드 검색(매물)       | **네이버 지역 검색 API**(`/v1/search/local.json`), 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient`)                                                    | 도입   | listing 지도 검색창 키워드→장소 후보(`GET /api/v1/listings/places?keyword`, 정식 토큰·인증 필수). 최대 5개(`title`[`<b>` 유지]·`address`·`roadAddress`·`lng`·`lat`, 네이버 `mapx/mapy`→WGS84 변환), **무상태**(매물 미조회·미저장). 키워드 누락·공백·50자 초과 **400**(`INVALID_INPUT`), 네이버 4xx/5xx·타임아웃·인증정보 누락·응답/좌표 형식 이상 **502**(공통 `UPSTREAM_ERROR` 재사용). 설정 `app.naver.search`(`NaverSearchProperties`), 시크릿 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString) |
 | 임대인 연락                  | **F-03 매물 예약(신청) 저장 + 내 예약 조회**(booking 독립; 조회 시 `listing`·`user` 공개 쿼리 실시간 조인). 신청→인앱 채팅방 기록(booking→chat, `BookingCreatedEvent`)은 **후속·이연**                                                        | 도입(예약)   | 인앱 채팅 기록·실시간 WebSocket·푸시는 추후. booking 저장소 추후 결정                                                                                                                                                                                                                                                                            |
 | 오브젝트 스토리지            | **AWS S3 + CloudFront**                                                                                                                                                              | 도입   | 콘텐츠 이미지 호스팅(매물·생활팁·국기 등, 키 프리픽스로 구분) — 클라이언트는`cdn.kohere.app`(Route53 alias→CloudFront)에서 로드, 백엔드는 S3 업로드 후 URL만 저장(서빙 경로 비경유). 사용자 업로드 UI는 MVP 밖                                                                                                                                                                    |
 | 푸시 알림(FCM/APNs)          | —                                                                                                                                                                                         | 추후   | 1차 MVP 비핵심(인앱 채팅은 REST 기록만, 실시간 푸시 없음)                                                                                                                                                                                                                                                                                |
@@ -413,7 +416,7 @@ flowchart TB
 | API 문서        | **REST Docs**(HTML) + **OpenAPI3(restdocs-api-spec)→Swagger UI**                   | ✅ 배선   | [ADR-0007](../adr/0007-api-docs-spring-rest-docs.md)·[ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md). 같은 테스트로 `/docs/index.html`(HTML)·`/swagger-ui/index.html`(try-it-out) 생성. 어노테이션 미사용(드리프트 0). [api/specs](../api/specs/README.md) Markdown은 설계 정본 |
 | DTO 매핑        | 수동 정적 팩토리(`of(...)`)                                                            | 도입   | MapStruct → 추후                                                                                                                                                                         |
 | 시간            | UTC 강제(`jackson.time-zone`, `hibernate.jdbc.time_zone`); Mongo 문서도 UTC ISO-8601 | 도입   | [api-design-guide §6](../api/api-design-guide.md)                                                                                                                                           |
-| i18n            | **진단 문항·선택지**: 서버가 등록 국가(언어) 기준 표시 문자열 채움 / 그 외 일반 code→text: 클라이언트(추후 서버) | 결정됨 | 진단 문항·선택지 번역은 별도 컬렉션·키 없이 **MongoDB `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다(질문 `question: {"en":..,"ja":..}`, 옵션 `options[].label: {"en":..,"ja":..}` — 언어 코드가 키). 선택지 `code`는 언어 무관 불변이다. 서버가 **등록 국가→언어**(`country→language` 매핑)로 정한 언어 키의 값을 채워 제공(US-2-6, 해당 언어 키 부재 시 영어(`en`) 폴백, Accept-Language 비의존). ③ 대학 선택지는 개별 대학 15종이 아니라 **6개 대학 그룹**(`UniversityGroup` — `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)이며 `options[].label`도 그룹 라벨을 언어-키 맵으로 둔다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). ⑤ 월세는 `NUMBER_RANGE`(min/max 두 숫자 입력) 자유입력이라 `options`가 없어 번역 대상도 없다. 번역에 필요한 **등록 국가는 `user` 모듈 공개 query 동기 호출**로 취득([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 그 외 일반 code→text 매핑은 클라이언트, 서버 MessageSource → 추후. **(1차 MVP 이후) `lifetip`(생활 팁)** 도 동일 전략을 재사용한다 — 주제명·제목·내용을 `lifeTipTopics`·`lifeTips` 도큐먼트 안 인라인 언어-키 맵(`name`/`title`/`content`: `{"en":..,"ja":..,"ko":..}`)으로 임베드하고, `lifetip`이 `user` 공개 query `getLanguage(userId)`로 정한 언어 키(부재 시 `en` 폴백)로 채운다(식별자 `code`/`id`·`imageUrl`은 언어 무관 불변, US-8-3)                                                                                                                                                                |
+| i18n            | **진단 문항·선택지**: 서버가 사용자 표시 언어 기준 표시 문자열 채움 / 그 외 일반 code→text: 클라이언트(추후 서버) | 결정됨 | 진단 문항·선택지 번역은 별도 컬렉션·키 없이 **MongoDB `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다(질문 `question: {"en":..,"ja":..}`, 옵션 `options[].label: {"en":..,"ja":..}` — 언어 코드가 키). 선택지 `code`는 언어 무관 불변이다. 서버가 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`** 으로 정한 언어 키의 값을 채워 제공(US-2-6, 해당 언어 키 부재 시 영어(`en`) 폴백, Accept-Language 비의존, [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). ③ 대학 선택지는 개별 대학 15종이 아니라 **6개 대학 그룹**(`UniversityGroup` — `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`)이며 `options[].label`도 그룹 라벨을 언어-키 맵으로 둔다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)). ⑤ 월세는 `NUMBER_RANGE`(min/max 두 숫자 입력) 자유입력이라 `options`가 없어 번역 대상도 없다. 번역에 필요한 **표시 언어는 `user` 모듈 공개 query `getLanguage(userId)` 동기 호출**로 취득([ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5). 그 외 일반 code→text 매핑은 클라이언트, 서버 MessageSource → 추후. **(1차 MVP 이후) `lifetip`(생활 팁)** 도 동일 전략을 재사용한다 — 주제명·제목·내용을 `lifeTipTopics`·`lifeTips` 도큐먼트 안 인라인 언어-키 맵(`name`/`title`/`content`: `{"en":..,"ja":..,"ko":..}`)으로 임베드하고, `lifetip`이 `user` 공개 query `getLanguage(userId)`로 정한 언어 키(부재 시 `en` 폴백)로 채운다(식별자 `code`/`id`·`imageUrl`은 언어 무관 불변, US-8-3)                                                                                                                                                                |
 
 ### 3-6. 결정 필요 항목(ADR/문서 갱신)
 

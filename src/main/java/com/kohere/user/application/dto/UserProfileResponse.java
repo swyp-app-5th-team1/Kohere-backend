@@ -33,6 +33,7 @@ public record UserProfileResponse(
     String country,
     String countryName,
     String countryFlag,
+    String lang,
     Occupation occupation,
     String email,
     VisaType visaType,

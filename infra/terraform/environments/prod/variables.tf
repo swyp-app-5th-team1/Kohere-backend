@@ -421,3 +421,18 @@ variable "bizno_api_key" {
   default     = ""
   sensitive   = true
 }
+
+# ----- 네이버 지역 검색 API (지도 장소 검색 — #160/#162) -----
+variable "naver_search_client_id" {
+  description = "네이버 지역 검색 API Client ID — SSM SecureString으로 저장·주입. 미설정 시 앱은 기동하고 장소 검색만 502"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_search_client_secret" {
+  description = "네이버 지역 검색 API Client Secret — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

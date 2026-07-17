@@ -52,7 +52,7 @@
 | [0026](./0026-dev-host-memory-budget.md) | dev 단일 호스트(t3.small·2GB) 메모리 예산을 스왑 + 엔진 캡으로 맞춘다(ADR-0021 후속) | Accepted | 2026-06-22 |
 | [0027](./0027-dev-discord-alerting.md) | 알람 통보는 Discord 웹훅으로 한다(SNS→Lambda 포워더, dev·prod) | Accepted | 2026-06-22 |
 | [0028](./0028-diagnosis-questions-catalog-store.md) | 진단 문항·선택지 카탈로그는 MongoDB diagnosisQuestions 컬렉션에 저장·제공한다 | Accepted | 2026-06-23 |
-| [0029](./0029-diagnosis-i18n-strategy.md) | 진단 i18n은 서버가 등록 국가→언어 매핑으로 표시 라벨을 번역한다(코드 enum 매핑/리소스 번들 대비 DB 채택) | Accepted | 2026-06-23 |
+| [0029](./0029-diagnosis-i18n-strategy.md) | 진단 i18n은 서버가 사용자 표시 언어(`users.lang`)로 표시 라벨을 번역한다(DB 언어-키 맵 채택; #141로 국가→언어 도출 폐기) | Accepted | 2026-06-23 |
 | [0030](./0030-error-message-i18n-resource-bundle.md) | 에러 응답 메시지 i18n은 리소스 번들(Spring MessageSource)로 번역한다(Accept-Language·영어 폴백) | Accepted | 2026-06-24 |
 | [0031](./0031-apple-sign-in-authorization-code-flow.md) | Apple 로그인은 authorization code 방식으로 전환해 탈퇴 시 토큰을 폐기한다(Google은 idToken 유지) | Accepted | 2026-06-28 |
 | [0032](./0032-mongodb-migration-runner.md) | MongoDB 시드·문서 1회성 변경은 모듈별 Mongock @ChangeUnit으로 1회 자동 적용한다 | Accepted | 2026-06-29 |

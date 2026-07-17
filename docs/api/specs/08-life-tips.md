@@ -7,7 +7,7 @@
 
 온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용 큐레이션** 기능이다. 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(05)와 구분된다).
 
-- **번역이 이 기능의 바탕이다**: 주제명(`name`)·주제 설명(`shortDescription`·`longDescription`)·제목(`title`)·내용(`content`) 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려준다(US-8-3). 진단 i18n과 **완전히 동일한 전략**을 재사용하며 별도 메커니즘을 만들지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md), US-2-6). 표시 문자열은 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드되고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
+- **번역이 이 기능의 바탕이다**: 주제명(`name`)·주제 설명(`shortDescription`·`longDescription`)·제목(`title`)·내용(`content`) 표시 텍스트는 **사용자 표시 언어**로 번역해 내려준다(US-8-3). 진단 i18n과 **완전히 동일한 전략**을 재사용하며 별도 메커니즘을 만들지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md), US-2-6). 표시 문자열은 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드되고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
 - **식별자·이미지·사진은 언어 무관 불변**: 주제·팁의 식별자(`code`/`id`), 주제 이미지(`LifeTipTopic.imageUrl`·`backgroundImageUrl`), 팁 사진(`LifeTip.imageUrl`)은 언어와 무관하게 동일하고, 표시 텍스트만 언어별이다. 응답 스키마도 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 - **비페이지**: 두 목록 모두 **고정·소규모 카탈로그**라 페이지네이션 없이 전체 배열을 한 번에 반환한다(페이지 객체 없음 — api-design-guide §4 목록 규약 미적용, 신고 사유 목록 US-7-3과 동일 성격).
 - **읽기 전용**: 생활 팁 도메인은 조회만 제공하며, 발행/구독하는 도메인 이벤트가 없다(1차 MVP 이후 홈 부가 기능).
@@ -18,7 +18,7 @@
 - 경로 프리픽스 `/api/v1`, 경로는 kebab-case, JSON 필드는 lowerCamelCase.
 - 식별자·enum 키는 UPPER_SNAKE 문자열(주제 `code`), 시각은 UTC ISO-8601, 금액은 KRW 정수. 본 도메인에는 시각·금액 필드가 없다.
 - 모든 응답은 공통 래퍼 `{ success, data, error }`([ADR-0004](../../adr/0004-api-response-envelope.md)). 인증은 `Authorization: Bearer <accessToken>`.
-- 표시 언어 결정은 `Accept-Language` 헤더·토큰 클레임에 의존하지 않고 **사용자 등록 국가**(온보딩 수집값)에서 도출한다. 상세는 아래 [i18n(번역) 절](#i18n번역--adr-0029-재사용)을 참조한다.
+- 표시 언어 결정은 `Accept-Language` 헤더·토큰 클레임에 의존하지 않고 **사용자가 고른 표시 언어(`users.lang`)가 있으면 그 값, 없으면 `en`**으로 정한다. 상세는 아래 [i18n(번역) 절](#i18n번역--adr-0029-재사용)을 참조한다.
 
 ### 핵심 개념·리소스
 
@@ -37,10 +37,12 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| GET | `/api/v1/life-tips/topics` | 생활 팁 주제 전체 목록(이미지·짧은/긴 설명 포함, 노출 순서, 등록 국가 언어로 번역). 비페이지 | 필수 | 200 |
-| GET | `/api/v1/life-tips/topics/{topicCode}/tips` | 해당 주제의 팁 전체(제목·내용·사진, 노출 순서, 등록 국가 언어로 번역). 비페이지 | 필수 | 200 |
+| GET | `/api/v1/life-tips/topics` | 생활 팁 주제 전체 목록(이미지·짧은/긴 설명 포함, 노출 순서, 사용자 표시 언어로 번역). 비페이지 | 필수 | 200 |
+| GET | `/api/v1/life-tips/topics/{topicCode}/tips` | 해당 주제의 팁 전체(제목·내용·사진, 노출 순서, 사용자 표시 언어로 번역). 비페이지 | 필수 | 200 |
 
-> **인증 = ROLE_USER(ACTIVE 세입자)**. 표시 언어를 등록 국가에서 도출하려면 온보딩으로 국가·언어가 확정된 사용자여야 하므로, 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자(`userType=TENANT`)** 이고 모든 조회는 정식 인증(`ROLE_USER`)을 요구한다(진단 보호 엔드포인트와 동일 게이트). 온보딩 미완료(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`다. 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
+> **인증 = ROLE_USER(ACTIVE 세입자)**. 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자(`userType=TENANT`)** 이고 모든 조회는 정식 인증(`ROLE_USER`)을 요구한다(진단 보호 엔드포인트와 동일 게이트). 표시 언어 선택(`users.lang`)은 선택 필드이며, 미선택이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백한다. 세입자 전용의 근거는 **외국인 세입자를 대상으로 한 생활 정보 기능**이라는 것이며, 표시 언어 도출 가능 여부와는 무관하다(임대인도 `lang='ko'`·`country='KR'`를 갖는다).
+>
+> **註(기존 결함 — #141에서 수정)**: 현재 코드에는 `TENANT` 게이트가 없어 임대인도 생활 팁 조회를 통과한다(문서는 이미 세입자 전용이라 서술해 왔다). #141에서 **TENANT 게이트를 신설**해 코드를 이 문서에 일치시킨다 — 그때부터 임대인은 `403 FORBIDDEN`이다. 온보딩 미완료(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`다. 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
 
 ---
 
@@ -52,7 +54,7 @@
 
 - **인증**: 필수(ROLE_USER = ACTIVE 세입자).
 - **동작**: `lifeTipTopics` 컬렉션의 전체 주제를 `order` 오름차순으로 정렬해 `{ code, name, shortDescription, longDescription, imageUrl, backgroundImageUrl }` 목록으로 조립한다. `code`는 도큐먼트 `_id`(UPPER_SNAKE)를 그대로 싣고, `name`·`shortDescription`·`longDescription`은 각 도큐먼트의 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채우며, `imageUrl`·`backgroundImageUrl`은 도큐먼트의 절대 CDN URL을 언어와 무관하게 그대로 싣는다(항상 존재 — NOT NULL).
-- **번역(US-8-3)**: 표시 텍스트 `name`·`shortDescription`·`longDescription`만 사용자 표시 언어로 번역한다. `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`의 등록 국가(`countries.lang`)에서 도출한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
+- **번역(US-8-3)**: 표시 텍스트 `name`·`shortDescription`·`longDescription`만 사용자 표시 언어로 번역한다. `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`가 사용자 선택값(`users.lang`)이 있으면 그 값, 없으면 `en`으로 정한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
 - **페이지네이션**: 없음. 고정·소규모 카탈로그라 페이지 객체 없이 전체 배열을 반환한다(api-design-guide §4 비적용, US-7-3과 동일 성격).
 
 #### Headers
@@ -71,7 +73,7 @@
 
 #### 성공 Response — 200 OK (공통 래퍼)
 
-표시 텍스트(`name`·`shortDescription`·`longDescription`)는 등록 국가가 일본인 사용자 예시(미지원 언어면 `en` 폴백). `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 번역과 무관하게 동일하다. 페이지 객체 없이 `topics[]` 전체 배열이 노출 순서대로 담긴다.
+표시 텍스트(`name`·`shortDescription`·`longDescription`)는 표시 언어가 일본어(`ja`)인 사용자 예시(미지원 언어면 `en` 폴백). `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 번역과 무관하게 동일하다. 페이지 객체 없이 `topics[]` 전체 배열이 노출 순서대로 담긴다.
 
 ```jsonc
 {
@@ -141,7 +143,7 @@
 
 - **인증**: 필수(ROLE_USER = ACTIVE 세입자).
 - **동작**: `lifeTipTopics._id == topicCode` 주제의 존재를 확인한 뒤, `lifeTips`에서 `topicCode`가 일치하는 팁을 `order` 오름차순(복합 인덱스 `{ topicCode: 1, order: 1 }`)으로 조회해 `{ id, title, content, imageUrl }` 목록으로 조립한다. `topicCode` 참조는 애플리케이션 레벨 조인이며 DB 조인을 쓰지 않는다(폴리글랏 규약).
-- **번역(US-8-3)**: 각 팁의 `title`·`content`만 사용자 표시 언어로 번역한다. `id`(팁 식별자)와 `imageUrl`(사진)은 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`의 등록 국가(`countries.lang`)에서 도출한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
+- **번역(US-8-3)**: 각 팁의 `title`·`content`만 사용자 표시 언어로 번역한다. `id`(팁 식별자)와 `imageUrl`(사진)은 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`가 사용자 선택값(`users.lang`)이 있으면 그 값, 없으면 `en`으로 정한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
 - **사진 없는 팁**: 사진이 없는 팁은 `imageUrl`을 `null`(또는 생략)로 싣고 나머지 필드(`title`·`content`)는 정상 노출한다.
 - **존재하지 않는 주제**: 경로의 `{topicCode}`가 `lifeTipTopics`에 없으면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드, `*_NOT_FOUND` 규약)를 반환한다.
 - **페이지네이션**: 없음. 고정·소규모 카탈로그라 페이지 객체 없이 전체 배열을 반환한다(api-design-guide §4 비적용).
@@ -164,7 +166,7 @@ Request Body: 없음.
 
 #### 성공 Response — 200 OK (공통 래퍼)
 
-제목·내용(`title`·`content`)은 등록 국가가 일본인 사용자 예시(미지원 언어면 `en` 폴백). `id`·`imageUrl`은 번역과 무관하게 동일하다. 아래는 `GET /api/v1/life-tips/topics/MOVING_IN/tips` 호출 예시로, 팁 3건이 `order` 순으로 담기며 마지막 팁은 사진이 없어 `imageUrl`이 `null`이다.
+제목·내용(`title`·`content`)은 표시 언어가 일본어(`ja`)인 사용자 예시(미지원 언어면 `en` 폴백). `id`·`imageUrl`은 번역과 무관하게 동일하다. 아래는 `GET /api/v1/life-tips/topics/MOVING_IN/tips` 호출 예시로, 팁 3건이 `order` 순으로 담기며 마지막 팁은 사진이 없어 `imageUrl`이 `null`이다.
 
 ```jsonc
 {
@@ -211,8 +213,8 @@ Request Body: 없음.
 
 생활 팁의 번역 전략은 **진단 i18n**([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md), US-2-6)과 **완전히 동일**하며 별도 메커니즘·메시지 컬렉션·번역 키를 만들지 않는다(US-8-3). 진단(02) 스펙의 표시 라벨 번역 방식을 그대로 재사용한다.
 
-- **번역 기준 = 사용자 등록 국가**: 표시 언어는 온보딩에서 수집한 등록 국가에서 도출한다. `Accept-Language` 헤더·토큰 클레임은 사용하지 않는다 — 사용자가 `Accept-Language`를 다른 값으로 보내도 응답 언어는 등록 국가로 결정된다.
-- **표시 언어 취득**: 서버가 `user` 모듈의 **공개 query `getLanguage(userId)`를 동기 호출**해 표시 언어를 취득한다. `user`가 `countries.lang`으로 국가→언어를 도출한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가, 진단 `diagnosis → user`와 동일 근거).
+- **번역 기준 = 사용자 표시 언어**: 표시 언어는 사용자가 고른 표시 언어(`users.lang`)가 있으면 그 값, 없으면 `en`으로 정한다. `Accept-Language` 헤더·토큰 클레임은 사용하지 않는다 — 사용자가 `Accept-Language`를 다른 값으로 보내도 응답 언어는 서버가 도출한 표시 언어로 결정된다.
+- **표시 언어 취득**: 서버가 `user` 모듈의 **공개 query `getLanguage(userId)`를 동기 호출**해 표시 언어를 취득한다. `user`가 **사용자가 고른 표시 언어(`users.lang`)이 있으면 그 값, 없으면 `en`**을 반환한다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); [ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가, 진단 `diagnosis → user`와 동일 근거).
 - **인라인 언어-키 맵 임베드**: 표시 문자열은 별도 메시지 컬렉션 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드한다 — 주제는 `name`·`shortDescription`·`longDescription`, 팁은 `title`·`content` 각각 언어-키 맵이다(진단 문항 `question`·옵션 `label`과 동일 방식).
 - **`en` 폴백**: 서버는 사용자 언어 키로 문자열을 고르고, 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
 - **식별자·이미지·사진 불변**: 주제·팁 식별자(`code`/`id`), 주제 이미지(`LifeTipTopic.imageUrl`·`backgroundImageUrl`), 팁 사진(`LifeTip.imageUrl`)은 언어 무관 불변이고 표시 텍스트(주제 `name`·`shortDescription`·`longDescription`, 팁 `title`·`content`)만 언어별이다. **응답 스키마는 언어와 무관하게 동일**하며 서버가 언어 문자열만 채운다.

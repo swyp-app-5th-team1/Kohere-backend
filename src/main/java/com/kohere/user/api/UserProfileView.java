@@ -30,6 +30,7 @@ public record UserProfileView(
     String country,
     String countryName,
     String countryFlag,
+    String lang,
     String occupation,
     String email,
     String visaType,

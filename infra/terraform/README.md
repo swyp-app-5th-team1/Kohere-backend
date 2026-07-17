@@ -100,6 +100,16 @@ terraform apply
 
 `JWT_SECRET`·`REFRESH_PEPPER`·`EMAIL_PEPPER` 는 Terraform이 자동 생성한다.
 
+### 선택 외부 연동 자격증명 (미설정이면 해당 기능만 비활성)
+
+앱 기동을 막지 않는 외부 연동 키다. 미설정이면 앱은 정상 기동하고 해당 기능 호출만 실패(폴백/에러)한다. 각 환경의 `terraform.tfvars.example` 에 주석으로 정리돼 있으며, 값은 `terraform.tfvars` 로 주입하거나 apply 후 SSM(`/<env>/*` SecureString)에서 직접 편집한다:
+
+- `naver_search_client_id`/`naver_search_client_secret` — 지도 장소 검색(네이버 지역 검색 API, `GET /api/v1/listings/places`, #160/#162). 미설정 시 장소 검색만 502(`UPSTREAM_ERROR`).
+- `solapi_*` — 임대인 연락처 SMS 인증(ADR-0034). 미설정 시 로깅 폴백.
+- `bizno_*` — 임대인 사업자번호 검증(ADR-0033). 미설정 시 스텁 폴백.
+
+> 이들은 `application-{dev,prod}.yml` 이 `${NAVER_SEARCH_CLIENT_ID}` 처럼 참조하는 컨테이너 환경변수로, dev는 SSM→`refresh-env.sh`(.env)→compose `env_file`, prod는 SSM→ECS `container_secrets`(valueFrom) 경로로 주입된다. 값만 바꿨을 때 실행 중 앱 반영은 "배포"가 담당한다([ADR-0024](../../docs/adr/0024-secret-change-propagation.md)).
+
 ## 후속 작업 / 알아둘 점
 
 - **DocumentDB TLS**: `docdb_tls=enabled`(기본)면 연결 URI에 `tls=true` 가 붙는다. Mongo 드라이버 배선 시 앱 이미지에 Amazon DocumentDB CA 번들(`global-bundle.pem`)을 포함해야 한다. 검증 단계에서 막히면 일시적으로 `docdb_tls=disabled` 로 둘 수 있다(VPC 내부 통신).

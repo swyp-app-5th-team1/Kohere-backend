@@ -14,7 +14,7 @@ sequenceDiagram
 
     Note over U,C: 약관 동의(US-1-7)·이메일 인증(US-1-6) 사전 완료
     U->>C: 이름·성별·생년월일·국적·직업·이메일·비자정보 입력
-    C->>SEC: POST /api/v1/auth/onboarding<br/>Authorization: Bearer 온보딩토큰<br/>{ firstName, lastName, gender, birthDate,<br/>country, occupation, email, visaType }
+    C->>SEC: POST /api/v1/auth/onboarding<br/>Authorization: Bearer 온보딩토큰<br/>{ firstName, lastName, gender, birthDate,<br/>country, occupation, email, visaType,<br/>lang(선택 — 미전송 시 표시 시 en) }
     Note over SEC: JWT 검증 (서명·만료·클레임)<br/>온보딩 스코프(ROLE_ONBOARDING) 주입<br/>onboarding 경로 인가
     SEC->>AUTH: 인증된 요청 전달 (userId + 온보딩 스코프)
     Note over AUTH: 필드 검증<br/>민감정보(이메일·비자)는 응답·로그에서만 마스킹(저장은 원문)
@@ -51,7 +51,7 @@ sequenceDiagram
             Note over AUTH: 정식 accessToken+refreshToken 발급
             AUTH->>RDS: refreshToken 해시 저장
             RDS-->>AUTH: 저장 완료
-            AUTH-->>C: 200 OK<br/>{ user{ status: ACTIVE, nickname, country, countryName, countryFlag, occupation, email, ... },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
+            AUTH-->>C: 200 OK<br/>{ user{ status: ACTIVE, nickname, country, countryName, countryFlag, occupation, email, lang(설정 시), ... },<br/>tokenType: Bearer, accessToken, refreshToken, expiresIn: 3600 }
             C-->>U: 가입 완료, 서비스 진입
         end
     end

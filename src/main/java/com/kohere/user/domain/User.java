@@ -23,6 +23,7 @@ public class User {
   private final Gender gender;
   private final LocalDate birthDate;
   private final String country;
+  private final Language lang;
   private final Occupation occupation;
   private final String email;
   private final VisaType visaType;
@@ -77,8 +78,9 @@ public class User {
   }
 
   /**
-   * 온보딩 완료(TERMS_AGREED→ACTIVE). 프로필(이름·성별·생년월일·국적·직업·이메일·비자)과 시스템 배정 닉네임을 확정한다. 약관 동의는 약관 동의 단계에서
-   * 이미 기록됐다. 이메일은 auth가 인증 완료를 선행 확인한다.
+   * 온보딩 완료(TERMS_AGREED→ACTIVE). 프로필(이름·성별·생년월일·국적·표시 언어·직업·이메일·비자)과 시스템 배정 닉네임을 확정한다. 표시 언어({@code
+   * lang})는 선택값이라 {@code null}이면 미설정으로 두고(표시 시 en 폴백), 값이 있으면 응용 계층이 지원 목록을 검증한 뒤 넘긴다. 약관 동의는 약관 동의
+   * 단계에서 이미 기록됐다. 이메일은 auth가 인증 완료를 선행 확인한다.
    *
    * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(약관 동의 선행 필요, 422)
    * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
@@ -93,6 +95,7 @@ public class User {
       Occupation occupation,
       String email,
       VisaType visaType,
+      Language lang,
       Instant now) {
     if (status == UserStatus.PENDING) {
       throw new TermsAgreementRequiredException();
@@ -107,6 +110,7 @@ public class User {
         .gender(gender)
         .birthDate(birthDate)
         .country(country)
+        .lang(lang)
         .occupation(occupation)
         .email(email)
         .visaType(visaType)
@@ -120,7 +124,9 @@ public class User {
    * 임대인 온보딩 완료(TERMS_AGREED→ACTIVE). 단일 {@code name}(성·이름 합친 전체 이름 — {@code firstName}에 보관, {@code
    * lastName} 미사용)·연락처와 시스템 배정 닉네임을 확정하고 {@code userType}을 LANDLORD로 확정한다. 연락처는 auth가 SMS 인증을 선행
    * 확인한다. 사업자등록번호 해시는 온보딩에서 확정하지 않는다({@code null} 유지) — 온보딩 후 별도 검증 흐름(매물 등록 시점)에서 채운다(ADR-0033).
-   * 임대인은 성별·국적·직업·비자정보·이메일을 수집하지 않는다(생년월일 {@code birthDate}은 세입자와 동일하게 수집 — ADR-0034, #131).
+   * 임대인은 성별·직업·비자정보·이메일을 수집하지 않는다(생년월일 {@code birthDate}은 세입자와 동일하게 수집 — ADR-0034, #131). 임대인은 한국인
+   * 사업자 전제라 국적({@code country})·표시 언어({@code lang})는 클라이언트가 보내지 않고 서버가 {@code KR}·{@code ko}로 고정
+   * 부여한다 (ADR-0034 개정, #141) — 표시 언어 기본값이 en이므로 한국어로 보이게 하려면 서버가 ko를 심어야 한다.
    *
    * @throws TermsAgreementRequiredException 약관 미동의(PENDING)인 경우(422)
    * @throws OnboardingAlreadyCompletedException 이미 ACTIVE(또는 WITHDRAWN)인 경우(409)
@@ -140,6 +146,8 @@ public class User {
         .nickname(nickname)
         .phoneNumber(phoneNumber)
         .businessRegistrationNumberHash(null)
+        .country("KR")
+        .lang(Language.KO)
         .userType(UserType.LANDLORD)
         .status(UserStatus.ACTIVE)
         .updatedAt(now)
@@ -158,6 +166,7 @@ public class User {
       String country,
       Occupation occupation,
       VisaType visaType,
+      Language lang,
       Boolean marketingAgreed,
       Instant now) {
     var builder = toBuilder();
@@ -181,6 +190,9 @@ public class User {
     }
     if (visaType != null) {
       builder.visaType(visaType);
+    }
+    if (lang != null) {
+      builder.lang(lang);
     }
     if (marketingAgreed != null) {
       builder.marketingAgreed(marketingAgreed);
@@ -209,9 +221,9 @@ public class User {
   }
 
   /**
-   * 회원 탈퇴(→WITHDRAWN). 식별 PII(이름·닉네임·생년월일·국적·직업·이메일·비자)를 즉시 익명화(제거)하고 탈퇴 시각을 기록한다(ADR-0014). 행 자체는
-   * 보존한다. 닉네임도 NULL로 비워 유니크 슬롯을 회수한다. 동의 메타데이터(약관 동의 여부·termsVersion·agreedAt)는 식별 PII가 아니므로 동의 증빙을
-   * 위해 보존한다.
+   * 회원 탈퇴(→WITHDRAWN). 식별 PII(이름·닉네임·생년월일·국적·표시 언어·직업·이메일·비자)를 즉시 익명화(제거)하고 탈퇴 시각을 기록한다(ADR-0014).
+   * 행 자체는 보존한다. 닉네임도 NULL로 비워 유니크 슬롯을 회수한다. 동의 메타데이터(약관 동의 여부·termsVersion·agreedAt)는 식별 PII가 아니므로
+   * 동의 증빙을 위해 보존한다.
    *
    * @throws UserAlreadyWithdrawnException 이미 WITHDRAWN인 경우
    */
@@ -226,6 +238,7 @@ public class User {
         .gender(null)
         .birthDate(null)
         .country(null)
+        .lang(null)
         .occupation(null)
         .email(null)
         .visaType(null)

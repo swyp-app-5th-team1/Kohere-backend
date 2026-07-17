@@ -46,10 +46,12 @@ class LifeTipMongoIntegrationTest {
   void clean() {
     topicRepository.deleteAll();
     tipRepository.deleteAll();
+    // 생활 팁은 세입자 전용(US-8) — 조회 진입 게이트가 userType을 확인한다.
+    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
   }
 
   @Test
-  @DisplayName("주제 목록은 노출 순서로 정렬되고 등록 국가 언어로 번역된다")
+  @DisplayName("주제 목록은 노출 순서로 정렬되고 사용자 표시 언어로 번역된다")
   void topicsTranslatedAndOrdered() {
     topicRepository.save(topic("TRANSPORT", 2, Map.of("en", "Transport", "ko", "교통")));
     topicRepository.save(topic("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주")));

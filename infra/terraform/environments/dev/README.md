@@ -223,6 +223,11 @@ smtp_username    = "..."
 smtp_password    = "..."
 mail_from        = "noreply@kohere.app"
 
+# --- 네이버 지역 검색 API (지도 장소 검색, 옵션 — SSM SecureString) ---
+# 미설정 시 앱은 정상 기동하되 장소 검색(GET /api/v1/listings/places)만 502. 네이버 개발자센터에서 검색 API 사용 등록 후 발급.
+naver_search_client_id     = "..."   # sensitive
+naver_search_client_secret = "..."   # sensitive
+
 # --- CI/CD (모두 default 있음) ---
 github_org           = "swyp-app-5th-team1"
 github_repo          = "Kohere-backend"
@@ -343,7 +348,7 @@ sudo cat /var/log/devhost-init.log
 cd /opt/kohere && sudo docker compose ps
 ```
 
-> `public_ip` 로 직접(`https://<IP>`) 접속하면 인증서가 도메인용이라 브라우저 경고가 뜬다 — 정상 접속 경로는 `app_url`(HTTPS) 이다. app만 빠져 있으면 보통 ECR에 `:dev` 이미지가 없는 것이다(6단계 대안 B). CI 배포를 한 번 돌리면 채워진다. SMTP(`smtp_host`)를 비워 둔 경우 이메일 인증 플로우는 dev에서 동작하지 않는다(dev엔 MailHog 등 로컬 SMTP가 없다).
+> `public_ip` 로 직접(`https://<IP>`) 접속하면 인증서가 도메인용이라 브라우저 경고가 뜬다 — 정상 접속 경로는 `app_url`(HTTPS) 이다. app만 빠져 있으면 보통 ECR에 `:dev` 이미지가 없는 것이다(6단계 대안 B). CI 배포를 한 번 돌리면 채워진다. SMTP(`smtp_host`)를 비워 둔 경우 이메일 인증 플로우는 dev에서 동작하지 않는다(dev엔 MailHog 등 로컬 SMTP가 없다). 마찬가지로 `naver_search_client_id`/`naver_search_client_secret` 를 비워 두면 지도 장소 검색(`GET /api/v1/listings/places`)이 502(`UPSTREAM_ERROR`)로 실패한다 — 키를 채우고 재배포하면 반영된다.
 
 ---
 

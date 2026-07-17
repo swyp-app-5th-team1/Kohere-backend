@@ -92,6 +92,9 @@ module "secrets" {
   solapi_api_key      = var.solapi_api_key
   solapi_api_secret   = var.solapi_api_secret
   bizno_api_key       = var.bizno_api_key
+  # 네이버 지역 검색 API 인증정보(Client ID/Secret 모두 시크릿, #160/#162)
+  naver_search_client_id     = var.naver_search_client_id
+  naver_search_client_secret = var.naver_search_client_secret
   # 비밀 아닌 앱 설정(enabled·from) — SSM String으로 저장해 refresh-env가 .env로 회수(재배포만으로 반영, ADR-0024)
   solapi_enabled = var.solapi_enabled
   solapi_from    = var.solapi_from

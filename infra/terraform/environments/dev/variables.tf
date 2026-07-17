@@ -211,6 +211,21 @@ variable "bizno_api_key" {
   sensitive   = true
 }
 
+# ----- 네이버 지역 검색 API (지도 장소 검색 — #160/#162) -----
+variable "naver_search_client_id" {
+  description = "네이버 지역 검색 API Client ID — SSM SecureString으로 저장·주입. 미설정 시 앱은 기동하고 장소 검색만 502"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_search_client_secret" {
+  description = "네이버 지역 검색 API Client Secret — SSM SecureString으로 저장·주입"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
 variable "test_login_enabled" {
   description = "dev 테스트 마스터 로그인 기능(앱 app.auth.test-login.enabled) — 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 기본 false"

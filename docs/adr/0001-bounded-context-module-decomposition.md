@@ -45,7 +45,7 @@ Accepted
 1. **기능/스펙 단위를 1차 seam으로 삼는다.** 7개 API 스펙이 사용자 가치 단위의 자연스러운 분할선이므로 기본 경계로 채택한다.
 2. **에러코드 prefix 표를 정본 모듈 목록으로 본다.** [error-response-guide §4](../api/error-response-guide.md)의 prefix가 곧 모듈이며, 코드의 도메인 예외(`*_NOT_FOUND` 등)와 모듈이 1:1로 매칭되도록 한다.
 3. **애그리거트 응집과 "변경 이유의 단일성"(SRP)으로 검증한다.** 한 스펙 문서라도 애그리거트와 변경 이유가 다르면 쪼갠다 → `auth`(자격증명·세션, 보안 정책에 따라 변경)와 `user`(신원·프로필, 약관/프로필 정책에 따라 변경)를 분리. `booking`(예약 lifecycle)과 `chat`(메시징)도 동일 이유로 분리.
-4. **단방향 의존이 성립할 때만 쪼갠다(순환 금지).** `auth → user`, `booking → listing·chat`, `community → chat`, `diagnosis → listing`처럼 한 방향으로만 흐를 때 분리한다. 양방향/순환이 생기면 합친다. (진단 문항 라벨 번역에 사용자 등록 국가가 필요해 `diagnosis → user`(등록 국가 조회) 협력도 같은 단방향으로 더해진다 — 순환 없음. 실현은 `user` 모듈 공개 query 동기 호출로 확정한다([ADR-0002](./0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 미사용).)
+4. **단방향 의존이 성립할 때만 쪼갠다(순환 금지).** `auth → user`, `booking → listing·chat`, `community → chat`, `diagnosis → listing`처럼 한 방향으로만 흐를 때 분리한다. 양방향/순환이 생기면 합친다. (진단 문항 라벨 번역에 사용자 표시 언어가 필요해 `diagnosis → user`(표시 언어 조회 `getLanguage`) 협력도 같은 단방향으로 더해진다 — 순환 없음. 실현은 `user` 모듈 공개 query 동기 호출로 확정한다([ADR-0002](./0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 미사용).)
 5. **유비쿼터스 언어 경계를 존중한다.** 같은 용어가 맥락마다 다른 의미면 다른 컨텍스트로 본다(예: `ConditionTag`(매물 편의시설)와 진단 입력 `conditions`는 값 집합이 달라 각 모듈이 자기 enum을 갖는다 — `listing.ConditionTag` vs `diagnosis.DiagnosisCondition`). 같은 원칙으로 진단 3단계 대학·지역구 선택지(`UniversityGroup`·`District` 류)도 `diagnosis` 모듈이 자기 입력 enum으로 보유한다 — 진단 입력 어휘이지 `listing`의 매물 속성 어휘가 아니다(`UniversityGroup`/`District` 두 필드 분리·정확한 값 목록은 02 스펙·domain-model에 확정).
 6. **횡단 공통 타입은 도메인 로직 없이 공유 커널로 격리한다.** `ApiResponse`·`ErrorCode`·`BusinessException`·전역 핸들러·페이지 응답을 `common`(OPEN)에 두고 모든 모듈이 의존한다.
 

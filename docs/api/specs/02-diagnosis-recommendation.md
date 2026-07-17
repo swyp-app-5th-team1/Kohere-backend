@@ -7,7 +7,7 @@
 
 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소~최대) / ⑥ ARC 발급 여부)의 진행 중 답을 **서버가 DB에 저장**하고, 모든 단계 답이 채워진 뒤 별도 제출로 진단을 확정한다. 확정된 진단 조건으로 매칭한 매물 리스트(매물 탐색 도메인의 요약 DTO 재사용)와 지도용 좌표를 반환한다. 진단 이력·재진단·최근 진단 다시 보기를 제공한다.
 
-② 입국 목적은 유학 여부(`STUDY`/`NON_STUDY`) 분기이며, 이에 따라 ③ 단계가 대학 선택(유학) 또는 지역(구) 선택(비유학)으로 갈린다. 진단 문항·선택지는 앱이 하드코딩하지 않고 백엔드가 제공한다. 클라이언트가 받을 단계(`step` 1~6)를 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개를 조회하고, 그 단계 답 1개(`field`+`code`)를 `POST /api/v1/diagnoses/answers`로 보내면 서버가 그 답을 **진행 중(IN_PROGRESS) 진단에 저장**한다. 다음 step 번호는 클라이언트가 정한다(서버가 다음 질문을 함께 끼워 주지 않는다 — 질문 조회와 답 저장이 분리된 두 엔드포인트다). ③ 단계의 대학/지역 분기는 클라이언트 분기가 아니라 **서버 비즈니스 로직이 진행 중 진단에 저장된 `purpose`로 결정**해 한쪽 질문만 내려준다. 요청에 누적 답을 묶어 다시 보내지 않는다 — 진행 상태는 서버가 DB에 들고 있다. 표시 라벨은 사용자의 등록 국가 기준으로 번역되어 내려간다(US-2-5·US-2-6).
+② 입국 목적은 유학 여부(`STUDY`/`NON_STUDY`) 분기이며, 이에 따라 ③ 단계가 대학 선택(유학) 또는 지역(구) 선택(비유학)으로 갈린다. 진단 문항·선택지는 앱이 하드코딩하지 않고 백엔드가 제공한다. 클라이언트가 받을 단계(`step` 1~6)를 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개를 조회하고, 그 단계 답 1개(`field`+`code`)를 `POST /api/v1/diagnoses/answers`로 보내면 서버가 그 답을 **진행 중(IN_PROGRESS) 진단에 저장**한다. 다음 step 번호는 클라이언트가 정한다(서버가 다음 질문을 함께 끼워 주지 않는다 — 질문 조회와 답 저장이 분리된 두 엔드포인트다). ③ 단계의 대학/지역 분기는 클라이언트 분기가 아니라 **서버 비즈니스 로직이 진행 중 진단에 저장된 `purpose`로 결정**해 한쪽 질문만 내려준다. 요청에 누적 답을 묶어 다시 보내지 않는다 — 진행 상태는 서버가 DB에 들고 있다. 표시 라벨은 사용자 표시 언어로 번역되어 내려간다(US-2-5·US-2-6).
 
 > **v2 서버 주도 흐름(issue #157)**: 위 v1 흐름과 별개로, 클라이언트가 `step`을 모르고 **`POST /api/v2/diagnoses/start`** 로 시작한 뒤 **`POST /api/v2/diagnoses/next`** 를 반복 호출하면 서버가 진행 위치로 다음 질문을 결정하는 **서버 주도 대화형 흐름**을 `/api/v2`에 신설한다 — **서버는 질문·분기만 주도**하고 진단을 시작하는 시점도, 확정된 매물을 조회하는 시점도 클라이언트가 정한다(확정 응답은 `diagnosisId`만 주고 매물은 클라이언트가 `GET /api/v2/diagnoses/{id}/recommendations`로 별도 조회). 서버가 미리 필터링하는 지점은 **① 지역 하나뿐**이고(0건이면 카탈로그의 "다른 지역?" 문항을 일반 질문으로 끼워 넣음), 빌더 완성 시 자동 확정하되 **매칭은 조회하지 않는다** — 매칭 0건인지는 클라이언트가 추천을 조회한 응답의 `resultCode: NO_MATCH`로 알려준다(조정 제안 문구·액션은 없음). 상세는 아래 **[v2 — 서버 주도 진단 흐름](#v2--서버-주도-진단-흐름-issue-157)** 절, 결정은 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md), 시퀀스는 [US-2-7](../../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md). **v1(`/api/v1/diagnoses/*`)은 그대로 유지된다.**
 
@@ -52,7 +52,7 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| GET | `/api/v1/diagnoses/questions/{step}` | 단계별 질문 조회(path `step` 1~6 → 그 단계 질문 1개·선택지 반환, ③은 서버가 저장된 `purpose`로 대학/지역 선택, 등록 국가 라벨 번역) | 필수 | 200 |
+| GET | `/api/v1/diagnoses/questions/{step}` | 단계별 질문 조회(path `step` 1~6 → 그 단계 질문 1개·선택지 반환, ③은 서버가 저장된 `purpose`로 대학/지역 선택, 사용자 표시 언어로 라벨 번역) | 필수 | 200 |
 | POST | `/api/v1/diagnoses/answers` | 단계 답 저장(현재 단계 답 1개 `field`+`code`를 진행 중 진단에 저장) | 필수 | 200 |
 | POST | `/api/v1/diagnoses` | 진행 중 진단 확정(IN_PROGRESS를 COMPLETED로 확정, 재진단 = 새 진행 중 진단 시작) | 필수 | 201 |
 | GET | `/api/v1/diagnoses` | 내 진단 이력 목록(오프셋 페이지네이션) | 필수 | 200 |
@@ -68,13 +68,13 @@
 
 ### 1. GET `/api/v1/diagnoses/questions/{step}` — 단계별 질문 조회
 
-진단 문항을 **단계별로 1개씩** 조회한다. 클라이언트가 받을 단계(`step` 1~6)를 **path로 지정**하면, 서버가 그 단계 질문 1개와 선택지를 반환한다. 질문 조회와 답 저장은 분리된 두 엔드포인트이며(이 GET은 답을 저장하지 않는다), 다음 step 번호는 클라이언트가 정한다. 선택지 **코드는 진단 확정(`POST /api/v1/diagnoses`) 검증 enum과 1:1 동일 출처**다(US-2-5). 표시 라벨은 사용자의 등록 국가 기준으로 번역되어 내려간다(US-2-6).
+진단 문항을 **단계별로 1개씩** 조회한다. 클라이언트가 받을 단계(`step` 1~6)를 **path로 지정**하면, 서버가 그 단계 질문 1개와 선택지를 반환한다. 질문 조회와 답 저장은 분리된 두 엔드포인트이며(이 GET은 답을 저장하지 않는다), 다음 step 번호는 클라이언트가 정한다. 선택지 **코드는 진단 확정(`POST /api/v1/diagnoses`) 검증 enum과 1:1 동일 출처**다(US-2-5). 표시 라벨은 사용자 표시 언어로 번역되어 내려간다(US-2-6).
 
 - **인증**: 필수
 - **동작**: path `step`(1~6)에 해당하는 질문 1개를 `diagnosisQuestions` 카탈로그에서 골라 반환한다 — `step`, `field`, `question`(사용자 언어 라벨 문자열), `select{ type, max }`, `options[{ code, label }]`. ④(`conditions`)처럼 다중 선택은 `select.type: "MULTI"`·`max: 3`으로 내려간다. ⑤(`monthlyRent`)는 고정 선택지 목록이 아니라 **숫자 범위 자유 입력**이므로 `select.type: "NUMBER_RANGE"`(min/max 두 숫자 입력)로 내려가고 `options`는 빈 배열이다 — "모든 단계가 코드 1:1 enum 선택지 목록"이라는 가정에서 의도적으로 carve-out한 단계다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)).
 - **③ 단계 서버 분기**: ③(`step: 3`) 대학·지역 선택은 진행 중(IN_PROGRESS) 진단에 저장된 ② 입국 목적(`purpose`)에 따라 **서버 비즈니스 로직(diagnosis 서비스 코드)** 이 한쪽 질문만 골라 내려준다(클라이언트 분기 아님) — 저장된 `purpose`가 `STUDY`이면 `field: "university"`로 **대학 그룹 목록**(6개 그룹)을, `NON_STUDY`이면 `field: "district"`로 **지역(구) 목록**을 `options`에 담는다(두 목록을 함께 주지 않는다). `diagnosisQuestions` 카탈로그에는 대학 그룹 질문·지역 질문이 각각 데이터로 존재하고, 어느 질문을 낼지는 서비스가 저장된 `purpose`로 결정한다(카탈로그에 분기 메타는 두지 않는다 — 데이터만). 선택지 `code`는 확정 검증 enum(`UniversityGroup`/`District`)과 1:1 동일 출처다(그룹 1택).
-- **번역(US-2-6)**: 반환 질문의 **표시 라벨만** 사용자 표시 언어로 번역한다 — 클라이언트가 언어를 지정하지 않으며 `Accept-Language` 헤더에 의존하지 않는다. 선택지 **코드는 언어와 무관하게 동일**(UPPER_SNAKE, 확정은 코드로 검증)하다. 미지원 언어는 **영어로 폴백**한다(에러 아님). 표시 언어는 `user` 모듈의 **공개 query(`getLanguage`)를 동기 호출**해 취득하며, `user`가 등록 국가(`countries.lang`)로 도출한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기는 사용하지 않음 — `diagnosis → user` 모듈 의존).
-- **카탈로그**: 문항·선택지는 **MongoDB `diagnosisQuestions` 컬렉션**에 데이터로만 둔다(분기 메타 없음 — 분기는 서비스 로직). 번역은 `diagnosisQuestions` 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 서버가 (카탈로그 + 사용자 언어 키, ③은 + 저장된 `purpose`)으로 질문 1개를 선정·조립하며, 사용자 언어 키가 없으면 영어(`en`)로 폴백한다. 국가→언어 매핑은 `user`의 `countries.lang`이 보유한다.
+- **번역(US-2-6)**: 반환 질문의 **표시 라벨만** 사용자 표시 언어로 번역한다 — 클라이언트가 언어를 지정하지 않으며 `Accept-Language` 헤더에 의존하지 않는다. 선택지 **코드는 언어와 무관하게 동일**(UPPER_SNAKE, 확정은 코드로 검증)하다. 미지원 언어는 **영어로 폴백**한다(에러 아님). 표시 언어는 `user` 모듈의 **공개 query(`getLanguage`)를 동기 호출**해 취득하며, `user`가 **사용자가 고른 표시 언어(`users.lang`)이 있으면 그 값, 없으면 `en`**을 반환한다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); [ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5; 토큰 클레임 분기는 사용하지 않음 — `diagnosis → user` 모듈 의존). 진단에는 세입자/임대인 역할 게이트가 없어 임대인도 진단을 이용할 수 있으며, 임대인은 `lang='ko'` 고정이라 진단을 한국어로 본다.
+- **카탈로그**: 문항·선택지는 **MongoDB `diagnosisQuestions` 컬렉션**에 데이터로만 둔다(분기 메타 없음 — 분기는 서비스 로직). 번역은 `diagnosisQuestions` 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드한다. 서버가 (카탈로그 + 사용자 언어 키, ③은 + 저장된 `purpose`)으로 질문 1개를 선정·조립하며, 사용자 언어 키가 없으면 영어(`en`)로 폴백한다. 표시 언어 도출(`users.lang`이 있으면 그 값, 없으면 `en`)은 `user`가 보유한다.
 
 #### Headers
 
@@ -90,7 +90,7 @@
 
 #### 성공 Response — 200 OK (공통 래퍼)
 
-라벨은 등록 국가가 일본인 사용자 예시(미지원 언어면 영어 폴백). `code`는 번역과 무관하게 동일하다. 응답에 그 단계 질문 1개만 담긴다 — `step`, `field`, `question`(번역 문자열), `select{ type, max }`, `options[{ code, label }]`. `question`·`label` 문자열은 서버가 `diagnosisQuestions` 도큐먼트의 `question`·`label` 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채운 결과이며, 응답 형태(문자열)는 그대로다. 아래는 `GET /api/v1/diagnoses/questions/3` 호출에 대한 ③ `university` 질문 예시다(진행 중 진단의 저장된 `purpose: STUDY` 기준).
+라벨은 표시 언어가 일본어(`ja`)인 사용자 예시(미지원 언어면 영어 폴백). `code`는 번역과 무관하게 동일하다. 응답에 그 단계 질문 1개만 담긴다 — `step`, `field`, `question`(번역 문자열), `select{ type, max }`, `options[{ code, label }]`. `question`·`label` 문자열은 서버가 `diagnosisQuestions` 도큐먼트의 `question`·`label` 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채운 결과이며, 응답 형태(문자열)는 그대로다. 아래는 `GET /api/v1/diagnoses/questions/3` 호출에 대한 ③ `university` 질문 예시다(진행 중 진단의 저장된 `purpose: STUDY` 기준).
 
 ```jsonc
 {
@@ -521,7 +521,7 @@
 
 - **서버가 미리 필터링하는 지점은 ① 지역 하나뿐이다.** ① 지역(`region`) 답 직후 매칭 매물이 0건이면 서버가 **"현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?"** 예외질문을 끼워 넣는다. 이 예외질문은 따로 관리하지 않고 **일반 question으로 관리**한다 — 서버 코드에 하드코딩한 합성 문구가 아니라 문항 카탈로그(`diagnosisQuestions`)의 일반 문항(`step: 1`, `field: "regionRetry"`, `select: { type: "SINGLE", max: 1 }`, `options: [{code:"YES"},{code:"NO"}]`)이며, 별도 결과코드가 아니라 일반 **`NEXT_QUESTION`** 으로 내려간다. **그 예/아니오 응답에만** "프론트가 행할 행위"를 코드로 알린다 — 예=`RESTART`(클라이언트가 `POST /start`로 재시도) / 아니오=`TERMINATED`(진단 종료).
 - **6번 질문까지 마친 뒤 매물이 0건인 경우엔 어떤 suggestion도 없다.** 다만 그 사실은 흐름 응답이 아니라 **클라이언트가 추천을 조회한 v2-3 응답의 빈 `content`** 로 드러난다 — no-match를 확정 시점에 결과코드로 미리 주려면 서버가 추천 쿼리를 선행해야 하므로 그렇게 하지 않는다. v1의 조정 제안(`suggestions`·`diagnosisSuggestions` 시드)은 **v1 전용으로 그대로 두고 v2는 참조하지 않는다**(v2-3 응답에는 `suggestions` 필드가 없다).
-- 문항 카탈로그(`diagnosisQuestions`)·번역(등록 국가 기준, `en` 폴백)·진단 입력 enum·③ 대학/지역 분기 규칙은 **v1과 동일 출처를 공유**한다(§1·§3의 "진단 입력 enum 정의"·[ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)를 그대로 따른다). 정본 순서는 `REGION(1) → PURPOSE(2) → UNIVERSITY_OR_DISTRICT(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`이다. step 1에는 `region`·`regionRetry` 두 문항이 나란히 있으므로 서버가 낼 문항을 `field`로 지목한다(목록 순서에 기대지 않는다). **v1 계약은 바뀌지 않는다** — `GET /api/v1/diagnoses/questions/1`은 계속 `field: "region"` 지역 질문 1개를 반환한다(§1).
+- 문항 카탈로그(`diagnosisQuestions`)·번역(사용자 표시 언어 기준, `en` 폴백)·진단 입력 enum·③ 대학/지역 분기 규칙은 **v1과 동일 출처를 공유**한다(§1·§3의 "진단 입력 enum 정의"·[ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)를 그대로 따른다). 정본 순서는 `REGION(1) → PURPOSE(2) → UNIVERSITY_OR_DISTRICT(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`이다. step 1에는 `region`·`regionRetry` 두 문항이 나란히 있으므로 서버가 낼 문항을 `field`로 지목한다(목록 순서에 기대지 않는다). **v1 계약은 바뀌지 않는다** — `GET /api/v1/diagnoses/questions/1`은 계속 `field: "region"` 지역 질문 1개를 반환한다(§1).
 - 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 **v2 전용 세션**(`diagnosisFlowSessions` 컬렉션: `{ userId, draft, pendingField }`)에 담는다. 세션은 `POST /start`에서만 생기고 터미널(`COMPLETED`·`RESTART`·`TERMINATED`)에서 삭제된다. 완료 시에만 정본 진단을 만들어 기존 `diagnoses` 컬렉션에 저장한다(v1 이력/상세 조회 재사용). **① 지역 0건으로 끝난 시도는 버리지 않는다** — 세션을 지우기 전에 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 수요 분석("어느 지역을 원했는데 매물이 없었나")에 쓴다(재시도·종료 양쪽). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다(`/start`가 이전 세션을 그냥 덮어쓴다). **API로 노출되지 않는다** — 이력·최근·추천 조회는 `COMPLETED`만 본다. 상세는 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md).
 - **카탈로그 시드**: `regionRetry` 문항은 `DiagnosisCatalogSeedChangeUnit`(order `0000`) 시드에 포함되고, 이미 배포된 환경에는 `DiagnosisRegionRetryQuestionChangeUnit`(order `0005`, 멱등)이 적재한다.
 
@@ -573,7 +573,7 @@
     "options": [ { "code": "SEOUL", "label": "Seoul" }, { "code": "BUSAN", "label": "Busan" }, { "code": "GYEONGGI", "label": "Gyeonggi" } ] } }, "error": null }
 ```
 
-> `question`·`label` 표시 문자열은 §1과 동일하게 사용자의 등록 국가 기준 언어로 번역되며(미지원 언어는 `en` 폴백), `code`는 언어와 무관하게 동일하다.
+> `question`·`label` 표시 문자열은 §1과 동일하게 사용자 표시 언어로 번역되며(미지원 언어는 `en` 폴백), `code`는 언어와 무관하게 동일하다.
 
 #### 발생 가능한 에러
 

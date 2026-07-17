@@ -50,6 +50,9 @@ locals {
     SOLAPI_API_KEY      = var.solapi_api_key
     SOLAPI_API_SECRET   = var.solapi_api_secret
     BIZNO_API_KEY       = var.bizno_api_key
+    # 네이버 지역 검색 API 인증정보 — Client ID/Secret 모두 시크릿(#160/#162)
+    NAVER_SEARCH_CLIENT_ID     = var.naver_search_client_id
+    NAVER_SEARCH_CLIENT_SECRET = var.naver_search_client_secret
   }
 
   # nonsensitive: 빈 값 여부만 for_each 키 결정에 쓴다(값 자체는 노출 안 함). vars라 plan 시점 known.

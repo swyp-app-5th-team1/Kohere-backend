@@ -17,7 +17,7 @@
 >   - **Redis**: `auth`의 **refresh 토큰**(해시 저장·조회·회전·무효화, TTL 기반)
 >   - **저장소(추후 결정)**: `booking`·`chat`(F-03)·`report` — ADR 미정이라 구체 저장소를 임의 확정하지 않는다
 > - 한 흐름이 **여러 저장소**에 걸치면 저장소별 참가자를 따로 둔다 — 예: 로그인·온보딩·로그아웃/탈퇴 = **MySQL(계정·상태) + Redis(refresh)**, 매물 신청 = **MongoDB(매물 조회) + 저장소(추후 결정)(예약·채팅 기록)**, 동네친구 채팅 시작 = **MySQL(게시글 확인) + 저장소(추후 결정)(채팅방)**. co-location이라도 **cross-store·cross-collection 조인은 하지 않으며**, 모듈은 자기 저장소만 읽고 쓴다([ADR-0005](../../adr/0005-polyglot-persistence.md) D2·D5). 인증/검증 실패(401) 경로에는 저장소 접근이 없다. 정적 enum 응답(신고 사유)은 저장소를 두지 않는다.
-> - 외부 의존(푸시 등)은 모듈의 `Note`로 표기하되, **OAuth 로그인(US-1-1)** 에 한해 외부 제공자(Apple/Google)를 참가자로 둔다.
+> - 외부 의존(푸시 등)은 모듈의 `Note`로 표기하되, **OAuth 로그인(US-1-1)** 에 한해 외부 제공자(Apple/Google)를 참가자로 두고, **US-3-3(네이버 지역 검색)** 처럼 외부 API 호출 자체가 흐름의 핵심인 경우도 해당 외부 API(네이버 지역 검색 API)를 참가자로 둔다.
 >
 > 관련: [user-stories](../../requirements/user-stories.md) · [api/specs](../../api/specs/README.md) · [code-style §3](../../convention/code-style.md) · [system-overview](../system-overview.md)
 

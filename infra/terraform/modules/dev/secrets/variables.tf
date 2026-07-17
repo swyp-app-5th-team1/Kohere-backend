@@ -100,6 +100,20 @@ variable "bizno_api_key" {
   sensitive   = true
 }
 
+variable "naver_search_client_id" {
+  description = "네이버 지역 검색 API Client ID"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_search_client_secret" {
+  description = "네이버 지역 검색 API Client Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # ----- 앱 런타임 토글·설정(비밀 아님) — SSM String으로 저장해 refresh-env가 .env로 회수(재배포만으로 반영, ADR-0024) -----
 variable "solapi_enabled" {
   description = "SOLAPI 실 발송 활성화(앱 app.solapi.enabled). false면 로깅 폴백"

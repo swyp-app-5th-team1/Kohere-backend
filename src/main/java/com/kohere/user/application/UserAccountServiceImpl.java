@@ -11,6 +11,7 @@ import com.kohere.user.api.UserProfileView;
 import com.kohere.user.domain.Country;
 import com.kohere.user.domain.CountryRepository;
 import com.kohere.user.domain.Gender;
+import com.kohere.user.domain.Language;
 import com.kohere.user.domain.NicknameGenerator;
 import com.kohere.user.domain.Occupation;
 import com.kohere.user.domain.User;
@@ -22,7 +23,6 @@ import java.time.Instant;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 /**
  * user 공개 API 구현. auth가 호출하는 회원 생성·약관 동의·온보딩 완료·계정 조회를 처리한다. 약관 버전은 서버 설정값(app.terms.version)을 약관
@@ -80,6 +80,7 @@ public class UserAccountServiceImpl implements UserAccountService {
     if (profile.country() == null || !countryRepository.existsByCode(profile.country())) {
       throw new InvalidInputException("country 값이 올바르지 않습니다: " + profile.country());
     }
+    Language lang = parseLanguage(profile.lang());
     String nickname = nicknameGenerator.generateUnique();
     User active =
         user.completeOnboarding(
@@ -92,6 +93,7 @@ public class UserAccountServiceImpl implements UserAccountService {
             occupation,
             profile.email(),
             visaType,
+            lang,
             Instant.now());
     return toProfileView(userRepository.save(active));
   }
@@ -156,16 +158,9 @@ public class UserAccountServiceImpl implements UserAccountService {
   @Override
   @Transactional(readOnly = true)
   public String getLanguage(long userId) {
-    String country =
-        userRepository.findById(userId).orElseThrow(UserNotFoundException::new).getCountry();
-    if (!StringUtils.hasText(country)) {
-      return DEFAULT_LANGUAGE;
-    }
-    return countryRepository
-        .findByCode(country)
-        .map(Country::lang)
-        .filter(StringUtils::hasText)
-        .orElse(DEFAULT_LANGUAGE);
+    Language lang =
+        userRepository.findById(userId).orElseThrow(UserNotFoundException::new).getLang();
+    return lang == null ? DEFAULT_LANGUAGE : lang.code();
   }
 
   /**
@@ -176,7 +171,8 @@ public class UserAccountServiceImpl implements UserAccountService {
    */
   private UserProfileView toProfileView(User u) {
     boolean landlord = u.getUserType() == UserType.LANDLORD;
-    // 임대인은 country·gender·occupation·visaType·email 미수집(null) — 세입자/임대인 공용이라 null 가드한다.
+    // 임대인은 gender·occupation·visaType·email 미수집(null) — country·lang은 서버가 KR·ko 고정(#141). 세입자/임대인
+    // 공용이라 null 가드한다.
     Country country =
         u.getCountry() == null ? null : countryRepository.findByCode(u.getCountry()).orElse(null);
     return new UserProfileView(
@@ -190,6 +186,7 @@ public class UserAccountServiceImpl implements UserAccountService {
         u.getCountry(),
         country == null ? null : country.name(),
         country == null ? null : country.flag(),
+        u.getLang() == null ? null : u.getLang().code(),
         u.getOccupation() == null ? null : u.getOccupation().name(),
         u.getEmail(),
         u.getVisaType() == null ? null : u.getVisaType().name(),
@@ -212,6 +209,18 @@ public class UserAccountServiceImpl implements UserAccountService {
     String prefix = digits.substring(0, Math.min(3, digits.length() - 4));
     String suffix = digits.substring(digits.length() - 4);
     return prefix + "-****-" + suffix;
+  }
+
+  /**
+   * 표시 언어 코드를 {@link Language}로 파싱. 선택값이라 {@code null}은 미설정({@code null}), 지원 목록 밖은 {@code
+   * INVALID_INPUT}(#141).
+   */
+  private static Language parseLanguage(String code) {
+    if (code == null) {
+      return null;
+    }
+    return Language.from(code)
+        .orElseThrow(() -> new InvalidInputException("lang 값이 올바르지 않습니다: " + code));
   }
 
   private static <E extends Enum<E>> E parseEnum(Class<E> type, String value) {

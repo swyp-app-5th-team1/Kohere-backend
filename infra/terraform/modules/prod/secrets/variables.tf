@@ -80,6 +80,20 @@ variable "bizno_api_key" {
   sensitive   = true
 }
 
+variable "naver_search_client_id" {
+  description = "네이버 지역 검색 API Client ID"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "naver_search_client_secret" {
+  description = "네이버 지역 검색 API Client Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "recovery_window_days" {
   description = "Secrets Manager 삭제 복구 대기일"
   type        = number

@@ -6,4 +6,4 @@
 | --- | --- | --- |
 | US-6-1 | 랜덤 퀴즈 조회 | [us-6-1-random-quiz](us-6-1-random-quiz.md) |
 | US-6-2 | 퀴즈 정답 제출 및 즉시 피드백 | [us-6-2-quiz-answer](us-6-2-quiz-answer.md) |
-| US-6-3 | 사용자 국가 기반 퀴즈 문항·해설 번역 제공 | [us-6-3-quiz-i18n](us-6-3-quiz-i18n.md) |
+| US-6-3 | 사용자 표시 언어 기반 퀴즈 문항·해설 번역 제공 | [us-6-3-quiz-i18n](us-6-3-quiz-i18n.md) |

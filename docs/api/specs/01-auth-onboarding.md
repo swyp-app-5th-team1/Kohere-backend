@@ -24,6 +24,7 @@
 | 직업 `occupation` | `UNDERGRADUATE_STUDENT`(학부생), `GRADUATE_STUDENT`(대학원생), `EXCHANGE_STUDENT`(교환학생), `LANGUAGE_TEACHING`(어학·교육), `MANUFACTURING_PRODUCTION`(제조·생산), `BUSINESS_TRADE`(사업·무역), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편) |
 | 비자정보 `visaType` | `SHORT_TERM_VISIT`(단기방문), `STUDENTS_TRAINEES`(유학·연수), `NON_PROFESSIONAL_WORKERS`(비전문취업), `WORKING_HOLIDAY_WORK_AND_VISIT`(워킹홀리데이·방문취업), `OVERSEAS_KOREANS`(재외동포), `FAMILY_MARRIAGE_MIGRANTS`(방문동거·거주·결혼이민), `PERMANENT_RESIDENTS`(영주), `PROFESSIONALS`(전문인력), `DIPLOMATIC_OFFICIAL_AND_OTHERS`(외교·공무·기타), `ETC`(기타) | 온보딩 필수 · 요구사항 확정값(#93, #138 개편). API는 상수명, DB 저장은 표시 라벨 |
 | 국적 `country` | ISO 3166-1 alpha-2 코드(예: `VN`) | 온보딩 필수 · 클라이언트는 국가만 전송, 표시명·국기는 서버가 `countries` 참조로 확보(응답에 `countryName`·`countryFlag` 포함, **`countryFlag`는 국기 이미지 URL**) |
+| 표시 언어 `lang` | ISO 639-1 소문자 코드 — 지원값 `en`, `ko`, `ja` | **세입자 온보딩·프로필 수정 모두 선택** · 사용자가 앱 지구본 아이콘에서 직접 고른다. `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`이다. 지원 목록(`en`·`ko`·`ja`)으로 서버가 검증하고 목록 밖 값은 `INVALID_INPUT`이다(값은 소문자 코드로 주고받되 서버는 내부적으로 `Language` enum으로 모델링한다). **임대인은 서버가 `ko`로 고정 부여하며 변경할 수 없다**([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)) |
 | 이메일 `email` | 이메일 문자열 | **세입자** 온보딩 필수 · 인증번호로 사전 검증(§3·§4). 임대인은 미수집([ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)) |
 | 닉네임 `nickname` | `형용사 + 사물` 문자열 | 서버가 자동 배정(사용자 입력·수정 불가), 전역 유니크 |
 | 사용자 역할 `userType` | `TENANT`(세입자·외국인), `LANDLORD`(임대인) | 온보딩 제출 엔드포인트(세입자 `/auth/onboarding` · 임대인 `/auth/landlord/onboarding`)로 확정·이후 불변. 소셜·약관 단계에서는 미확정 |
@@ -32,7 +33,7 @@
 | 사업자등록번호 `businessRegistrationNumber` | 숫자 10자리 문자열 | **임대인 전용** · **온보딩 제출에는 미포함**(온보딩은 약관·연락처 인증만으로 완료). 온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 무상태 검증한다. 응답·로그 마스킹 |
 
 - 날짜만 표기는 `YYYY-MM-DD`(예: `birthDate`), 시각은 ISO-8601 UTC(예: `2026-06-15T08:30:00Z`).
-- enum은 모두 UPPER_SNAKE_CASE 문자열로 노출한다.
+- enum은 모두 UPPER_SNAKE_CASE 문자열로 노출한다. **예외: `lang`은 UPPER_SNAKE가 아니라 ISO 639-1 소문자 코드**다(`en`·`ko`·`ja`) — 값은 소문자로 주고받고 저장하되 서버는 닫힌 집합 `Language` enum으로 모델링·검증한다. 신규 언어는 카탈로그 콘텐츠 시드가 선행되어 어차피 배포를 수반하므로 enum이 손해가 아니다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 - **민감정보(토큰 원문·인증번호 원문·비자정보·이메일)는 로그·타 사용자 노출 시 마스킹**한다(error-response-guide §6). 본인 `GET /users/me`는 이메일을 평문으로 반환한다.
 - **토큰 모델**: `accessToken`은 **JWT**(stateless — 매 요청 서명·만료를 검증, 저장 안 함). `refreshToken`은 **불투명(opaque) 랜덤 토큰**으로 발급하고 서버 저장소에 **해시로 보관**한다(회전·재사용 탐지·무효화 목적). 예시의 `rt_…`는 불투명 토큰을, `eyJ…`는 JWT를 나타낸다.
 
@@ -412,7 +413,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 `TERMS_AGREED` 세입자가 필수 프로필을 제출해 가입을 완료한다. **약관 동의(§2)와 이메일 인증(§3·§4)이 선행**되어야 한다 — 약관 미동의(`PENDING`)면 `422 AUTH_TERMS_AGREEMENT_REQUIRED`, 제출 `email`이 미검증·불일치면 `422 AUTH_EMAIL_NOT_VERIFIED`. 성공 시 `ACTIVE`로 전이하고, 닉네임을 자동 배정하며 정식 access/refresh 토큰을 발급한다. 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다.
 
-> 약관 동의·`termsVersion`은 §2(약관 동의)에서 이미 기록되므로 이 요청 본문에는 약관 필드를 담지 않는다. `nickname`은 서버가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 조합하고 전역 유니크를 보장(충돌 시 재조합 재시도, 상한 초과 시 fallback 예: 숫자 접미사)해 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가). `email`은 §3·§4로 검증 완료된 값과 일치해야 한다. 응답의 `countryName`·`countryFlag`는 서버가 `country`(코드)로 `countries`에서 resolve한 값이다(저장은 `country` 코드만). `countryFlag`는 **국기 이미지 URL**(flagcdn.com SVG)이다.
+> 약관 동의·`termsVersion`은 §2(약관 동의)에서 이미 기록되므로 이 요청 본문에는 약관 필드를 담지 않는다. `nickname`은 서버가 형용사 풀·사물 풀의 active 단어에서 골라 `형용사 + 사물`로 조합하고 전역 유니크를 보장(충돌 시 재조합 재시도, 상한 초과 시 fallback 예: 숫자 접미사)해 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가). `email`은 §3·§4로 검증 완료된 값과 일치해야 한다. 응답의 `countryName`·`countryFlag`는 서버가 `country`(코드)로 `countries`에서 resolve한 값이다(저장은 `country` 코드만). `countryFlag`는 **국기 이미지 URL**(flagcdn.com SVG)이다. `lang`은 **선택** 필드로, 보내면 그 값을 그대로 저장하고 보내지 않으면 저장하지 않으며(NULL) 표시 시 `en`으로 폴백한다 — `lang`을 모르는 기존 클라이언트는 `en`으로 보인다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 
 - **인증**: 필수 — 소셜 로그인 단계에서 받은 온보딩 토큰(`onboardingCompleted=false`). 상태는 `TERMS_AGREED`여야 한다.
 - Path/Query 파라미터: 없음.
@@ -426,6 +427,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
   "gender": "MALE",
   "birthDate": "1998-04-12",
   "country": "VN",
+  "lang": "en",
   "occupation": "UNDERGRADUATE_STUDENT",
   "email": "minh@example.com",
   "visaType": "STUDENTS_TRAINEES"
@@ -439,6 +441,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `gender` | string(enum) | 필수 | `MALE` \| `FEMALE` |
 | `birthDate` | string(date) | 필수 | `YYYY-MM-DD`, 과거 날짜만 허용(미래 불가) |
 | `country` | string | 필수 | 국적 ISO 3166-1 alpha-2 코드(예: `VN`). `countries`에 존재해야 함(없으면 `INVALID_INPUT`) |
+| `lang` | string | 선택 | 표시 언어 ISO 639-1 소문자 코드. 지원 목록 `en` \| `ko` \| `ja` 중 하나여야 함(목록 밖 값은 `INVALID_INPUT`). **미전송이면 저장하지 않고(NULL) 표시 시 `en`으로 폴백**한다(`lang`을 보내지 않는 앱은 `en`으로 보인다) |
 | `occupation` | string(enum) | 필수 | `UNDERGRADUATE_STUDENT` \| `GRADUATE_STUDENT` \| `EXCHANGE_STUDENT` \| `LANGUAGE_TEACHING` \| `MANUFACTURING_PRODUCTION` \| `BUSINESS_TRADE` \| `ETC` |
 | `email` | string | 필수 | 이메일 형식. **§3·§4로 사전 검증된 값과 일치**해야 함(미검증·불일치 `AUTH_EMAIL_NOT_VERIFIED` 422) |
 | `visaType` | string(enum) | 필수 | `SHORT_TERM_VISIT` \| `STUDENTS_TRAINEES` \| `NON_PROFESSIONAL_WORKERS` \| `WORKING_HOLIDAY_WORK_AND_VISIT` \| `OVERSEAS_KOREANS` \| `FAMILY_MARRIAGE_MIGRANTS` \| `PERMANENT_RESIDENTS` \| `PROFESSIONALS` \| `DIPLOMATIC_OFFICIAL_AND_OTHERS` \| `ETC` |
@@ -461,6 +464,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "country": "VN",
       "countryName": "Vietnam",
       "countryFlag": "https://flagcdn.com/vn.svg",
+      "lang": "en",
       "occupation": "UNDERGRADUATE_STUDENT",
       "email": "minh@example.com",
       "visaType": "STUDENTS_TRAINEES",
@@ -482,7 +486,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 필드 누락/형식·enum·날짜 위반(`gender`/`visaType`/`occupation` 불일치, `birthDate` 형식·미래, `firstName`/`lastName`/`country`/`email` 빈값·형식 등) |
+| 400 | `INVALID_INPUT` | 필드 누락/형식·enum·날짜 위반(`gender`/`visaType`/`occupation` 불일치, `birthDate` 형식·미래, `firstName`/`lastName`/`country`/`email` 빈값·형식, **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드** 등) |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 409 | `AUTH_ONBOARDING_ALREADY_COMPLETED` | 이미 `ACTIVE`인 사용자의 온보딩 재요청(동시 요청 포함) |
@@ -544,7 +548,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ### 5-2. POST `/api/v1/auth/landlord/onboarding` — 임대인 온보딩 제출(임대인 전용·가입 완료)
 
-`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·국적·직업·비자정보와 **이메일을 수집하지 않으며**(생년월일 `birthDate`은 세입자와 동일하게 필수 수집한다 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)), 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다.
+`TERMS_AGREED` 사용자가 임대인 필수 프로필을 제출해 가입을 완료한다(세입자 온보딩 §5와 분리된 **임대인 전용 엔드포인트**). **약관 동의(§2)·연락처 인증(§4-1·§4-2)이 선행**되어야 한다 — **임대인 온보딩은 약관 동의 + 연락처(SMS) 인증만으로 완료**되며, 사업자등록번호는 수집·검증하지 않는다(온보딩 후 매물 등록 시점에 별도 검증 API(§5-1)로 검증). 성공 시 `ACTIVE`로 전이하고 **`userType`을 `LANDLORD`로 확정**하며, 닉네임을 자동 배정하고 정식 access/refresh 토큰을 발급한다(상태 전이 액션이므로 `200`). 사용자 단위로 멱등 처리해 동시 요청은 한 건만 성공한다. 임대인은 성별·직업·비자정보와 **이메일을 수집하지 않으며**(생년월일 `birthDate`은 세입자와 동일하게 필수 수집한다 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)), 세입자의 성·이름(`firstName`/`lastName`) 대신 단일 `name`을 받는다. **국적 `country`와 표시 언어 `lang`은 클라이언트가 보내지 않고 서버가 `country="KR"`·`lang="ko"`로 고정 부여**한다 — 임대인은 한국인 사업자를 전제하므로 국적을 묻지 않고, 한국어로만 서비스를 본다(변경 불가). 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것으로, 요청 본문은 여전히 `{ name, phoneNumber, birthDate }` 그대로이고 응답에만 국적·국기·언어가 더해진다.
 
 > **검증 게이트 우선순위**: 약관 미동의(`PENDING`) → `422 AUTH_TERMS_AGREEMENT_REQUIRED`(이미 `ACTIVE`면 `409 AUTH_ONBOARDING_ALREADY_COMPLETED`) → 제출 `phoneNumber` 미검증·불일치 → `422 AUTH_PHONE_NOT_VERIFIED` 순으로 판정한다(약관 → 연락처, 사업자번호 게이트 없음). 약관 동의·`termsVersion`은 §2에서 이미 기록되므로 이 요청 본문에 약관 필드를 담지 않는다. `phoneNumber`는 §4-1·§4-2로 검증 완료된 값과 일치해야 한다. `nickname`은 서버가 자동 배정하므로 요청 본문에 담지 않는다(사용자 입력·수정 불가).
 
@@ -579,6 +583,10 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
       "nickname": "BraveOtter",
       "birthDate": "1998-04-12",
       "phoneNumber": "010-****-5678",
+      "country": "KR",
+      "countryName": "South Korea",
+      "countryFlag": "https://flagcdn.com/kr.svg",
+      "lang": "ko",
       "userType": "LANDLORD",
       "status": "ACTIVE",
       "marketingAgreed": false,
@@ -593,7 +601,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 }
 ```
 
-> 임대인 응답은 세입자와 달리 `gender`·`country`·`occupation`·`visaType`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
+> 임대인 응답은 세입자와 달리 `gender`·`occupation`·`visaType`·`email`을 포함하지 않는다(임대인은 이메일 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 서버가 고정 부여한 값(`KR`·`ko`)이라 임대인 응답에도 포함한다**(요청 본문에는 없다 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)). `phoneNumber`는 마스킹해 반환한다(예: `010-****-5678` — 프로필 조회 §8은 본인이라 평문). `marketingAgreed`는 포함한다(약관 동의 시 확정). 사업자등록번호는 온보딩에서 수집하지 않으므로 응답에도 포함하지 않는다(온보딩 후 별도 검증 §5-1). 임대인 프로필 조회·수정은 `GET`(§8)·`PATCH`(§9) `/users/me`에서 `userType`에 따라 분기해 다룬다.
 
 #### 발생 가능한 에러
 
@@ -711,6 +719,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "country": "VN",
     "countryName": "Vietnam",
     "countryFlag": "https://flagcdn.com/vn.svg",
+    "lang": "en",
     "occupation": "UNDERGRADUATE_STUDENT",
     "email": "minh@example.com",
     "visaType": "STUDENTS_TRAINEES",
@@ -736,6 +745,10 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
     "nickname": "BraveOtter",
     "birthDate": "1998-04-12",
     "phoneNumber": "010-1234-5678",
+    "country": "KR",
+    "countryName": "South Korea",
+    "countryFlag": "https://flagcdn.com/kr.svg",
+    "lang": "ko",
     "status": "ACTIVE",
     "termsOfServiceAgreed": true,
     "privacyPolicyAgreed": true,
@@ -747,7 +760,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```
 
 > 본인 프로필이므로 `phoneNumber`는 평문으로 반환한다(로그·타 사용자 노출 시에만 마스킹). 임대인 응답의 `name`은 저장된 `FullName.firstName`(전체 이름)을 매핑한 값이다.
-> 임대인 응답은 세입자 전용 필드(`gender`·`country`·`countryName`·`countryFlag`·`occupation`·`visaType`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
+> 임대인 응답은 세입자 전용 필드(`gender`·`occupation`·`visaType`)와 `email`(임대인 미수집 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md))을 포함하지 않는다. **`birthDate`는 임대인도 온보딩에서 수집하므로 응답에 포함한다.** **`country`·`countryName`·`countryFlag`·`lang`은 임대인 응답에도 포함한다** — 온보딩에서 서버가 `KR`·`ko`로 고정 부여하기 때문이며(클라이언트가 보내지 않는다), 이는 [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)의 "임대인 국적 미수집" 결정을 개정한 것이다. **`businessRegistrationNumber`는 온보딩에서 수집하지 않으므로(온보딩 후 별도 검증 §5-1, 결과 미저장) 응답에 포함하지 않는다.**
 
 #### 발생 가능한 에러
 
@@ -761,7 +774,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 ### 9. PATCH `/api/v1/users/me` — 내 프로필 부분 수정
 
-본인 프로필을 부분 수정한다. 전송한 필드만 변경하고, 미전송 필드는 유지한다(미전송 ≠ 값 비움 — 현재 수정 대상 필드는 비움 불가). **수정 가능 필드는 `userType`에 따라 갈린다** — 세입자(`TENANT`)는 성·이름·국적·직업·비자정보·마케팅 동의를, 임대인(`LANDLORD`)은 `name`·`phoneNumber`·`marketingAgreed`만 수정한다.
+본인 프로필을 부분 수정한다. 전송한 필드만 변경하고, 미전송 필드는 유지한다(미전송 ≠ 값 비움 — 현재 수정 대상 필드는 비움 불가). **수정 가능 필드는 `userType`에 따라 갈린다** — 세입자(`TENANT`)는 성·이름·국적·표시 언어(`lang`)·직업·비자정보·마케팅 동의를, 임대인(`LANDLORD`)은 `name`·`phoneNumber`·`marketingAgreed`만 수정한다(**임대인은 `lang`을 바꿀 수 없다** — `ko` 고정, [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md) 개정(#141)).
 
 - **인증**: 필수(ACTIVE 사용자). PENDING 토큰 접근은 `403 AUTH_ONBOARDING_REQUIRED`.
 - Path/Query 파라미터: 없음.
@@ -771,6 +784,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 ```json
 {
   "country": "KR",
+  "lang": "ko",
   "occupation": "BUSINESS_TRADE",
   "visaType": "SHORT_TERM_VISIT",
   "marketingAgreed": true
@@ -784,6 +798,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `gender` | string(enum) | 선택 | `MALE` \| `FEMALE` |
 | `birthDate` | string(date) | 선택 | `YYYY-MM-DD`, 과거 날짜만 |
 | `country` | string | 선택 | 국적 ISO 코드(예: `KR`). `countries`에 존재해야 함 |
+| `lang` | string | 선택 | 표시 언어 ISO 639-1 소문자 코드. 빈 문자열 불가. 지원 목록 `en` \| `ko` \| `ja` 중 하나여야 함(목록 밖 값은 `INVALID_INPUT`) |
 | `occupation` | string(enum) | 선택 | 직업 enum(위 목록과 동일) |
 | `visaType` | string(enum) | 선택 | 비자정보 enum(위 목록과 동일) |
 | `marketingAgreed` | boolean | 선택 | 마케팅 수신 동의 |
@@ -804,6 +819,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 | `phoneNumber` | string | 선택 | 전화번호 형식. 빈 문자열 불가. **변경 시 SMS 재인증(§4-1·§4-2) 필요** — 새 번호가 VERIFIED일 때만 반영(미인증·불일치 `AUTH_PHONE_NOT_VERIFIED` 422) |
 | `marketingAgreed` | boolean | 선택 | 마케팅 수신 동의 |
 
+> **세입자 전용 — `country`·`lang` 독립**: `country`와 `lang`은 서로 독립이다 — `country`만 바꿔도 `lang`은 그대로 유지되고(국적을 바꿔도 표시 언어는 따라 바뀌지 않는다), `lang`만 보내면 `country`는 그대로 둔다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 > 필수 약관 동의(`termsOfServiceAgreed`/`privacyPolicyAgreed`)는 이 엔드포인트로 철회할 수 없다(탈퇴 경로로만 처리). (확인 필요: 동의 철회 정책)
 > `nickname`은 시스템 배정값이라 수정 대상이 아니다(세입자·임대인 공통 불변). **세입자** `email` 변경은 재인증(§3·§4)이 필요하므로 이 엔드포인트로는 수정하지 않는다(임대인은 `email` 미보유 — 별도 흐름, 확인 필요).
 > **임대인 전용**: `userType`은 온보딩으로 확정된 뒤 불변이다. `birthDate`는 온보딩에서 수집·확정하며 이 경로의 수정 대상이 아니다(임대인 조회 전용 — [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131)). `businessRegistrationNumber`는 온보딩·프로필에서 수집·저장하지 않으므로 이 경로의 수정 대상이 아니다(필요 시 별도 검증 API §5-1로 무상태 검증). **`phoneNumber` 변경은 SMS 재인증(§4-1·§4-2)이 필요하다** — 새 번호를 재인증(VERIFIED)한 뒤에만 반영하며, 미인증·불일치는 `422 AUTH_PHONE_NOT_VERIFIED`다(온보딩 시 연락처 인증과 동일한 발송·확인을 정식 토큰 컨텍스트에서 재사용 — [ADR-0034](../../adr/0034-landlord-phone-sms-verification.md)). **클라이언트 계약**: 앱은 연락처 변경 시 **PATCH 이전에 새 번호 인증(§4-1·§4-2)을 먼저 수행**한다(정상 흐름). `422 AUTH_PHONE_NOT_VERIFIED`는 happy path가 아니라 **미인증·마커 TTL 만료·불일치 제출에 대한 서버 가드**다.
@@ -816,8 +832,8 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | `birthDate` 미래(`@Past` 위반), `country` 미존재(`countries`에 없음) 등 값 검증 위반 |
-| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`gender`/`visaType`/`occupation` 허용 외 enum 문자열·`birthDate` 형식 불가**는 역직렬화 단계에서 거부되어 이 코드로 처리(요청 DTO가 enum/날짜 타입이라 매핑 실패 → onboarding(§5)은 String 수집·서버 파싱이라 `INVALID_INPUT`인 점과 다름) |
+| 400 | `INVALID_INPUT` | `birthDate` 미래(`@Past` 위반), `country` 미존재(`countries`에 없음), **`lang`이 지원 목록(`en`/`ko`/`ja`) 밖의 코드·빈 문자열** 등 값 검증 위반 |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치. **`gender`/`visaType`/`occupation` 허용 외 enum 문자열·`birthDate` 형식 불가**는 역직렬화 단계에서 거부되어 이 코드로 처리(요청 DTO가 enum/날짜 타입이라 매핑 실패 → onboarding(§5)은 String 수집·서버 파싱이라 `INVALID_INPUT`인 점과 다름). **`lang`은 요청 DTO에서 String으로 받아 서버가 `Language`로 파싱하므로 역직렬화는 통과하고 서버 검증에서 걸린다 — 미지원 코드는 `MALFORMED_REQUEST`가 아니라 `INVALID_INPUT`**이다(요청 enum 필드와 코드가 갈리는 지점) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 누락/위조 / 만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(PENDING·TERMS_AGREED) 토큰으로 접근 |
 | 404 | `USER_NOT_FOUND` | 사용자가 `WITHDRAWN`이거나 삭제되어 없음 |
@@ -835,7 +851,7 @@ SMS는 아웃바운드 포트 `VerificationSmsSender`(인프라 어댑터: SMS A
 
 #### 성공 Response — 204 No Content
 
-본문 없음. 개인정보(세입자: 이름·생년월일·국적·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
+본문 없음. 개인정보(세입자: 이름·생년월일·국적·표시 언어·직업·이메일·비자·닉네임 / 임대인: 이름·생년월일·연락처·국적·표시 언어·닉네임, 사업자번호 해시가 저장돼 있으면 함께)는 탈퇴 시 즉시 익명화, social_accounts 매핑 삭제([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md)). Apple 연동은 매핑 삭제 전에 `/auth/revoke`로 폐기하며, **best-effort**(이미 폐기·Apple 장애여도 탈퇴는 완료)다([ADR-0031](../../adr/0031-apple-sign-in-authorization-code-flow.md)).
 
 #### 발생 가능한 에러
 

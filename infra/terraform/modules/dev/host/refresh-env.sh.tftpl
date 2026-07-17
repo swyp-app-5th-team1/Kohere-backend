@@ -25,6 +25,9 @@ SPRING_MAIL_PASSWORD=$(get_opt "${ssm_prefix}/SMTP_PASSWORD")
 SOLAPI_API_KEY=$(get_opt "${ssm_prefix}/SOLAPI_API_KEY")
 SOLAPI_API_SECRET=$(get_opt "${ssm_prefix}/SOLAPI_API_SECRET")
 BIZNO_API_KEY=$(get_opt "${ssm_prefix}/BIZNO_API_KEY")
+# 네이버 지역 검색 API(지도 장소 검색, #160/#162) — 옵션 시크릿(미설정이면 SSM에 없음 → 빈 값). 비면 장소 검색 호출만 502(다른 기능 정상).
+NAVER_SEARCH_CLIENT_ID=$(get_opt "${ssm_prefix}/NAVER_SEARCH_CLIENT_ID")
+NAVER_SEARCH_CLIENT_SECRET=$(get_opt "${ssm_prefix}/NAVER_SEARCH_CLIENT_SECRET")
 # 앱 런타임 토글(비밀 아닌 String, ADR-0024) — compose 대신 .env로 주입해 재배포만으로 반영. 미설정 시 빈 값 → 앱 기본(enabled=false).
 SOLAPI_ENABLED=$(get_opt "${ssm_prefix}/SOLAPI_ENABLED")
 SOLAPI_FROM=$(get_opt "${ssm_prefix}/SOLAPI_FROM")

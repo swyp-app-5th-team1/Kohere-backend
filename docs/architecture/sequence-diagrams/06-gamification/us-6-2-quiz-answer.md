@@ -22,7 +22,7 @@ sequenceDiagram
         C-->>U: 퀴즈 없음 안내
     else 대상 퀴즈 존재
         Note over GAME: 해설 번역을 위해 표시 언어 필요<br/>(JWT 클레임 비의존 — 항상 user 공개 query로 취득)
-        GAME->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 조회 — user가 countries.lang으로 도출, ADR-0002 Decision 5)
+        GAME->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 조회 — user가 users.lang 있으면 그 값, 없으면 en, ADR-0002 Decision 5)
         USER-->>GAME: 표시 언어 lang
         GAME->>DB: quizId로 대상 퀴즈 도큐먼트 조회 (quizzes)
         DB-->>GAME: 퀴즈 도큐먼트(question·choices·correctChoice·explanation 언어-키 맵)

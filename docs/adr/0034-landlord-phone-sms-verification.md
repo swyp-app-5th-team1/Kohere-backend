@@ -13,6 +13,8 @@ Proposed
 
 > **개정(2026-07-08, [#131](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/131))**: 임대인 온보딩에서 **생년월일(`birthDate`)을 필수 수집**하도록 범위를 조정했다(세입자와 동일 규칙 — `YYYY-MM-DD`·과거 날짜만). **이메일 미수집(§5)·연락처 SMS 인증 결정은 그대로 유지**되며, 변경은 `birthDate`에 한정된다. 아래 §4의 요청 본문이 `{ name, phoneNumber, birthDate }`가 되고 `GET /users/me` 임대인 응답에도 `birthDate`가 포함된다(단, 프로필 수정 `PATCH /users/me`의 임대인 수정 대상에는 넣지 않는다 — 조회 전용). `gender`·`country`·`occupation`·`visaType`·`email`은 **여전히 미수집**이다.
 
+> **개정(2026-07-16, [#141](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/141))**: 임대인에게 **표시 언어 `lang='ko'`와 국적 `country='KR'`을 서버가 고정 부여**하도록 개정한다. 임대인은 한국인 사업자이므로 기본 표시 언어가 한국어여야 하는데, 표시 언어의 기본값은 `en`(사용자가 `lang`을 고르지 않으면 영어, [ADR-0029](./0029-diagnosis-i18n-strategy.md) 개정)이라 서버가 `lang='ko'`를 심어 주지 않으면 **모든 임대인이 영어**로 표시된다. 이는 **온보딩 요청 본문 변경이 아니다** — §4의 요청 본문은 여전히 `{ name, phoneNumber, birthDate }` 세 필드이고 클라이언트는 `lang`·`country` 어느 것도 보내지 않는다. **서버가 온보딩 완료 시점에 두 값을 심고**, 기존 행은 `V13__users_lang.sql`에서 백필한다. 따라서 위 개정의 "`country`는 여전히 미수집"은 **이 항목으로 갈음한다**(클라이언트로부터 수집하지 않되 서버가 `KR`로 확정한다). `gender`·`occupation`·`visaType`·`email` **미수집은 그대로 유지**된다. 결과로 임대인 프로필 응답에 `country`·`countryName`·`countryFlag`가 포함된다([01-auth-onboarding](../api/specs/01-auth-onboarding.md) §5-2·§8 갱신). 임대인은 `lang`을 **변경할 수 없다** — 표시 언어 선택은 세입자(`TENANT`) 전용이다([#141](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/141)).
+
 ## Context
 
 - 임대인 온보딩(US-1-9)은 본래 세입자와 **이메일 인증(US-1-6)을 공통 선행**으로 두고, 온보딩 제출에서 제출 `email`을 사전 인증값과 대조했다. 검증 게이트는 **약관 → 이메일 → 사업자번호** 순이었다.

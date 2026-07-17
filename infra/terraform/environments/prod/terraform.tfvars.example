@@ -52,6 +52,12 @@ mail_from     = "noreply@kohere.app"
 # bizno_enabled = true
 # bizno_api_key = ""  # sensitive — SSM SecureString
 
+# ----- 네이버 지역 검색 API (지도 장소 검색 — #160/#162) -----
+# 지도 장소 검색(GET /api/v1/listings/places)에 필요. 미설정 시 SSM에 REPLACE_ME가 저장되고 장소 검색만 502(UPSTREAM_ERROR).
+# 네이버 개발자센터에서 검색 API 사용 등록 후 Client ID/Secret 발급받아 채운다(둘 다 SSM SecureString):
+# naver_search_client_id     = ""  # sensitive — SSM SecureString
+# naver_search_client_secret = ""  # sensitive — SSM SecureString
+
 # ----- 알람 (이메일·Discord 병행 가능 — 둘 다 채우면 양쪽으로 통보) -----
 # alarm_email         = "ops@kohere.app"
 # discord_webhook_url = "https://discord.com/api/webhooks/xxx/yyy"   # 채우면 알람을 Discord로 통보(SNS→Lambda, ADR-0027)  # sensitive

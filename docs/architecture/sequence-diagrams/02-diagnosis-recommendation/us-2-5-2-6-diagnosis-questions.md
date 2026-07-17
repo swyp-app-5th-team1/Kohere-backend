@@ -1,4 +1,4 @@
-# US-2-5 · US-2-6 — 진단 문항·선택지 단계별 server-driven 제공 + 국가 기반 번역
+# US-2-5 · US-2-6 — 진단 문항·선택지 단계별 server-driven 제공 + 표시 언어 기반 번역
 
 > 모듈: 맞춤 진단 & 매물 추천 · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/02-diagnosis-recommendation.md)
 
@@ -20,13 +20,13 @@ sequenceDiagram
         Note over SEC: JWT 검증 (서명·만료·클레임)
         SEC->>DIAG: 인증된 요청 전달(userId, step)
         Note over DIAG: 번역 언어 결정을 위해 표시 언어 필요<br/>(JWT 클레임 비의존 — 항상 user 공개 query로 취득)
-        DIAG->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 조회 — user가 countries.lang으로 도출, ADR-0002 Decision 5)
+        DIAG->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 조회 — users.lang(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 en, ADR-0002 Decision 5)
         USER-->>DIAG: 표시 언어 lang
         DIAG->>DB: 진행 중 진단(IN_PROGRESS) 조회 (userId)<br/>+ diagnosisQuestions에서 step 문항 조회
         DB-->>DIAG: 진행 중 진단(저장된 purpose 등) + step 문항(카탈로그)
         Note over DIAG: 문항·선택지(카탈로그)는<br/>MongoDB diagnosisQuestions에서 조회<br/>(데이터만: step, field, options[].code,<br/>select + 임베드 번역 question·label 언어-키 맵)<br/>(6단계: ① 지역 / ② 입국 목적(유학 여부) /<br/>③ 대학·지역 / ④ 주거 조건 / ⑤ 월세 min-max 범위 / ⑥ ARC)
         Note over DIAG: ③(step 3)은 저장된 purpose로 분기(서비스 로직)<br/>STUDY → 6 대학 그룹 질문(field=university: 그룹 코드 예 SNU_CAU_SOONGSIL)<br/>NON_STUDY → 지역(구) 질문(field=district: GURO_GU 등)<br/>알맞은 한 질문만 내려줌(클라 로컬 분기 아님)
-        Note over DIAG: user가 등록 국가→언어(countries.lang)로 도출한 표시 언어 사용
+        Note over DIAG: 표시 언어는 users.lang(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 en
         alt 도큐먼트에 그 언어 키 존재
             Note over DIAG: question·label 언어-키 맵에서 그 언어 값 선택·조립<br/>question=question[lang], label=options[].label[lang]<br/>(임베드 번역 + code로 표시 라벨 조립 · code 불변)
         else 미지원 언어
@@ -67,6 +67,6 @@ sequenceDiagram
 - 문항·선택지 카탈로그는 **MongoDB `diagnosisQuestions` 컬렉션**에 **데이터만** 둔다(앱·DB 어디에도 하드코딩하지 않는다) — `step`, `field`, `options[]{ code }`, `select`. 분기 메타(`branchOn` 등)는 두지 않으며, 어느 질문을 낼지는 서비스(비즈니스 로직)가 결정한다. 표시 문자열(번역)은 별도 컬렉션 없이 **같은 도큐먼트에 임베드**하되 **언어 코드를 키로 하는 맵**으로 둔다 — 예: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } } ]`. 서버가 (카탈로그 데이터 + 저장된 답)으로 다음 질문을 선정하고 사용자 언어 값으로 표시 라벨을 조립해 한 단계만 내려준다.
 - ③ 대학·지역 문항은 ②(`purpose`) 답변에 따라 **서버 비즈니스 로직**이 분기한다 — `STUDY`면 `field=university`로 대학 질문을, `NON_STUDY`면 `field=district`로 지역(구) 질문을 내려준다(알맞은 한 질문만 내려주고 두 목록을 함께 주지 않는다). 대학 질문·지역 질문은 각각 카탈로그 데이터(별도 step)로 존재하고, 노출은 저장된 `purpose`를 보고 서비스가 결정한다. ③ 대학은 개별 대학(15개 평면 값)이 아니라 **6개 대학 그룹**을 단일 선택한다 — 진단이 보유한 enum은 `University`(개별 15값)에서 `UniversityGroup`(그룹 6값)으로 변경한다(여전히 diagnosis 소유 enum, 결정: [ADR-0028](../../../adr/0028-diagnosis-questions-catalog-store.md)). `UniversityGroup` 값(UPPER_SNAKE)과 그룹→멤버 대학 코드 매핑(멤버 코드는 기존 개별 `University` 코드이며 매물은 그대로 `nearbyUniversityCodes`에 개별 코드를 저장 — 저장 구조 불변): `HUFS_KHU_KOREA → {HUFS, KHU, KOREA}`, `SKKU_SUNGSHIN → {SKKU, SUNGSHIN}`, `SNU_CAU_SOONGSIL → {SNU, CAU, SOONGSIL}`, `HONGIK_YONSEI_EWHA → {HONGIK, YONSEI, EWHA}`, `KONKUK_SEJONG_HYU → {KONKUK, SEJONG, HYU}`, `ETC → {}`(빈 집합: 대학 필터 미적용 — 지역 기반 매칭으로만 폴백). `district` enum 값(UPPER_SNAKE): `GURO_GU, YEONGDEUNGPO_GU, GEUMCHEON_GU, GWANAK_GU, DONGDAEMUN_GU, ETC`.
 - 잘못된 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `INVALID_INPUT`(400)+`errors[]`로 반환한다.
-- 번역(US-2-6)은 반환 질문의 **표시 `question`·`label`만** 대상이며, `user`가 사용자 등록 국가(`countries.lang`)로 도출한 표시 언어로 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 언어 값을 골라 채운다 — `question`은 `question[lang]`, 선택지 `label`은 `options[].label[lang]`에서 고른다. 선택지 `code`는 언어와 무관하게 동일(UPPER_SNAKE·불변)하다. `Accept-Language` 헤더에 의존하지 않는다. 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님; 기본 언어=영어).
-- 번역 언어 결정을 위한 표시 언어는 `user`가 보유한다(`countries.lang`). diagnosis 모듈은 JWT 클레임에 의존하지 않고 **항상 `user`의 공개 query(`getLanguage`)를 동기 호출**해 표시 언어(`lang`)를 취득한다(즉시 결과가 필요한 조회 → ADR-0002 Decision 5). 이를 위해 모듈 의존 `diagnosis → user`를 추가한다. 국가→언어 매핑은 `user`의 `countries.lang`이 보유하고, 표시 문자열은 위 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 `lang` 값으로 해소한다.
+- 번역(US-2-6)은 반환 질문의 **표시 `question`·`label`만** 대상이며, `user`가 정한 표시 언어(`users.lang`이 있으면 그 값, 없으면 `en`)로 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 언어 값을 골라 채운다 — `question`은 `question[lang]`, 선택지 `label`은 `options[].label[lang]`에서 고른다. 선택지 `code`는 언어와 무관하게 동일(UPPER_SNAKE·불변)하다. `Accept-Language` 헤더에 의존하지 않는다. 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님; 기본 언어=영어).
+- 번역 언어 결정을 위한 표시 언어는 `user`가 보유하며 **`users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`**으로 정한다([ADR-0029](../../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). diagnosis 모듈은 JWT 클레임에 의존하지 않고 **항상 `user`의 공개 query(`getLanguage`)를 동기 호출**해 표시 언어(`lang`)를 취득한다(즉시 결과가 필요한 조회 → ADR-0002 Decision 5). 이를 위해 모듈 의존 `diagnosis → user`를 추가한다. 표시 언어 결정(`users.lang`이 있으면 그 값, 없으면 `en`)은 `user`가 책임지고, 표시 문자열은 위 `diagnosisQuestions` 도큐먼트의 인라인 언어-키 맵에서 그 `lang` 값으로 해소한다.
 - 선택지 `code`는 진단 제출(`POST /api/v1/diagnoses`) 검증 enum과 **1:1 동일 출처**다 — 문항 카탈로그에서 받은 `code`로 답 저장(`POST /api/v1/diagnoses/answers`) 본문을 구성하면 동일 enum으로 검증·저장되므로 라벨 번역(언어-키 맵) 여부와 무관하게 수용된다. ③ 대학은 `options[].code`가 `UniversityGroup`(그룹 6값)과 1:1이며, 사용자는 한 그룹을 단일 선택한다. 다만 ⑤ 월세는 이 불변식의 의도적 예외(carve-out)다 — 고정 선택지 enum 코드가 아니라 숫자 범위 자유 입력이므로 step-5 카탈로그의 `select.type`은 `NUMBER_RANGE`(숫자 입력 2개)이고 `options`는 비어 있으며, 답은 `field=monthlyRent` + `min`/`max` 두 숫자 값으로 보낸다(결정: [ADR-0028](../../../adr/0028-diagnosis-questions-catalog-store.md)).

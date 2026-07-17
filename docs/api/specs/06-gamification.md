@@ -9,8 +9,8 @@
 
 - **정답 판정은 서버 전용**: 저장된 정답(`correctChoice`)과 대조해 판정한다. 정답·해설은 **조회 응답에 포함하지 않으며**, 채점 응답에서 `explanation`은 정답·오답 모두, `correctChoice`는 오답일 때만 공개한다.
 - **무상태(stateless)**: 제출 기록·포인트가 없다. 하루 1회 제한·`(userId, quizDate)` 유니크 제약이 없으며, 채점은 멱등하고 무제한 반복 가능하다(같은 요청을 몇 번 보내도 동일 결과).
-- **다국어 번역 기반**: 퀴즈의 `question`·각 보기 `text`·`explanation`은 퀴즈 도큐먼트 내부의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)으로 저장한다. 표시 언어는 `user` 모듈의 공개 query(`getLanguage(userId)`)를 동기 호출해 취득하며, `user`가 등록 국가(`countries.lang`)로 도출한다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님). 보기 키 `A`~`D`는 **언어와 무관하게 동일**하며(채점은 키로 수행), 번역되지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)).
-- **대상/인증**: 외국인 세입자(`userType=TENANT`, `status=ACTIVE`, `ROLE_USER`) 전용이다. 모든 엔드포인트는 인증 필수다.
+- **다국어 번역 기반**: 퀴즈의 `question`·각 보기 `text`·`explanation`은 퀴즈 도큐먼트 내부의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)으로 저장한다. 표시 언어는 `user` 모듈의 공개 query(`getLanguage(userId)`)를 동기 호출해 취득하며, `user`가 **사용자가 고른 표시 언어(`users.lang`)이 있으면 그 값, 없으면 `en`**을 반환한다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님). 보기 키 `A`~`D`는 **언어와 무관하게 동일**하며(채점은 키로 수행), 번역되지 않는다.
+- **대상/인증**: 외국인 세입자(`userType=TENANT`, `status=ACTIVE`, `ROLE_USER`) 전용이다 — **외국인 세입자를 대상으로 한 학습 기능**이라는 것이 세입자 전용의 근거이며, 표시 언어 도출 가능 여부와는 무관하다(임대인도 `lang='ko'`·`country='KR'`를 갖는다). 모든 엔드포인트는 인증 필수다.
 
 > **인증·대상**: `/api/v1/quizzes/**`는 `hasRole("USER")`(ACTIVE)로 게이팅되며, 응용 계층에서 `userType=TENANT`를 검사한다 — 비-ACTIVE는 `403 AUTH_ONBOARDING_REQUIRED`, 세입자가 아니면 `403 FORBIDDEN`으로 거부한다.
 
@@ -21,7 +21,7 @@
 | 보기 키 `selectedChoice` / `correctChoice` | `A`, `B`, `C`, `D` | 4지선다 보기 식별 키. 단일 대문자이며, 요청 시 이 네 값 중 하나여야 한다(그 외 값은 검증 실패). **언어 불변** — 채점은 키로 수행한다 |
 
 - 보기 키 `A`~`D`는 4지선다 식별용 단일 대문자 키이며, 의미를 갖는 도메인 enum이 아니다. 번역과 무관하게 동일하고, 채점은 이 키로 수행한다.
-- 다국어: `question`·보기 `text`·`explanation`은 인라인 언어-키 맵에 저장되며, 표시 언어는 `getLanguage(userId)`(등록 국가 `countries.lang`)로 취득한다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님, [ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)).
+- 다국어: `question`·보기 `text`·`explanation`은 인라인 언어-키 맵에 저장되며, 표시 언어는 `getLanguage(userId)`로 취득한다. 사용자 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님, [ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)).
 
 ---
 

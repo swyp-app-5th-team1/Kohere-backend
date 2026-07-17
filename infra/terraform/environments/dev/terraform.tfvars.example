@@ -50,6 +50,12 @@ mail_from     = "noreply@kohere.app"
 # bizno_enabled = true
 # bizno_api_key = ""  # sensitive — SSM SecureString
 
+# ----- 네이버 지역 검색 API (지도 장소 검색 — #160/#162) -----
+# 지도 장소 검색(GET /api/v1/listings/places)에 필요. 미설정 시 앱은 정상 기동하되 장소 검색만 502(UPSTREAM_ERROR).
+# 네이버 개발자센터에서 검색 API 사용 등록 후 Client ID/Secret 발급받아 채운다(둘 다 SSM SecureString):
+# naver_search_client_id     = ""  # sensitive — SSM SecureString
+# naver_search_client_secret = ""  # sensitive — SSM SecureString
+
 # ----- 테스트 마스터 계정/로그인 (dev·local 전용, 운영 미사용) -----
 # 기본 비활성. 우회 시크릿 TEST_LOGIN_SECRET 은 Terraform이 자동 생성한다(SSM SecureString) — 채우지 않는다.
 # 이 한 토글이 마스터 계정 시드 + 우회 로그인을 함께 켠다. 공유 EC2 백도어라 필요할 때만 켠다:

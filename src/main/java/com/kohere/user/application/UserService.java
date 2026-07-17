@@ -6,6 +6,7 @@ import com.kohere.user.api.UserWithdrawnEvent;
 import com.kohere.user.application.dto.UserProfileResponse;
 import com.kohere.user.domain.Country;
 import com.kohere.user.domain.CountryRepository;
+import com.kohere.user.domain.Language;
 import com.kohere.user.domain.User;
 import com.kohere.user.domain.UserNotFoundException;
 import com.kohere.user.domain.UserRepository;
@@ -54,6 +55,12 @@ public class UserService {
     if (request.country() != null && !countryRepository.existsByCode(request.country())) {
       throw new InvalidInputException("country 값이 올바르지 않습니다: " + request.country());
     }
+    Language lang =
+        request.lang() == null
+            ? null
+            : Language.from(request.lang())
+                .orElseThrow(
+                    () -> new InvalidInputException("lang 값이 올바르지 않습니다: " + request.lang()));
     return user.updateProfile(
         request.firstName(),
         request.lastName(),
@@ -62,6 +69,7 @@ public class UserService {
         request.country(),
         request.occupation(),
         request.visaType(),
+        lang,
         request.marketingAgreed(),
         Instant.now());
   }
@@ -115,6 +123,7 @@ public class UserService {
         u.getCountry(),
         country == null ? null : country.name(),
         country == null ? null : country.flag(),
+        u.getLang() == null ? null : u.getLang().code(),
         u.getOccupation(),
         u.getEmail(),
         u.getVisaType(),

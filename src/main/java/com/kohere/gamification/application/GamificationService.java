@@ -18,8 +18,9 @@ import org.springframework.stereotype.Service;
  * 게이미피케이션(학습 퀴즈) 유스케이스. 무상태 — 요청마다 활성 퀴즈 풀에서 무작위 1개를 사용자 언어로 번역해 조회하고, 제출한 보기를 저장된 정답과 대조해 즉시
  * 채점한다(제출 기록·포인트 없음, ADR-0035). 대상은 외국인 세입자(userType=TENANT, ACTIVE)다.
  *
- * <p>표시 언어는 {@code user} 공개 query {@code getLanguage}로 취득하며(등록 국가 → {@code countries.lang}), 해당 언어
- * 번역이 없으면 영어({@code en})로 폴백한다(ADR-0029). 보기 키 A~D는 언어와 무관하고 채점은 키로 수행한다. 의존성은 생성자 주입으로 받는다(§3-4).
+ * <p>표시 언어는 {@code user} 공개 query {@code getLanguage}로 취득하며({@code users.lang}, 미설정이면 en — #141),
+ * 해당 언어 번역이 없으면 영어({@code en})로 폴백한다(ADR-0029). 보기 키 A~D는 언어와 무관하고 채점은 키로 수행한다. 의존성은 생성자 주입으로
+ * 받는다(§3-4).
  */
 @Service
 @RequiredArgsConstructor

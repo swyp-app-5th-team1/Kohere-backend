@@ -39,6 +39,9 @@ locals {
     SOLAPI_API_KEY       = var.solapi_api_key != "" ? var.solapi_api_key : "REPLACE_ME"
     SOLAPI_API_SECRET    = var.solapi_api_secret != "" ? var.solapi_api_secret : "REPLACE_ME"
     BIZNO_API_KEY        = var.bizno_api_key != "" ? var.bizno_api_key : "REPLACE_ME"
+    # 네이버 지역 검색 API 인증정보 — 미설정 시 REPLACE_ME 저장(운영 전 채울 것, #160/#162)
+    NAVER_SEARCH_CLIENT_ID     = var.naver_search_client_id != "" ? var.naver_search_client_id : "REPLACE_ME"
+    NAVER_SEARCH_CLIENT_SECRET = var.naver_search_client_secret != "" ? var.naver_search_client_secret : "REPLACE_ME"
   }
 }
 
