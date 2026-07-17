@@ -1,4 +1,6 @@
-# Kohere — 맞춤 진단 로컬 수동 테스트 (문항 조회 → 단계별 답 저장 → 확정 → 이력/최근/상세 → 추천)
+# Kohere — 맞춤 진단 v1 로컬 수동 테스트 (문항 조회 → 단계별 답 저장 → 확정 → 이력/최근/상세 → 추천)
+#
+# ※ v2(서버 주도 start/next 흐름)는 diagnosis-v2.http 를 쓴다. v1은 이 파일 그대로 유지된다(계약 불변).
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis mailhog

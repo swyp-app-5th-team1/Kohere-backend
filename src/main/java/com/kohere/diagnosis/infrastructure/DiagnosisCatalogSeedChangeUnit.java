@@ -24,6 +24,9 @@ import org.springframework.data.mongodb.core.query.Query;
 @ChangeUnit(id = "diagnosis-catalog-seed", order = "0000", author = "kohere")
 public class DiagnosisCatalogSeedChangeUnit {
 
+  /** ① 지역 0건 예외질문의 {@code field}(정본 6슬롯 밖의 흐름 제어 문항 — ADR-0036). */
+  static final String REGION_RETRY_FIELD = "regionRetry";
+
   @Execution
   public void execution(MongoTemplate mongo) {
     // version 0 = 캐노니컬 베이스라인(Flyway V1 from-scratch 대응): 레퍼런스 카탈로그 컬렉션을 비우고 시드를 새로
@@ -37,7 +40,6 @@ public class DiagnosisCatalogSeedChangeUnit {
   private static List<DiagnosisQuestionDocument> questionCatalog() {
     return List.of(
         doc(
-            1,
             "region",
             select("SINGLE", 1),
             q("어느 지역에서 거주할 예정인가요?", "Which region will you live in?"),
@@ -45,14 +47,21 @@ public class DiagnosisCatalogSeedChangeUnit {
                 opt("SEOUL", "서울", "Seoul"),
                 opt("BUSAN", "부산", "Busan"),
                 opt("GYEONGGI", "경기", "Gyeonggi"))),
+        // ① 지역 0건일 때만 v2 흐름이 끼워 넣는 예외질문. 서버 합성 문구가 아니라 같은 카탈로그의 일반 문항이다
+        // (ADR-0036). 정본 6슬롯에 없지만 카탈로그는 순서를 담지 않으므로 다른 문항과 동등하게 들어간다.
         doc(
-            2,
+            REGION_RETRY_FIELD,
+            select("SINGLE", 1),
+            q(
+                "현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?",
+                "There are no rooms in this region yet. Would you like to look in another region?"),
+            List.of(opt("YES", "예", "Yes"), opt("NO", "아니오", "No"))),
+        doc(
             "purpose",
             select("SINGLE", 1),
             q("입국 목적이 무엇인가요?", "What is your purpose of stay?"),
             List.of(opt("STUDY", "유학(학업)", "Study"), opt("NON_STUDY", "그 외", "Other"))),
         doc(
-            3,
             "university",
             select("SINGLE", 1),
             q("어느 대학교에 다니나요?", "Which university do you attend?"),
@@ -64,7 +73,6 @@ public class DiagnosisCatalogSeedChangeUnit {
                 opt("KONKUK_SEJONG_HYU", "건국대·세종대·한양대", "Konkuk · Sejong · Hanyang"),
                 opt("ETC", "기타", "Other"))),
         doc(
-            3,
             "district",
             select("SINGLE", 1),
             q("어느 지역(구)에서 거주할 예정인가요?", "Which district will you live in?"),
@@ -76,7 +84,6 @@ public class DiagnosisCatalogSeedChangeUnit {
                 opt("DONGDAEMUN_GU", "동대문구", "Dongdaemun-gu"),
                 opt("ETC", "기타", "Other"))),
         doc(
-            4,
             "conditions",
             select("MULTI", 3),
             q("원하는 주거 조건을 선택하세요(최대 3개).", "Select your housing conditions (up to 3)."),
@@ -90,13 +97,11 @@ public class DiagnosisCatalogSeedChangeUnit {
                 opt("MEALS_INCLUDED", "식사 제공", "Meals provided"),
                 opt("DOUBLE_ROOM", "2인실", "Double room"))),
         doc(
-            5,
             "monthlyRent",
             select("NUMBER_RANGE", 1),
             q("월세 범위(최소~최대)는 얼마인가요?(원)", "What is your monthly rent range (min–max)? (KRW)"),
             List.of()),
         doc(
-            6,
             "arcStatus",
             select("SINGLE", 1),
             q("외국인등록증(ARC) 발급 상태는 어떤가요?", "What is your ARC issuance status?"),
@@ -118,14 +123,10 @@ public class DiagnosisCatalogSeedChangeUnit {
         .build();
   }
 
+  /** 문항 1건. 순서·단계 번호는 카탈로그가 아니라 코드({@code DiagnosisFlowStep})가 갖는다 — 여기선 field로 식별한다(ADR-0036). */
   private static DiagnosisQuestionDocument doc(
-      int step,
-      String field,
-      SelectSpec select,
-      Map<String, String> question,
-      List<OptionSpec> options) {
+      String field, SelectSpec select, Map<String, String> question, List<OptionSpec> options) {
     return DiagnosisQuestionDocument.builder()
-        .step(step)
         .field(field)
         .question(question)
         .select(select)

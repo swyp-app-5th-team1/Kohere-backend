@@ -35,6 +35,10 @@ public class Diagnosis {
   private final Integer monthlyRentMax;
   private final ArcStatus arcStatus;
   private final DiagnosisStatus status;
+
+  /**
+   * 종료 시각(UTC). {@code COMPLETED}는 제출 확정 시각, {@code DISCARDED}는 폐기 시각({@code IN_PROGRESS}에는 부재).
+   */
   private final Instant submittedAt;
 
   /** 사용자당 1건의 진행 중(IN_PROGRESS) 진단 초안을 시작한다. id는 영속 시 부여한다. */
@@ -53,6 +57,20 @@ public class Diagnosis {
   public Diagnosis complete(Instant now) {
     validateComplete();
     return toBuilder().status(DiagnosisStatus.COMPLETED).submittedAt(now).build();
+  }
+
+  /**
+   * 6단계를 채우지 못하고 끝난 시도를 폐기 기록으로 남긴다(`IN_PROGRESS → DISCARDED`). v2 흐름이 재시도({@code
+   * RESTART})·종료({@code TERMINATED})·이탈(다음 {@code /start}가 덮어씀)로 끝날 때 부분 답을 그대로 보존한다 — "어느 지역을 원했는데
+   * 매물이 없었나" 같은 수요 신호를 버리지 않기 위해서다(ADR-0036).
+   *
+   * <p><b>완결성을 검증하지 않는다</b> — 부분 답이 정상이기 때문이다({@link #complete}와의 유일한 차이). 대신 이 상태는 사용자에게 노출하지 않는다
+   * — 목록(이력·최근)은 {@code COMPLETED}만 보고, id로 직접 오는 상세·추천은 응용 계층이 명시적으로 404로 거절한다(ADR-0036 결정 12).
+   *
+   * <p>{@code submittedAt}에 폐기 시각을 담는다 — 별도 타임스탬프 필드를 두는 대신 "종료 시각"으로 통일한다(상태가 어느 종료인지 이미 말해준다).
+   */
+  public Diagnosis discard(Instant now) {
+    return toBuilder().status(DiagnosisStatus.DISCARDED).submittedAt(now).build();
   }
 
   /** 확정 전 저장된 답의 완결성·정합성을 검증한다(6단계 필수·조건부 대학(그룹)/지역·조건 최대 3·월세 범위 min≤max). */

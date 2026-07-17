@@ -1,0 +1,241 @@
+# Kohere — v2 서버 주도 진단 로컬 수동 테스트 (start → next 반복 → 자동 확정 → 추천)
+#
+# v1(diagnosis.http)과 무엇이 다른가:
+#   - 클라가 step 을 지정하지 않는다. POST /start 로 시작하고 POST /next 로 답만 이어 보낸다.
+#     다음 질문·분기·확정 시점은 서버가 판단해 resultCode 로 알려준다.
+#   - 시작·매물 조회 시점은 클라가 정한다. 확정 응답은 diagnosisId 만 주고 매물을 싣지 않는다.
+#   - 매 응답이 정상 200 이고 data.resultCode(태그드 유니온)가 다음에 할 일을 말해준다:
+#       NEXT_QUESTION(질문 있음) / RESTART(클라가 /start 로 재시도) / COMPLETED(확정) / TERMINATED(종료)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis mailhog
+#   2) 앱:      ./gradlew bootRun      (PowerShell: .\gradlew bootRun)
+#              └ local 프로파일이라 diagnosisQuestions 카탈로그(regionRetry 포함)가 자동 시드된다.
+#   3) 아래 @idToken 에 Google idToken 을 붙여넣는다(발급: https://developers.google.com/oauthplayground).
+#   4) "1. 소셜 로그인"을 먼저 보내 accessToken 을 받는다(이후 요청에 자동 전달).
+#   5) 시나리오 A(정상 완주) → B(지역 0건) 순으로 위에서부터 "Send Request" 를 클릭한다.
+#
+# 참고:
+#   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
+#   - 답의 code 는 서버가 내려준 그 문항 options[].code(UPPER_SNAKE)를 쓴다.
+#   - /next 는 서버가 "직전에 낸 문항"의 답만 받는다(pendingField). 순서를 건너뛰면 400 INVALID_INPUT.
+#   - 로컬 시드 매물은 서울(GWANAK_GU)에만 있다 → region=BUSAN 이면 시나리오 B(지역 0건)가 재현된다.
+#     app.seed.listings-enabled=true 여야 서울 매물이 뜬다(아니면 시나리오 A도 지역 0건으로 빠진다).
+
+@baseUrl = http://localhost:8080
+@idToken = PASTE_GOOGLE_ID_TOKEN_HERE
+
+### 0. 헬스 체크 (인증 불필요) — 200 UP 면 앱+인프라(MySQL·Redis·Mongo) 정상
+GET {{baseUrl}}/actuator/health
+
+### 1. 소셜 로그인 → accessToken 획득 (공개 엔드포인트)
+# @name login
+POST {{baseUrl}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "{{idToken}}"
+}
+
+
+###############################################################################
+# 시나리오 A — 정상 완주 (서울, 유학) → 자동 확정 → 매물 조회
+###############################################################################
+
+### A-1. 진단 시작 (본문 없음) → NEXT_QUESTION + ① 지역 문항
+#     진행 중 세션이 있어도 무조건 버리고 처음부터 시작한다(중단했다 다시 시작해도 언제나 ① 지역부터).
+# @name start
+POST {{baseUrl}}/api/v2/diagnoses/start
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### A-2. ① 지역 답 → SEOUL (매물 있음) → NEXT_QUESTION + ② 입국 목적 문항
+#     서버가 여기서만 미리 필터링한다(지역-only 매칭 존재 확인). 매물이 있으니 그대로 다음 질문.
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "region",
+  "code": "SEOUL"
+}
+
+### A-3. ② 입국 목적 답 → STUDY → NEXT_QUESTION + ③ 대학 문항
+#     (NON_STUDY 였다면 서버가 field=district 문항을 내려준다 — 클라 분기 아님)
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "purpose",
+  "code": "STUDY"
+}
+
+### A-4. ③ 대학 그룹 답 → NEXT_QUESTION + ④ 주거 조건 문항
+#     그룹: HUFS_KHU_KOREA / SKKU_SUNGSHIN / SNU_CAU_SOONGSIL / HONGIK_YONSEI_EWHA / KONKUK_SEJONG_HYU / ETC
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "university",
+  "code": "SNU_CAU_SOONGSIL"
+}
+
+### A-5. ④ 주거 조건 답 (다중 선택 → codes, 최대 3) → NEXT_QUESTION + ⑤ 월세 문항
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "conditions",
+  "codes": ["FEMALE_ONLY", "PRIVATE_BATH"]
+}
+
+### A-6. ⑤ 월세 범위 답 (min/max 두 숫자 — code/codes 아님, min ≤ max) → NEXT_QUESTION + ⑥ ARC 문항
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "monthlyRent",
+  "min": 300000,
+  "max": 600000
+}
+
+### A-7. ⑥ ARC 답 (마지막 슬롯) → 서버가 자동 확정 → COMPLETED + diagnosisId
+#     확정 응답에 매물이 없고 매칭 유무조차 확인하지 않는다 — 조회 시점은 클라가 정한다.
+# @name completed
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "arcStatus",
+  "code": "ARC_ISSUED"
+}
+
+### A-8. 추천 매물 조회 — 이 호출이 곧 "매물을 받겠다"는 클라의 결정
+#     v1 §7과 같은 계약이되 조정 제안(suggestions)이 없고, 사유는 resultCode 로 온다.
+#     매칭 있음 → resultCode=MATCHED + content/markers/page
+#     매칭 0건 → resultCode=NO_MATCH + 빈 content (에러 아님)
+GET {{baseUrl}}/api/v2/diagnoses/{{completed.response.body.$.data.diagnosisId}}/recommendations?page=0&size=20&sort=recommended,desc
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+
+###############################################################################
+# 시나리오 B — ① 지역 0건 → 예외질문 → 재시도(RESTART) / 종료(TERMINATED)
+#   로컬 시드 매물이 서울에만 있어서 BUSAN 을 고르면 재현된다.
+###############################################################################
+
+### B-1. 진단 시작 (A 세션은 이미 확정으로 지워졌다 — 없어도 /start 는 언제나 처음부터)
+POST {{baseUrl}}/api/v2/diagnoses/start
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### B-2. ① 지역 답 → BUSAN (매물 0건) → NEXT_QUESTION + regionRetry 문항
+#     별도 결과코드가 아니라 '일반 질문'으로 내려온다 — 카탈로그의 문항(field=regionRetry, options YES/NO)이다.
+#     "현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?"
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "region",
+  "code": "BUSAN"
+}
+
+### B-3. (실패 확인) 예외질문 대기 중 다음 슬롯 답을 보내면 400 INVALID_INPUT
+#     기대 답은 진행 순서가 아니라 '서버가 직전에 낸 문항'(pendingField=regionRetry)이 정한다.
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "purpose",
+  "code": "STUDY"
+}
+
+### B-4. 예외질문에 "예" → RESTART (코드만) + 세션 삭제
+#     서버가 지역 질문을 밀어 넣지 않는다 — 클라가 이 코드를 받아 /start 로 다시 건다.
+#     이때 그 시도(region=BUSAN)는 diagnoses 에 status=DISCARDED 로 남는다(지역 수요 신호, 사용자 비노출).
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "regionRetry",
+  "code": "YES"
+}
+
+### B-5. (실패 확인) 터미널 뒤엔 세션이 없다 → 400 DIAGNOSIS_SESSION_NOT_FOUND
+#     서버가 임의로 흐름을 되살리지 않는다. 클라가 /start 로 복구한다(= B-6).
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "region",
+  "code": "SEOUL"
+}
+
+### B-6. RESTART 를 받은 클라가 처음부터 재시도 → NEXT_QUESTION + ① 지역 문항
+POST {{baseUrl}}/api/v2/diagnoses/start
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### B-7. 다시 BUSAN → 같은 예외질문 (사용자가 같은 0건 지역을 또 고르면 매번 되묻는다)
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "region",
+  "code": "BUSAN"
+}
+
+### B-8. 예외질문에 "아니오" → TERMINATED (코드만) + 세션 삭제 = 진단 종료
+#     이 시도도 DISCARDED 로 남는다(포기/재시도는 데이터상 구분되지 않는다 — ADR-0036 결정 12).
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "regionRetry",
+  "code": "NO"
+}
+
+
+###############################################################################
+# 시나리오 C — 경계 확인
+###############################################################################
+
+### C-1. 순서 건너뛰기 → 400 INVALID_INPUT
+#     시작 직후 기대 답은 region 인데 arcStatus 를 보낸다.
+POST {{baseUrl}}/api/v2/diagnoses/start
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### C-2. (실패 확인) 위 시작 뒤 곧바로 ⑥ 답 → 400 INVALID_INPUT (순서 강제)
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "field": "arcStatus",
+  "code": "ARC_ISSUED"
+}
+
+### C-3. (실패 확인) 무답 호출 → 400 INVALID_INPUT (/next 는 답이 반드시 있어야 한다)
+POST {{baseUrl}}/api/v2/diagnoses/next
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{}
+
+### C-4. (실패 확인) 타인 진단 추천 조회 → 403 FORBIDDEN / 없는 진단 → 404 DIAGNOSIS_NOT_FOUND
+#     DISCARDED(미완주 폐기 기록)도 id 를 알아도 404 다 — 내부 분석 기록이라 노출 경로가 없다.
+GET {{baseUrl}}/api/v2/diagnoses/999999/recommendations
+Authorization: Bearer {{login.response.body.$.data.accessToken}}
+
+### C-5. v1 은 그대로 동작한다 (계약 불변) — step 1 은 여전히 region 문항
+#     카탈로그에 regionRetry 문항이 함께 있어도 v1 은 step→field 로 지목해 조회한다.
+GET {{baseUrl}}/api/v1/diagnoses/questions/1
+Authorization: Bearer {{login.response.body.$.data.accessToken}}

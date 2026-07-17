@@ -98,6 +98,15 @@
 
 각 API 스펙 문서는 자신이 쓰는 도메인 코드를 표로 정의하고, 이 카탈로그와 충돌하지 않게 한다.
 
+#### diagnosis 도메인 코드
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `DIAGNOSIS_NOT_FOUND` | 404 | 요청한 진단이 존재하지 않음 |
+| `DIAGNOSIS_SESSION_NOT_FOUND` | 400 | 진행 중인 v2 흐름 세션 없이 `POST /api/v2/diagnoses/next`가 옴(앱 재시작·터미널 이후 재전송·만료) — 클라이언트가 `POST /api/v2/diagnoses/start`로 복구한다 |
+
+> `DIAGNOSIS_SESSION_NOT_FOUND`는 접미사가 `_NOT_FOUND`지만 **400**이라 §3의 `*_NOT_FOUND`→404 관례에 대한 의도적 예외다. 없는 것은 클라이언트가 지목한 리소스가 아니라 **서버가 들고 있던 진행 세션**이고, 뜻도 "그 진단이 없다"가 아니라 "지금 이 요청은 보낼 수 없다 — `POST /api/v2/diagnoses/start`로 다시 시작하라"는 흐름 지시이기 때문이다. 상세는 [02-diagnosis-recommendation](./specs/02-diagnosis-recommendation.md) v2 절·[ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md).
+
 #### booking 도메인 코드
 
 | code | status | 의미 |

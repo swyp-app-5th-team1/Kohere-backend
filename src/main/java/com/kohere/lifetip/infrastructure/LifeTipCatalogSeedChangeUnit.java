@@ -11,13 +11,34 @@ import org.springframework.data.mongodb.core.query.Query;
 /**
  * 생활 팁 카탈로그 캐노니컬 베이스라인(Mongock init changeUnit, order 0000). 레퍼런스 카탈로그 컬렉션 {@code
  * lifeTipTopics}·{@code lifeTips}를 비우고 캐노니컬 시드를 새로 적재한다 — Mongock changelog로 환경당 정확히 1회(진단 카탈로그와 동일
- * 방식, ADR-0032). 표시 문자열(주제명·제목·내용)은 언어-키 맵으로, 사진 {@code imageUrl}은 언어 무관(없으면 {@code null})으로
- * 임베드한다(ADR-0029). 이후 콘텐츠 진화는 order 0001+ changeUnit으로 추가한다.
+ * 방식, ADR-0032). 표시 문자열(주제명·주제 짧은/긴 설명·팁 제목·내용)은 언어-키 맵으로, 이미지({@code imageUrl}·주제 {@code
+ * backgroundImageUrl})는 언어 무관으로 임베드한다(ADR-0029).
+ *
+ * <p>주제의 신설 4필드({@code shortDescription}·{@code longDescription}·{@code imageUrl}·{@code
+ * backgroundImageUrl})는 <b>예시 기본값</b>({@link #EXAMPLE_SHORT_DESCRIPTION} 등)으로 채운다 — 운영이 실제 값을 DB에서
+ * 갱신한다. 이미 order 0000을 실행한 환경 수렴은 {@link LifeTipTopicMediaBackfillChangeUnit}(order 0001)이 같은 예시
+ * 기본값으로 모든 주제를 백필한다.
  *
  * <p>{@code test} 프로파일은 {@code mongock.enabled=false}라 실행되지 않는다(테스트는 자체 시드).
  */
 @ChangeUnit(id = "lifetip-catalog-seed", order = "0000", author = "kohere")
 public class LifeTipCatalogSeedChangeUnit {
+
+  /** 주제 짧은 설명 예시 기본값(order 0001 백필과 공유). 운영이 실제 값을 DB에서 갱신한다. */
+  static final Map<String, String> EXAMPLE_SHORT_DESCRIPTION =
+      Map.of("ko", "예시 짧은 설명", "en", "Example short description", "ja", "例の短い説明");
+
+  /** 주제 긴 설명 예시 기본값(order 0001 백필과 공유). 운영이 실제 값을 DB에서 갱신한다. */
+  static final Map<String, String> EXAMPLE_LONG_DESCRIPTION =
+      Map.of("ko", "예시 긴 설명", "en", "Example long description", "ja", "例の長い説明");
+
+  /** 주제 홈 카드 이미지 예시 URL(order 0001 백필과 공유). 운영이 실제 CDN 자산 URL을 DB에서 갱신한다. */
+  static final String EXAMPLE_IMAGE_URL =
+      "https://cdn.kohere.app/life-tips/topics/example/card.png";
+
+  /** 주제 상세 상단 배경 이미지 예시 URL(order 0001 백필과 공유). 운영이 실제 CDN 자산 URL을 DB에서 갱신한다. */
+  static final String EXAMPLE_BACKGROUND_IMAGE_URL =
+      "https://cdn.kohere.app/life-tips/topics/example/background.png";
 
   @Execution
   public void execution(MongoTemplate mongo) {
@@ -101,7 +122,15 @@ public class LifeTipCatalogSeedChangeUnit {
   }
 
   private static LifeTipTopicDocument topic(String code, int order, Map<String, String> name) {
-    return LifeTipTopicDocument.builder().id(code).name(name).order(order).build();
+    return LifeTipTopicDocument.builder()
+        .id(code)
+        .name(name)
+        .shortDescription(EXAMPLE_SHORT_DESCRIPTION)
+        .longDescription(EXAMPLE_LONG_DESCRIPTION)
+        .imageUrl(EXAMPLE_IMAGE_URL)
+        .backgroundImageUrl(EXAMPLE_BACKGROUND_IMAGE_URL)
+        .order(order)
+        .build();
   }
 
   private static LifeTipDocument tip(

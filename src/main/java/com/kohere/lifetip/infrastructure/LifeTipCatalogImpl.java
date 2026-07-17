@@ -38,7 +38,14 @@ public class LifeTipCatalogImpl implements LifeTipCatalog {
   }
 
   private static LifeTipTopic toTopic(LifeTipTopicDocument d) {
-    return new LifeTipTopic(d.getId(), d.getName(), d.getOrder());
+    return new LifeTipTopic(
+        d.getId(),
+        d.getName(),
+        d.getShortDescription(),
+        d.getLongDescription(),
+        d.getImageUrl(),
+        d.getBackgroundImageUrl(),
+        d.getOrder());
   }
 
   private static LifeTip toTip(LifeTipDocument d) {

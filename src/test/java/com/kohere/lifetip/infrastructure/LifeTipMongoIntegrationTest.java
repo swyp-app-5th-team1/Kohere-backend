@@ -64,6 +64,30 @@ class LifeTipMongoIntegrationTest {
   }
 
   @Test
+  @DisplayName("주제 목록은 짧은/긴 설명을 번역하고 이미지 URL은 언어 무관으로 그대로 싣는다")
+  void topicsExposeDescriptionsAndImages() {
+    topicRepository.save(
+        topicWithMedia(
+            "MOVING_IN",
+            1,
+            Map.of("en", "Moving In", "ko", "입주"),
+            Map.of("en", "Basics.", "ko", "기본 정보."),
+            Map.of("en", "Long guide.", "ko", "긴 안내."),
+            "https://cdn.kohere.app/life-tips/topics/moving-in/card.png",
+            "https://cdn.kohere.app/life-tips/topics/moving-in/background.png"));
+    given(userAccountService.getLanguage(9L)).willReturn("ko");
+
+    TopicListResponse.Topic t = lifeTipService.getTopics(9L).topics().get(0);
+
+    assertThat(t.shortDescription()).isEqualTo("기본 정보.");
+    assertThat(t.longDescription()).isEqualTo("긴 안내.");
+    assertThat(t.imageUrl())
+        .isEqualTo("https://cdn.kohere.app/life-tips/topics/moving-in/card.png");
+    assertThat(t.backgroundImageUrl())
+        .isEqualTo("https://cdn.kohere.app/life-tips/topics/moving-in/background.png");
+  }
+
+  @Test
   @DisplayName("미지원 언어는 영어(en)로 폴백하고 code는 언어 무관하다")
   void topicsFallbackToEnglish() {
     topicRepository.save(topic("MOVING_IN", 1, Map.of("en", "Moving In", "ko", "입주")));
@@ -120,7 +144,33 @@ class LifeTipMongoIntegrationTest {
   }
 
   private static LifeTipTopicDocument topic(String code, int order, Map<String, String> name) {
-    return LifeTipTopicDocument.builder().id(code).name(name).order(order).build();
+    return topicWithMedia(
+        code,
+        order,
+        name,
+        Map.of("en", "short " + code, "ko", "짧은 " + code),
+        Map.of("en", "long " + code, "ko", "긴 " + code),
+        "https://cdn.kohere.app/life-tips/topics/" + code + "/card.png",
+        "https://cdn.kohere.app/life-tips/topics/" + code + "/background.png");
+  }
+
+  private static LifeTipTopicDocument topicWithMedia(
+      String code,
+      int order,
+      Map<String, String> name,
+      Map<String, String> shortDescription,
+      Map<String, String> longDescription,
+      String imageUrl,
+      String backgroundImageUrl) {
+    return LifeTipTopicDocument.builder()
+        .id(code)
+        .name(name)
+        .shortDescription(shortDescription)
+        .longDescription(longDescription)
+        .imageUrl(imageUrl)
+        .backgroundImageUrl(backgroundImageUrl)
+        .order(order)
+        .build();
   }
 
   private static LifeTipDocument tip(

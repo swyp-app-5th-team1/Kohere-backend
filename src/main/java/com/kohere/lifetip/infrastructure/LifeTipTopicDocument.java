@@ -11,8 +11,9 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
  * 생활 팁 주제 카탈로그 MongoDB 도큐먼트({@code lifeTipTopics}). {@code _id}는 언어 무관 주제 코드(UPPER_SNAKE)이고
- * 표시명({@code name})은 언어-키 맵으로 임베드한다(ADR-0028·ADR-0029). 노출 순서 정렬 인덱스({@code order})는 부트스트랩에서 멱등
- * 생성한다.
+ * 표시명({@code name})·짧은/긴 설명({@code shortDescription}·{@code longDescription})은 언어-키 맵으로
+ * 임베드한다(ADR-0028·ADR-0029). 이미지 URL({@code imageUrl}·{@code backgroundImageUrl})은 언어 무관 불변 절대 CDN
+ * URL이라 언어-키 맵이 아니다. 노출 순서 정렬 인덱스({@code order})는 부트스트랩에서 멱등 생성한다.
  */
 @Getter
 @Setter
@@ -24,5 +25,9 @@ public class LifeTipTopicDocument {
 
   @Id private String id;
   private Map<String, String> name;
+  private Map<String, String> shortDescription;
+  private Map<String, String> longDescription;
+  private String imageUrl;
+  private String backgroundImageUrl;
   private int order;
 }

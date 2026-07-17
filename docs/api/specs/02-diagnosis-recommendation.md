@@ -9,6 +9,8 @@
 
 ② 입국 목적은 유학 여부(`STUDY`/`NON_STUDY`) 분기이며, 이에 따라 ③ 단계가 대학 선택(유학) 또는 지역(구) 선택(비유학)으로 갈린다. 진단 문항·선택지는 앱이 하드코딩하지 않고 백엔드가 제공한다. 클라이언트가 받을 단계(`step` 1~6)를 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개를 조회하고, 그 단계 답 1개(`field`+`code`)를 `POST /api/v1/diagnoses/answers`로 보내면 서버가 그 답을 **진행 중(IN_PROGRESS) 진단에 저장**한다. 다음 step 번호는 클라이언트가 정한다(서버가 다음 질문을 함께 끼워 주지 않는다 — 질문 조회와 답 저장이 분리된 두 엔드포인트다). ③ 단계의 대학/지역 분기는 클라이언트 분기가 아니라 **서버 비즈니스 로직이 진행 중 진단에 저장된 `purpose`로 결정**해 한쪽 질문만 내려준다. 요청에 누적 답을 묶어 다시 보내지 않는다 — 진행 상태는 서버가 DB에 들고 있다. 표시 라벨은 사용자의 등록 국가 기준으로 번역되어 내려간다(US-2-5·US-2-6).
 
+> **v2 서버 주도 흐름(issue #157)**: 위 v1 흐름과 별개로, 클라이언트가 `step`을 모르고 **`POST /api/v2/diagnoses/start`** 로 시작한 뒤 **`POST /api/v2/diagnoses/next`** 를 반복 호출하면 서버가 진행 위치로 다음 질문을 결정하는 **서버 주도 대화형 흐름**을 `/api/v2`에 신설한다 — **서버는 질문·분기만 주도**하고 진단을 시작하는 시점도, 확정된 매물을 조회하는 시점도 클라이언트가 정한다(확정 응답은 `diagnosisId`만 주고 매물은 클라이언트가 `GET /api/v2/diagnoses/{id}/recommendations`로 별도 조회). 서버가 미리 필터링하는 지점은 **① 지역 하나뿐**이고(0건이면 카탈로그의 "다른 지역?" 문항을 일반 질문으로 끼워 넣음), 빌더 완성 시 자동 확정하되 **매칭은 조회하지 않는다** — 매칭 0건인지는 클라이언트가 추천을 조회한 응답의 `resultCode: NO_MATCH`로 알려준다(조정 제안 문구·액션은 없음). 상세는 아래 **[v2 — 서버 주도 진단 흐름](#v2--서버-주도-진단-흐름-issue-157)** 절, 결정은 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md), 시퀀스는 [US-2-7](../../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md). **v1(`/api/v1/diagnoses/*`)은 그대로 유지된다.**
+
 공통 규약:
 
 - 경로 프리픽스 `/api/v1`, 경로는 kebab-case, JSON 필드·쿼리 파라미터는 lowerCamelCase.
@@ -196,14 +198,12 @@
 진행 중(IN_PROGRESS) 진단을 **COMPLETED로 확정**한다. 모든 단계 답은 이미 `POST /api/v1/diagnoses/answers`로 서버 DB(진행 중 진단)에 저장돼 있으므로, 본 요청 본문은 **6필드 누적 답을 다시 보내는 것이 아니라** 진행 중 진단을 확정해 달라는 요청이다. 서버는 저장된 답을 다시 검증해 확정하고 `diagnosisId`·`submittedAt`을 발급한다(진단 생성·COMPLETED 시점은 이 확정이다). 재진단도 동일 엔드포인트로, 새 진행 중 진단을 시작해 채운 뒤 확정한다(항상 새 레코드, 기존 진단을 덮어쓰지 않음).
 
 - **인증**: 필수
-- **멱등성**: 중복 확정(더블탭·재시도) 방지를 위해 `Idempotency-Key` 헤더 지원을 검토(api-design-guide §6, 확인 필요 — 정책 미확정). 정책 도입 시 같은 키+같은 진행 중 진단 → 동일 `diagnosisId` 반환, 같은 키+다른 진행 중 진단 → `409 DIAGNOSIS_IDEMPOTENCY_CONFLICT`.
 
 #### Headers
 
 | 이름 | 필수 | 설명 |
 | --- | --- | --- |
 | `Authorization` | 필수 | `Bearer <accessToken>` |
-| `Idempotency-Key` | 선택 | 중복 확정 방지 키(확인 필요 — 정책 미확정) |
 
 #### Request Body (래퍼 없이)
 
@@ -252,7 +252,6 @@
 | 400 | `INVALID_INPUT` | 저장된 답의 필수값 누락(단계 미완료), enum 불일치, `conditions` 4개 이상, `purpose` 누락, `monthlyRentMin`/`monthlyRentMax` 음수 또는 `monthlyRentMin > monthlyRentMax`, 대학/지역 조건부 필수 누락·입국 목적과 대학/지역 선택 불일치 |
 | 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치(검증 이전) |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
-| 409 | `DIAGNOSIS_IDEMPOTENCY_CONFLICT` | 동일 `Idempotency-Key`로 다른 진행 중 진단을 재확정(멱등성 키 정책 도입 시, 확인 필요) |
 
 ---
 
@@ -512,6 +511,211 @@
 
 ---
 
+## v2 — 서버 주도 진단 흐름 (issue #157)
+
+> 위 v1 흐름(§1~§7, `/api/v1/diagnoses/*`)은 **그대로 유지**하고, 서버 주도 대화형 흐름을 `/api/v2`에 **신설**한다. 결정: [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md) · 시퀀스: [US-2-7](../../architecture/sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md) · 유저 스토리: [US-2-7](../../requirements/user-stories.md).
+
+클라이언트가 `step`을 지정하지 않고 **`POST /api/v2/diagnoses/start`** 로 진단을 시작한 뒤 **`POST /api/v2/diagnoses/next`** 를 반복 호출하면, 서버가 직전에 낸 문항에서 **다음 질문을 결정**하고, 빌더가 다 채워지면 **자동 확정**한다.
+
+**서버는 질문과 분기만 주도한다.** 진단을 시작하는 시점도, 확정된 매물을 조회하는 시점도 **클라이언트가 결정**한다 — 확정 응답(`COMPLETED`)에 추천 매물을 인라인으로 싣지 않고 `diagnosisId`만 주며, 클라이언트가 그 식별자로 **v2-3 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`** 를 별도 호출해 매물 목록·지도 좌표를 받는다. **확정 시점에 서버는 매칭 유무조차 확인하지 않는다** — 그러려면 클라이언트가 요청하지도 않은 추천 쿼리를 돌려야 하기 때문이다.
+
+- **서버가 미리 필터링하는 지점은 ① 지역 하나뿐이다.** ① 지역(`region`) 답 직후 매칭 매물이 0건이면 서버가 **"현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?"** 예외질문을 끼워 넣는다. 이 예외질문은 따로 관리하지 않고 **일반 question으로 관리**한다 — 서버 코드에 하드코딩한 합성 문구가 아니라 문항 카탈로그(`diagnosisQuestions`)의 일반 문항(`step: 1`, `field: "regionRetry"`, `select: { type: "SINGLE", max: 1 }`, `options: [{code:"YES"},{code:"NO"}]`)이며, 별도 결과코드가 아니라 일반 **`NEXT_QUESTION`** 으로 내려간다. **그 예/아니오 응답에만** "프론트가 행할 행위"를 코드로 알린다 — 예=`RESTART`(클라이언트가 `POST /start`로 재시도) / 아니오=`TERMINATED`(진단 종료).
+- **6번 질문까지 마친 뒤 매물이 0건인 경우엔 어떤 suggestion도 없다.** 다만 그 사실은 흐름 응답이 아니라 **클라이언트가 추천을 조회한 v2-3 응답의 빈 `content`** 로 드러난다 — no-match를 확정 시점에 결과코드로 미리 주려면 서버가 추천 쿼리를 선행해야 하므로 그렇게 하지 않는다. v1의 조정 제안(`suggestions`·`diagnosisSuggestions` 시드)은 **v1 전용으로 그대로 두고 v2는 참조하지 않는다**(v2-3 응답에는 `suggestions` 필드가 없다).
+- 문항 카탈로그(`diagnosisQuestions`)·번역(등록 국가 기준, `en` 폴백)·진단 입력 enum·③ 대학/지역 분기 규칙은 **v1과 동일 출처를 공유**한다(§1·§3의 "진단 입력 enum 정의"·[ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)를 그대로 따른다). 정본 순서는 `REGION(1) → PURPOSE(2) → UNIVERSITY_OR_DISTRICT(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`이다. step 1에는 `region`·`regionRetry` 두 문항이 나란히 있으므로 서버가 낼 문항을 `field`로 지목한다(목록 순서에 기대지 않는다). **v1 계약은 바뀌지 않는다** — `GET /api/v1/diagnoses/questions/1`은 계속 `field: "region"` 지역 질문 1개를 반환한다(§1).
+- 진행 상태는 v1의 `diagnoses`(IN_PROGRESS 초안)를 공유하지 않고 **v2 전용 세션**(`diagnosisFlowSessions` 컬렉션: `{ userId, draft, pendingField }`)에 담는다. 세션은 `POST /start`에서만 생기고 터미널(`COMPLETED`·`RESTART`·`TERMINATED`)에서 삭제된다. 완료 시에만 정본 진단을 만들어 기존 `diagnoses` 컬렉션에 저장한다(v1 이력/상세 조회 재사용). **① 지역 0건으로 끝난 시도는 버리지 않는다** — 세션을 지우기 전에 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 수요 분석("어느 지역을 원했는데 매물이 없었나")에 쓴다(재시도·종료 양쪽). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다(`/start`가 이전 세션을 그냥 덮어쓴다). **API로 노출되지 않는다** — 이력·최근·추천 조회는 `COMPLETED`만 본다. 상세는 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md).
+- **카탈로그 시드**: `regionRetry` 문항은 `DiagnosisCatalogSeedChangeUnit`(order `0000`) 시드에 포함되고, 이미 배포된 환경에는 `DiagnosisRegionRetryQuestionChangeUnit`(order `0005`, 멱등)이 적재한다.
+
+### 엔드포인트 요약
+
+| Method | Path | 설명 | 인증 | 성공 status |
+| --- | --- | --- | --- | --- |
+| POST | `/api/v2/diagnoses/start` | 진단을 처음부터 시작 — 진행 중 세션 폐기 후 ① 지역 질문 | 필수 | 200 |
+| POST | `/api/v2/diagnoses/next` | 서버 주도 대화형 진단: 현재 문항 답 1개를 적용하고 다음 결과(다음 질문/흐름 제어 코드/자동 확정 결과)를 결과코드로 반환 | 필수 | 200 |
+| GET | `/api/v2/diagnoses/{diagnosisId}/recommendations` | 확정 진단의 추천 매물·지도 좌표(조정 제안 없음) — 조회 시점은 클라이언트가 결정 | 필수 | 200 |
+
+### 결과코드(`FlowResultCode`) 계약
+
+정상 `200 OK`, 공통 래퍼 `{ success, data, error }`의 `data`가 **태그드 유니온**이다 — `data.resultCode`(UPPER_SNAKE enum) 값에 따라 채워지는 payload가 다르며, 채워지지 않는 payload 필드는 생략된다(`NON_NULL`). **`TERMINATED`는 에러가 아니라 정상 결과**이므로 `error`가 아니라 `data.resultCode`로 표현한다. 응답 DTO는 `DiagnosisFlowResponse { FlowResultCode resultCode, QuestionResponse question?, Long diagnosisId? }`이며, `/start`와 `/next`가 같은 DTO를 쓴다.
+
+| `resultCode` | 의미 | payload |
+| --- | --- | --- |
+| `NEXT_QUESTION` | 다음 질문이 남음(마지막 슬롯 전). ① 지역 0건 예외질문(`field: "regionRetry"`)도 **이 코드**로 내려간다 | `question`(그 단계 문항 1개, §1과 동일 형태) |
+| `RESTART` | 지역 예외질문에서 "예" → 클라이언트가 `POST /start`로 처음부터 재시도(세션 삭제) | 없음(코드만) |
+| `COMPLETED` | 빌더 완성 → 자동 확정(매칭 유무는 확인하지 않는다) | `diagnosisId`만(추천 매물 없음 — 클라이언트가 v2-3으로 별도 조회) |
+| `TERMINATED` | 지역 예외질문에서 "아니오" → 진단 종료(세션 삭제) | 없음(코드만) |
+
+> **매칭 0건(no-match) 결과코드는 없다.** 0건인지는 추천을 실제로 조회해야 알 수 있는 사실이라(v2-3의 빈 `content`), 서버가 확정 시점에 미리 계산해 내려보내지 않는다 — 그러려면 클라이언트가 요청하지도 않은 추천 쿼리를 서버가 돌려야 하고, 이는 "매물 조회 시점은 클라이언트가 정한다"와 배치된다. **서버가 미리 필터링하는 지점은 ① 지역 하나뿐**이며 그건 명시적으로 둔 예외다(0건인 지역으로 6단계 끝까지 진행시키는 게 낭비이므로).
+
+### v2-1. POST `/api/v2/diagnoses/start` — 진단 시작
+
+진단을 **처음부터** 시작하고 ① 지역 질문을 반환한다. 시작 시점은 클라이언트가 정한다.
+
+- **인증**: 필수
+- **동작**: 진행 중 세션이 있어도 **무조건 버리고** 새 세션(빈 `draft`, `pendingField=region`)을 만든 뒤 ① 지역 질문을 `NEXT_QUESTION`으로 반환한다. 진단을 하다 홈으로 갔다 다시 시작하면 **서버는 기존 진단 정보를 보고 진행하지 않는다** — 언제나 처음부터다.
+
+#### Headers
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `Authorization` | 필수 | `Bearer <accessToken>` |
+
+#### Request Body
+
+**없다**(본문을 보내지 않는다).
+
+#### 성공 Response — 200 OK (공통 래퍼)
+
+```jsonc
+// POST /start → ① 지역 질문
+{ "success": true, "data": { "resultCode": "NEXT_QUESTION",
+  "question": { "step": 1, "field": "region", "question": "Which region will you live in?",
+    "select": { "type": "SINGLE", "max": 1 },
+    "options": [ { "code": "SEOUL", "label": "Seoul" }, { "code": "BUSAN", "label": "Busan" }, { "code": "GYEONGGI", "label": "Gyeonggi" } ] } }, "error": null }
+```
+
+> `question`·`label` 표시 문자열은 §1과 동일하게 사용자의 등록 국가 기준 언어로 번역되며(미지원 언어는 `en` 폴백), `code`는 언어와 무관하게 동일하다.
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
+
+### v2-2. POST `/api/v2/diagnoses/next` — 현재 문항 답 적용
+
+현재 문항의 답 **1개**를 보내면 서버가 답을 진행 세션에 적용하고 **다음에 할 일**을 결과코드로 돌려준다. `field`·`code`·`codes`·`min/max` 규약은 v1 §2(`POST /answers`)의 `AnswerRequest`와 동일하며, 지역 예외질문 응답만 `{ "field": "regionRetry", "code": "YES" | "NO" }`로 보낸다. **답(`field`)은 반드시 있어야 한다** — 무답 호출은 `INVALID_INPUT`이다.
+
+- **인증**: 필수
+- **동작**: (1) 진행 세션을 조회한다 — 없으면 `400 DIAGNOSIS_SESSION_NOT_FOUND`. (2) 답(`field`)이 없으면 `INVALID_INPUT`. (3) **`field`가 `pendingField`(서버가 직전에 낸 문항의 field)와 다르면 `INVALID_INPUT`** — 정본 슬롯 문항과 예외질문이 같은 규칙으로 검증된다. (4) `pendingField`가 `regionRetry`이면 예/아니오만 처리해 `RESTART`(예) 또는 `TERMINATED`(아니오)를 반환한다(둘 다 세션 삭제·`draft` 미변경). (5) 정본 슬롯 field이면 답을 진행 세션에 적용한다. (6) 방금 ① 지역을 답했으면 매칭 존재 확인을 하고, 0건이면 `regionRetry` 문항을 `NEXT_QUESTION`으로 반환하며 `pendingField=regionRetry`로 저장한다(서버가 미리 필터링하는 유일한 지점). (7) 아니면 **정본 순서상 다음 슬롯** 문항을 `NEXT_QUESTION`으로 내고, 방금 답한 게 마지막 슬롯(⑥ `arcStatus`)이면 자동 확정 후 `COMPLETED`를 반환한다(매칭을 조회하지 않으므로 매칭 유무와 무관하게 `COMPLETED`다).
+- **세션 없이 `/next`**: 진행 중 세션이 없으면 **`400 DIAGNOSIS_SESSION_NOT_FOUND`** 를 반환한다(앱 재시작·터미널 이후 재전송·만료). 서버가 임의로 흐름을 되살리거나 새로 시작하지 않으며, 클라이언트가 `POST /start`로 복구한다.
+
+#### Headers
+
+| 이름 | 필수 | 설명 |
+| --- | --- | --- |
+| `Authorization` | 필수 | `Bearer <accessToken>` |
+
+#### Request Body (래퍼 없이)
+
+현재 문항 답 1개(v1 §2 `AnswerRequest`와 동일 구조). 지역 예외질문 응답은 `regionRetry`로 보낸다.
+
+```jsonc
+// 일반 단계 답(§2와 동일) — 예: ② 입국 목적
+{ "field": "purpose", "code": "STUDY" }
+
+// ① 지역 0건 예외질문 응답 — 예=재시도 / 아니오=진단 종료
+{ "field": "regionRetry", "code": "YES" }
+```
+
+#### 성공 Response — 200 OK (공통 래퍼) — `resultCode`별
+
+```jsonc
+// POST /next { "field":"region", "code":"BUSAN" } — 그 지역 매물 0건 → 예외질문(일반 질문)
+{ "success": true, "data": { "resultCode": "NEXT_QUESTION",
+  "question": { "step": 1, "field": "regionRetry", "question": "현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?",
+    "select": { "type": "SINGLE", "max": 1 },
+    "options": [ { "code": "YES", "label": "예" }, { "code": "NO", "label": "아니오" } ] } }, "error": null }
+```
+
+```jsonc
+// POST /next { "field":"regionRetry", "code":"YES" } → 재시도(클라가 /start를 다시 건다)
+{ "success": true, "data": { "resultCode": "RESTART" }, "error": null }
+
+// POST /next { "field":"regionRetry", "code":"NO" } → 진단 종료
+{ "success": true, "data": { "resultCode": "TERMINATED" }, "error": null }
+```
+
+```jsonc
+// POST /next { "field":"arcStatus", "code":"ARC_ISSUED" } (⑥ 마지막) → 자동 확정
+// 매칭 유무와 무관하게 항상 COMPLETED다(서버는 이 시점에 추천을 조회하지 않는다).
+{ "success": true, "data": { "resultCode": "COMPLETED", "diagnosisId": 1024 }, "error": null }
+// 이후 매물은 클라가 시점을 정해 조회: GET /api/v2/diagnoses/1024/recommendations?page=0&size=20
+// 그 응답의 content가 비어 있으면 그게 곧 no-match다(제안 없음).
+```
+
+```jsonc
+// 세션 없이 /next
+{ "success": false, "data": null, "error": { "code": "DIAGNOSIS_SESSION_NOT_FOUND", "message": "진행 중인 진단이 없습니다. 진단을 다시 시작해 주세요." } }
+```
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `DIAGNOSIS_SESSION_NOT_FOUND` | 진행 중 세션 없이 `/next`(앱 재시작·터미널 이후 재전송·만료) → 클라이언트가 `POST /start`로 복구 |
+| 400 | `INVALID_INPUT` | 답(`field`) 없음, 현재 단계와 맞지 않는 `field`, 미정의 enum, `regionRetry` 규칙 위반(`code`가 `YES`/`NO` 아님), 자동 확정 시 저장된 답 재검증 실패 등 + `errors[]` |
+| 400 | `MALFORMED_REQUEST` | JSON 파싱 불가/타입 불일치(검증 이전) |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
+
+---
+
+### v2-3. GET `/api/v2/diagnoses/{diagnosisId}/recommendations` — 진단 결과 추천 매물
+
+확정 진단(`COMPLETED`로 받은 `diagnosisId`)의 추천 매물·지도 좌표를 조회한다. **이 호출 자체가 "매물을 받겠다"는 클라이언트의 결정**이며, 시점·페이지·정렬을 클라이언트가 정한다.
+
+v1 §7(`GET /api/v1/diagnoses/{id}/recommendations`)과 필터·매핑·페이지 계약이 같고 **다른 점은 하나** — 0건일 때의 **조정 제안 문구·액션이 없다**. v1은 0건이면 `suggestions { reason: "NO_MATCH", message, actions[] }`로 **사유와 제안을 한 덩어리로** 주는데, v2는 제안 기능을 쓰지 않으므로 그 덩어리에서 **사유만** 떼어 최상위 `resultCode`로 둔다 — 제안을 안 쓰는 것과 사유를 안 주는 것은 다르다. v1의 `suggestions`는 v1 전용으로 그대로 유지된다.
+
+`resultCode`는 **항상** 실린다(UPPER_SNAKE enum, 에러 아님):
+
+| `resultCode` | 의미 |
+| --- | --- |
+| `MATCHED` | 조건에 맞는 매물이 있음(`content` 비어 있지 않음) |
+| `NO_MATCH` | 조건에 맞는 매물이 0건(`content`·`markers` 빈 목록, 조정 제안 없음) |
+
+> 흐름 응답(`FlowResultCode`)에 `NO_MATCH`가 **없는** 것과 헷갈리지 않도록: 흐름은 아직 추천을 조회하기 **전**이라 0건인지 모르고(알려면 클라가 요청하지 않은 쿼리를 서버가 돌려야 한다), 여기는 조회를 마친 **뒤**라 안다. 그래서 no-match는 이 응답의 결과코드로만 표현된다.
+
+- **인증**: 필수(본인 소유 진단만 — 타인 `403 FORBIDDEN`, 미존재 `404 DIAGNOSIS_NOT_FOUND`)
+
+#### Path · Query
+
+| 이름 | 필수 | 기본 | 설명 |
+| --- | --- | --- | --- |
+| `diagnosisId` | 필수 | — | `COMPLETED` 응답으로 받은 확정 진단 식별자 |
+| `page` | 선택 | `0` | 0-base 페이지 번호 |
+| `size` | 선택 | `20` | 페이지 크기(1~100) |
+| `sort` | 선택 | `recommended,desc` | `recommended`·`price`·`distance` + `,asc`/`,desc` |
+
+#### 성공 Response — 200 OK (공통 래퍼)
+
+```jsonc
+// 매칭 있음 — MATCHED + content/markers/page (§7과 동일 형태, suggestions 없음)
+{
+  "success": true,
+  "data": {
+    "resultCode": "MATCHED",
+    "content": [ /* ListingSummaryResponse[] — §7과 동일 */ ],
+    "markers": [ { "listingId": "6858e2000000000000000001", "lat": 37.555134, "lng": 126.936893 } ],
+    "page": { "number": 0, "size": 20, "totalElements": 12, "totalPages": 1, "hasNext": false }
+  },
+  "error": null
+}
+```
+
+```jsonc
+// 매칭 0건 — NO_MATCH(조정 제안 문구·액션 없음, 에러 아님)
+{
+  "success": true,
+  "data": {
+    "resultCode": "NO_MATCH",
+    "content": [],
+    "markers": [],
+    "page": { "number": 0, "size": 20, "totalElements": 0, "totalPages": 0, "hasNext": false }
+  },
+  "error": null
+}
+```
+
+#### 발생 가능한 에러
+
+| status | code | 시점 |
+| --- | --- | --- |
+| 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키·방향 |
+| 403 | `FORBIDDEN` | 타인 소유 진단 |
+| 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음 |
+| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음·위조 / 만료 |
+
+---
+
 ## 도메인 에러 코드
 
 > 공통 코드(`INVALID_INPUT`, `MALFORMED_REQUEST`, `UNAUTHENTICATED`, `TOKEN_EXPIRED`, `FORBIDDEN`, `INTERNAL_ERROR` 등)는 [error-response-guide](../error-response-guide.md) §4를 따르며 여기서 재정의하지 않는다. 아래는 본 기능 고유 코드만 정의한다. prefix는 `DIAGNOSIS`.
@@ -519,6 +723,6 @@
 | code | status | 의미 |
 | --- | --- | --- |
 | `DIAGNOSIS_NOT_FOUND` | 404 | 요청한 진단이 존재하지 않음 |
-| `DIAGNOSIS_IDEMPOTENCY_CONFLICT` | 409 | 동일 `Idempotency-Key`로 다른 진행 중 진단을 재확정함(멱등성 키 정책 도입 시에만 — 확인 필요) |
+| `DIAGNOSIS_SESSION_NOT_FOUND` | 400 | 진행 중인 v2 흐름 세션 없이 `POST /api/v2/diagnoses/next`가 옴(앱 재시작·터미널 이후 재전송·만료) — 클라이언트가 `POST /api/v2/diagnoses/start`로 복구한다 |
 
 > 타인 진단 접근은 공통 `FORBIDDEN`(403), 입력 검증 실패(enum 불일치·필수값 누락·조건 4개 이상·월세 범위 위반(`monthlyRentMin`/`monthlyRentMax` 음수 또는 `monthlyRentMin > monthlyRentMax`)·대학/지역 조건부 필수 누락·입국 목적과 대학/지역 선택 불일치·페이지 파라미터 범위·잘못된 `sort` 키)는 공통 `INVALID_INPUT`(400) + `errors[]`를 그대로 사용한다. 진단 도메인에서 별도 검증 코드를 만들지 않는다.

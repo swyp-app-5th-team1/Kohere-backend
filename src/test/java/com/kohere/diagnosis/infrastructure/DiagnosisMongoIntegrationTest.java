@@ -10,6 +10,10 @@ import static org.mockito.BDDMockito.then;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
+import com.kohere.diagnosis.application.DiagnosisAnswerApplier;
+import com.kohere.diagnosis.application.DiagnosisCriteriaMapper;
+import com.kohere.diagnosis.application.DiagnosisQuestionTranslator;
+import com.kohere.diagnosis.application.DiagnosisRecommendationReader;
 import com.kohere.diagnosis.application.DiagnosisService;
 import com.kohere.diagnosis.application.SuggestionMessages;
 import com.kohere.diagnosis.application.dto.DiagnosisCreatedResponse;
@@ -62,6 +66,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @TestPropertySource(properties = "mongock.enabled=false")
 @Import({
   DiagnosisService.class,
+  DiagnosisAnswerApplier.class,
+  DiagnosisCriteriaMapper.class,
+  DiagnosisQuestionTranslator.class,
+  DiagnosisRecommendationReader.class,
   DiagnosisRepositoryImpl.class,
   SequenceGenerator.class,
   DiagnosisQuestionCatalogImpl.class,
@@ -178,6 +186,41 @@ class DiagnosisMongoIntegrationTest {
     QuestionResponse fallback = diagnosisService.getQuestion(11L, 1);
     assertThat(fallback.question()).isEqualTo("Select region");
     assertThat(fallback.options()).extracting(QuestionResponse.Option::label).contains("Seoul");
+  }
+
+  @Test
+  @DisplayName("v2가 남긴 DISCARDED 진단은 v1 상세 조회로 노출되지 않는다(id를 알아도 404)")
+  void discardedIsNotFetchableByDetail() {
+    // 폐기 기록은 수요 분석용 내부 기록이라 노출 경로가 없어야 한다. 소유권만으로는 못 막는다 —
+    // 본인 기록인 데다 진단 id가 순차 발급이라 추측 가능하다(ADR-0036 결정 12).
+    long userId = 17L;
+    Diagnosis discarded =
+        Diagnosis.startInProgress(userId).toBuilder()
+            .region(Region.BUSAN)
+            .build()
+            .discard(Instant.now());
+    Long id = diagnosisRepository.save(discarded).getId();
+
+    assertThatThrownBy(() -> diagnosisService.getDetail(userId, id))
+        .isInstanceOf(DiagnosisNotFoundException.class);
+  }
+
+  @Test
+  @DisplayName("step 1에 regionRetry 문항이 나란히 있어도 v1은 region을 낸다(v2 신설 회귀 가드)")
+  void step1PicksRegionNotRegionRetry() {
+    // 프로덕션 카탈로그에는 v2 전용 regionRetry 문항이 함께 있다(ADR-0036). 카탈로그는 순서를 담지 않고
+    // field로 문항을 식별하므로, v1이 step을 field로 옮겨(ofStep) 지역 문항만 집는지 확인한다.
+    seedRegionRetryQuestion();
+    seedRegionQuestion();
+    given(userAccountService.getLanguage(anyLong())).willReturn("ko");
+
+    QuestionResponse question = diagnosisService.getQuestion(16L, 1);
+
+    assertThat(question.field()).isEqualTo("region");
+    assertThat(question.question()).isEqualTo("지역 선택");
+    assertThat(question.options())
+        .extracting(QuestionResponse.Option::code)
+        .containsExactly("SEOUL");
   }
 
   @Test
@@ -488,7 +531,6 @@ class DiagnosisMongoIntegrationTest {
   private void seedRegionQuestion() {
     questionMongoRepository.save(
         DiagnosisQuestionDocument.builder()
-            .step(1)
             .field("region")
             .active(true)
             .question(Map.of("en", "Select region", "ko", "지역 선택"))
@@ -502,10 +544,24 @@ class DiagnosisMongoIntegrationTest {
             .build());
   }
 
+  /** ① 지역 0건 예외질문 — step 1에 region과 나란히 있는 v2 전용 문항(ADR-0036). */
+  private void seedRegionRetryQuestion() {
+    questionMongoRepository.save(
+        DiagnosisQuestionDocument.builder()
+            .field("regionRetry")
+            .active(true)
+            .question(Map.of("en", "Look in another region?", "ko", "다른 지역 방을 찾아보시겠어요?"))
+            .select(SelectSpec.builder().type("SINGLE").max(1).build())
+            .options(
+                List.of(
+                    OptionSpec.builder().code("YES").label(Map.of("en", "Yes", "ko", "예")).build(),
+                    OptionSpec.builder().code("NO").label(Map.of("en", "No", "ko", "아니오")).build()))
+            .build());
+  }
+
   private void seedUniversityQuestion() {
     questionMongoRepository.save(
         DiagnosisQuestionDocument.builder()
-            .step(3)
             .field("university")
             .active(true)
             .question(Map.of("en", "Which university?", "ko", "어느 대학교?"))
@@ -524,7 +580,6 @@ class DiagnosisMongoIntegrationTest {
   private void seedDistrictQuestion() {
     questionMongoRepository.save(
         DiagnosisQuestionDocument.builder()
-            .step(3)
             .field("district")
             .active(true)
             .question(Map.of("en", "Which district?", "ko", "어느 구?"))

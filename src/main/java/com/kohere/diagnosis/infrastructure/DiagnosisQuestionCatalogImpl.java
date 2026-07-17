@@ -3,6 +3,7 @@ package com.kohere.diagnosis.infrastructure;
 import com.kohere.diagnosis.domain.DiagnosisQuestion;
 import com.kohere.diagnosis.domain.DiagnosisQuestionCatalog;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -14,10 +15,10 @@ public class DiagnosisQuestionCatalogImpl implements DiagnosisQuestionCatalog {
   private final DiagnosisQuestionMongoRepository mongoRepository;
 
   @Override
-  public List<DiagnosisQuestion> findByStep(int step) {
-    return mongoRepository.findByStepAndActiveTrue(step).stream()
-        .map(DiagnosisQuestionCatalogImpl::toDomain)
-        .toList();
+  public Optional<DiagnosisQuestion> findByField(String field) {
+    return mongoRepository
+        .findByFieldAndActiveTrue(field)
+        .map(DiagnosisQuestionCatalogImpl::toDomain);
   }
 
   private static DiagnosisQuestion toDomain(DiagnosisQuestionDocument d) {
@@ -29,6 +30,6 @@ public class DiagnosisQuestionCatalogImpl implements DiagnosisQuestionCatalog {
                 .toList();
     DiagnosisQuestion.Select select =
         new DiagnosisQuestion.Select(d.getSelect().getType(), d.getSelect().getMax());
-    return new DiagnosisQuestion(d.getStep(), d.getField(), d.getQuestion(), select, options);
+    return new DiagnosisQuestion(d.getField(), d.getQuestion(), select, options);
   }
 }

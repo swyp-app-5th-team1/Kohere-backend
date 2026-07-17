@@ -42,7 +42,7 @@ public enum ErrorCode {
 
   // --- 진단 (diagnosis) — docs/api/specs/02-diagnosis-recommendation.md ---
   DIAGNOSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "진단을 찾을 수 없습니다."),
-  DIAGNOSIS_IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "동일 키로 다른 요청이 접수되었습니다."),
+  DIAGNOSIS_SESSION_NOT_FOUND(HttpStatus.BAD_REQUEST, "진행 중인 진단이 없습니다. 진단을 다시 시작해 주세요."),
 
   // --- 매물 (listing) — docs/api/specs/03-listings-favorites.md ---
   LISTING_NOT_FOUND(HttpStatus.NOT_FOUND, "매물을 찾을 수 없습니다."),

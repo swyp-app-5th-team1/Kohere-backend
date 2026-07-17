@@ -24,7 +24,7 @@
 | [`auth`](#1-auth--인증온보딩) | `SocialAccount`, `RefreshToken`, `EmailVerification`, `PhoneVerification` (+ `BusinessVerification` — 무상태 검증, 영속 없음) | `SocialIdentity`, `TokenHash` | ✅ |
 | [`user`](#2-user--회원-프로필계정-lifecycle) | `User` | `FullName`, `Consent` | ✅ |
 | [`listing`](#3-listing--매물-탐색찜) | `Listing`, `Favorite`, `RecentListing` | `Location`, `Address`, `RoomOffer`, `MatchedPlace` | ✅ |
-| [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis` | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
+| [`diagnosis`](#4-diagnosis--6단계-맞춤-진단) | `Diagnosis`, `DiagnosisFlowSession`(v2) | `DiagnosisCriteria`, `RecommendationSuggestions` | ✅ |
 | [`booking`](#5-booking--매물-신청예약) | `Booking` | — (`GreetingMessage`는 후속·이연) | ✅ |
 | [`chat`](#6-chat--인앱-채팅) | `ChatRoom`(+`Message`·`ReadCursor`) | `BookingCard`, `ListingCard`, `ListingSnapshot` | 후속·이연 |
 | [`community`](#7-community--커뮤니티) | `Post`(+`Comment`·`PostLike`) | `Hashtag` | 이후 |
@@ -427,11 +427,11 @@
 
 ## 4. `diagnosis` — 6단계 맞춤 진단
 
-> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`)
+> [API 스펙](../api/specs/02-diagnosis-recommendation.md) · [시퀀스](sequence-diagrams/02-diagnosis-recommendation/README.md) · `allowedDependencies = {common, listing, user}`(추천·지역 매칭 `listing::api recommendByCriteria`, 번역용 표시 언어 조회 `user::api getLanguage`)
 
 6단계 맞춤 진단(지역·입국 목적(유학 여부)·대학 그룹/지역(구) 선택·주거 환경 조건·월세 최소-최대 범위·ARC 발급 여부)을 본인 소유 레코드로 영속하고, 진단 조건으로 `listing` 공개 쿼리와 협력해 추천 매물을 제공한다. **진행 중 답은 서버가 DB에 저장**한다 — 사용자당 진행 중(`IN_PROGRESS`) 진단 1건을 in-progress draft로 들고 단계별 답을 채워가다가, 제출 시 `COMPLETED`로 확정한다(누적 답 재전송 없음). 재진단은 기존을 수정하지 않고 새 in-progress 진단을 시작해 항상 새 레코드로 이력을 보존한다.
 
-**`Diagnosis`** — 한 사용자의 6단계 진단(애그리거트 루트). **진행 중(`IN_PROGRESS`)에는 서버가 단계별 답을 채워가는 in-progress draft**이고, **제출 시 `COMPLETED`로 확정**된다. 식별자 `id`, 비즈니스 키 `(userId, idempotencyKey)`(멱등성 키가 제시된 경우에 한해 유일).
+**`Diagnosis`** — 한 사용자의 6단계 진단(애그리거트 루트). **진행 중(`IN_PROGRESS`)에는 서버가 단계별 답을 채워가는 in-progress draft**이고, **제출 시 `COMPLETED`로 확정**된다. 식별자 `id`(별도 비즈니스 키 없음 — 재진단은 새 레코드다).
 
 **속성:**
 
@@ -440,11 +440,10 @@
 | `id` | 식별자 | 애그리거트 식별자 |
 | `userId` | 식별자 | 진단 소유자 → `User` 식별자 참조 |
 | `criteria` | VO `DiagnosisCriteria` | 6단계 입력(지역·입국 목적·대학 그룹/지역(구) 선택·조건·월세 범위·ARC). `IN_PROGRESS`에는 서버가 단계별로 채워가는 부분 값, `COMPLETED` 확정 시 불변 |
-| `status` | enum `DiagnosisStatus` | 진단 상태(`IN_PROGRESS` → `COMPLETED`) |
-| `idempotencyKey` | String | 중복 제출 방지용 멱등성 키(선택) |
-| `submittedAt` | Instant, nullable | 제출 확정 시각(UTC). `COMPLETED` 확정 시 기록(`IN_PROGRESS`에는 부재) |
+| `status` | enum `DiagnosisStatus` | 진단 상태(`IN_PROGRESS` → `COMPLETED` \| `DISCARDED`) |
+| `submittedAt` | Instant, nullable | **종료 시각**(UTC) — `COMPLETED`는 제출 확정 시각, `DISCARDED`는 폐기 시각(`IN_PROGRESS`에는 부재). 상태가 어느 종료인지 말해주므로 타임스탬프는 하나로 통일 |
 
-**불변식:** `status` 전이는 `IN_PROGRESS → COMPLETED`만 허용(역전이·건너뛰기 없음); 사용자당 진행 중(`IN_PROGRESS`) 진단은 1건만 — 단계별 답을 보낼 때마다 서버가 그 in-progress draft의 `criteria`에 해당 필드를 채운다(서버가 DB에 저장; 누적 답 재전송 없음); **제출은 in-progress 진단 확정 요청**으로, 서버가 저장된 답을 재검증해 `COMPLETED`로 확정하고 `submittedAt`을 기록한다(이 시점이 진단 생성=완료); `criteria`는 `COMPLETED` 확정 후 불변(재진단은 수정이 아니라 **새 in-progress 진단 시작** → 확정 시 새 `Diagnosis`); **이력/목록 조회는 `COMPLETED`만 노출**(`IN_PROGRESS` draft 제외); **입국 목적별 대학/지역 선택 정합** — ③ 대학·지역은 **두 필드로 분리**(`university`·`district`)하며, `purpose`가 `STUDY`이면 `university`가 필수이고 `district`는 비어야 하며(유학 분기), `NON_STUDY`(비유학) 분기면 `district`가 필수이고 `university`는 비어야 한다(입국 목적에 맞는 하나만 채워짐; 위반은 공통 `400 INVALID_INPUT` + `errors[]` 필드별 사유, 진단 도메인 전용 코드 없음); 조회·추천은 `userId`가 요청자와 일치하는 본인 소유에 한함(타인 `403 FORBIDDEN`); 부재 진단 조회 `404 DIAGNOSIS_NOT_FOUND`; `idempotencyKey`가 제시되면 동일 소유자 범위에서 (키 + 정규화 `criteria`)가 같은 재시도는 1건만 확정·같은 진단 반환(멱등; 정규화 `criteria`에는 `university`·`district` 등 신규 필드도 포함), 같은 키에 다른 `criteria` 재제출은 `409 DIAGNOSIS_IDEMPOTENCY_CONFLICT`.
+**불변식:** `status` 전이는 `IN_PROGRESS → COMPLETED`(제출 확정, 완결성 검증 통과) 또는 `IN_PROGRESS → DISCARDED`(v2 미완주 시도 폐기, **검증 없음** — 부분 답이 정상)만 허용(역전이·건너뛰기 없음); `DISCARDED`는 사용자 입력을 버리지 않기 위한 수요 분석 기록이며 어떤 조회에도 노출되지 않는다(ADR-0036); 사용자당 진행 중(`IN_PROGRESS`) 진단은 1건만 — 단계별 답을 보낼 때마다 서버가 그 in-progress draft의 `criteria`에 해당 필드를 채운다(서버가 DB에 저장; 누적 답 재전송 없음); **제출은 in-progress 진단 확정 요청**으로, 서버가 저장된 답을 재검증해 `COMPLETED`로 확정하고 `submittedAt`을 기록한다(이 시점이 진단 생성=완료); `criteria`는 `COMPLETED` 확정 후 불변(재진단은 수정이 아니라 **새 in-progress 진단 시작** → 확정 시 새 `Diagnosis`); **이력/목록 조회는 `COMPLETED`만 노출**(`IN_PROGRESS` draft 제외); **입국 목적별 대학/지역 선택 정합** — ③ 대학·지역은 **두 필드로 분리**(`university`·`district`)하며, `purpose`가 `STUDY`이면 `university`가 필수이고 `district`는 비어야 하며(유학 분기), `NON_STUDY`(비유학) 분기면 `district`가 필수이고 `university`는 비어야 한다(입국 목적에 맞는 하나만 채워짐; 위반은 공통 `400 INVALID_INPUT` + `errors[]` 필드별 사유, 진단 도메인 전용 코드 없음); 조회·추천은 `userId`가 요청자와 일치하는 본인 소유에 한함(타인 `403 FORBIDDEN`); 부재 진단 조회 `404 DIAGNOSIS_NOT_FOUND`.
 
 **값 객체(VO):**
 
@@ -498,8 +497,9 @@
 | | `NO_ARC` | ARC 불요(⑥ `arcStatus=NO_ARC`에서 서버가 파생, ④ 직접 선택 불가·최대 3개 제한 제외) |
 | `ArcStatus` | `ARC_ISSUED` | ARC(외국인등록증) 발급 완료 |
 | | `NO_ARC` | ARC 미발급(추천 시 파생 조건 `DiagnosisCondition.NO_ARC`로 반영) |
-| `DiagnosisStatus` | `IN_PROGRESS` | 진행 중(서버가 단계별 답을 채워가는 in-progress draft, 이력·목록 비노출) |
+| `DiagnosisStatus` | `IN_PROGRESS` | 진행 중(v1이 단계별 답을 채워가는 in-progress draft, 이력·목록 비노출) |
 | | `COMPLETED` | 제출 확정 완료(`IN_PROGRESS`에서 전이, 이력·목록 노출) |
+| | `DISCARDED` | 6단계를 못 채우고 **끝난** v2 시도(`Diagnosis.discard`) — 수요 분석 전용 기록이라 **사용자 노출 경로를 두지 않는다**: 목록(이력·최근)은 `COMPLETED`만 보므로 자동으로 빠지고, **id로 직접 오는 상세·추천은 명시적으로 404로 거절**한다(소유권만으론 못 막는다 — 본인 기록이고 id가 순차 발급이라 추측 가능). ADR-0036 결정 12 |
 | `NoMatchReason` | `NO_MATCH` | 조건에 맞는 매물 없음 |
 | `SuggestionActionType` | `RELAX_REGION` | 지역 조건 완화 |
 | | `RELAX_CONDITIONS` | 주거 조건 일부 해제 |
@@ -527,7 +527,36 @@
 
 - **문항·선택지 카탈로그(US-2-5)** — 6단계별 {질문(`question`), 선택지[`code`], 선택 제약(`select{type, max}`)}는 `Diagnosis` 애그리거트가 아니라 **MongoDB `diagnosisQuestions` 컬렉션(도메인 포트로 조회)**로 제공한다 — **데이터만 보유**하고 분기 메타(`branchOn` 등)는 두지 않는다(분기는 서비스 비즈니스 로직 소관). 번역(표시 문자열)은 분리 컬렉션 없이 **같은 `diagnosisQuestions` 도큐먼트 안에 인라인 언어-키 맵으로 임베드**한다 — 질문은 `question: { "en": .., "ja": .., "ko": .. }`, 옵션 라벨은 `options[].label: { "en": .., "ja": .. }`로 두고 선택지 `code`(UPPER_SNAKE)는 언어 무관 불변이다. 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)을 호출하면, 서버가 (카탈로그 + 본인 진행 중(`IN_PROGRESS`) 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question, select{type, max}, options[{code, label}] }`(`question`·`label`은 서버가 인라인 언어-키 맵에서 사용자 언어 키로 고른 표시 문자열, `code`는 언어 무관)로 내려준다(한 번에 다 주지 않음; 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열; **⑤ 월세 범위는 enum 코드가 아니라 두 숫자 필드** `{ "field": "monthlyRent", "min": 300000, "max": 600000 }` — 순서 없는 `codes[]` 배열을 재사용하지 않는다)로 보내면 서버가 **본인 진행 중(`IN_PROGRESS`) 진단에 저장**한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`(제출)가 진행 중 진단의 저장된 답을 재검증해 `COMPLETED`로 확정한다. **분기는 서비스 비즈니스 로직이 결정한다(클라 로컬 분기·데이터 분기 메타 아님)** — ③ 대학·지역 단계(step 3)는 저장된 `purpose`를 보고 서비스가 알맞은 질문만 낸다: `STUDY`면 대학 그룹 질문(`university`, 목록 `UniversityGroup` 6개 그룹)을, `NON_STUDY`면 지역 질문(`district`, 목록 `District`)을 내려준다(두 질문 데이터는 카탈로그에 각각 존재하고, 노출은 서비스가 결정; 한 응답에 두 목록을 함께 주지 않는다). 선택지 `code`는 제출 검증 enum과 **동일 출처(1:1)** 라 코드로 제출하면 `INVALID_INPUT` 없이 수용된다(카탈로그·번역 모두 `diagnosisQuestions` 도큐먼트에 함께 보유). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`로 거른다.
 - **라벨 번역(US-2-6)** — 표시 `label`·`question`은 **사용자 표시 언어**의 값으로 채운다. `code`는 언어 무관 동일(UPPER_SNAKE)이며 인라인 언어-키 맵의 값(표시 문자열)만 언어별이고, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(에러 아님; `Accept-Language` 비의존). 표시 언어는 **`user` 공개 쿼리(`getLanguage`)로 동기 취득**한다(`user`가 등록 국가 `countries.lang`으로 도출; 토큰 클레임 분기 제거; ADR-0002 Decision 5) — `user`는 식별자/원시 값으로만 참조하고 엔티티를 공유하지 않는다. 표시 문자열은 **`diagnosisQuestions` 도큐먼트의 `question`/`options[].label`에 인라인 언어-키 맵으로 임베드**한다: `question: { "en": "Select a region", "ja": "エリアを選択", "ko": "지역 선택" }`, `options: [ { "code": "SEOUL", "label": { "en": "Seoul", "ja": "ソウル" } }, ... ]`처럼 **언어 코드를 키로 하는 맵**이다(문항·옵션은 `diagnosisQuestions`, 추천 사유/액션은 `diagnosisSuggestions` 컬렉션에 같은 인라인 언어-키 맵 방식 재사용). **국가→언어 매핑은 `user`의 `countries.lang`이 보유**하며, 미지원 언어의 **폴백 기본 언어는 영어**다. 서버 동작: 표시 언어(`user` `getLanguage`) → 도큐먼트의 언어-키 맵에서 그 언어 키 값을 골라(부재 시 `en`) 응답 조립.
-- **`allowedDependencies`** — 라벨 번역이 표시 언어를 `user` 공개 쿼리(`getLanguage`)로 동기 취득하므로 `diagnosis`의 `allowedDependencies`는 **`user`를 포함**한다(즉 `{common, user}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다.
+- **`allowedDependencies`** — 추천·지역 매칭은 `listing` 공개 쿼리(`recommendByCriteria`)를, 라벨 번역 표시 언어는 `user` 공개 쿼리(`getLanguage`)를 동기 호출하므로 `diagnosis`의 `allowedDependencies`는 **`listing :: api`·`user :: api`를 포함**한다(즉 `{common, listing :: api, user :: api}`; 토큰 클레임 분기 제거로 `{common}` 유지 안 함). 이는 `package-info.java`/`@ApplicationModule`에 반영된다(v2 서버 주도 흐름의 ① 지역 조기 게이트·확정 시 매칭 존재 확인도 동일 `listing::api`를 재사용하므로 의존은 그대로다).
+
+**v2 — 서버 주도 진단 흐름 (issue #157):**
+
+기존 v1(클라이언트가 `step`·확정을 주도) 위에, 클라이언트가 `POST /api/v2/diagnoses/start`로 진단을 열고 `POST /api/v2/diagnoses/next`로 대화하면 서버가 다음 질문·분기·확정 시점을 판단하는 **서버 주도 흐름**을 `/api/v2`에 신설한다([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)). **서버가 주도하는 것은 질문과 분기뿐이다** — 진단을 시작할 시점도, 확정된 진단의 매물을 조회할 시점도 클라이언트가 정한다: 확정 응답에는 추천 매물을 인라인으로 싣지 않고 `diagnosisId`만 주며, 매물은 클라가 v1 `GET /api/v1/diagnoses/{id}/recommendations`로 별도 조회한다(서버의 매칭 계산은 결과코드 판정에 필요한 **존재 확인**까지만). v2는 위 `Diagnosis`·`DiagnosisCriteria`·상태 enum(`Region`…`ArcStatus`)을 그대로 재사용하고, **진행 상태만 별도 애그리거트**에 담는다. v1 계약(`GET /questions/{step}` → `POST /answers` → `POST /diagnoses`)은 변경하지 않는다.
+
+**`DiagnosisFlowSession`** — v2 진행 세션 애그리거트 루트. 사용자당 최대 1건이며, 완료 시 `draft`를 `Diagnosis.complete()`로 확정해 정본 `Diagnosis`로 만들고(기존 `diagnoses`에 저장) 세션은 삭제한다. 세션은 **클라이언트가 `POST /start`로 시작할 때만 생기고 터미널(자동 확정·재시도·종료)에서 삭제된다** — 진행 중 세션이 있어도 `/start`는 그것을 버리고 새로 만들며(진단을 중단했다 다시 시작하면 언제나 처음부터), 세션이 없는데 `/next`가 오면 서버가 흐름을 되살리지 않고 `DiagnosisFlowSessionNotFoundException`(→ `400 DIAGNOSIS_SESSION_NOT_FOUND`)으로 거절한다. v1의 `IN_PROGRESS` 초안(`Diagnosis`)을 공유하지 않는 이유: `pendingField` 같은 절차 필드가 `Diagnosis`에 없고, "사용자당 `IN_PROGRESS` 1건" 제약과 충돌하기 때문이다.
+
+| 속성 | 타입 | 설명 |
+| --- | --- | --- |
+| `id` | 식별자 | 애그리거트 식별자 |
+| `userId` | 식별자 | 세션 소유자 → `User` 식별자 참조(사용자당 1 세션, UNIQUE) |
+| `draft` | VO `DiagnosisCriteria`(부분) | 누적 답 스냅샷(단계별로 채워지는 부분 값) |
+| `pendingField` | String | 서버가 **직전에 낸 문항의 `field`** — 다음 `/next`가 받을 수 있는 유일한 답이자 **진행의 단일 정본**(다음 문항은 `DiagnosisFlowStep.ofField(답한 field).next()`) |
+
+**불변식:** 세션은 `POST /start`로만 생성되며 사용자당 1건 — 진행 중 세션이 있어도 **버리고** 새 세션(빈 `draft`·`pendingField = "region"`)으로 대체한다(서버가 기존 진행 정보를 보고 이어가지 않음); 세션 없이 `/next`가 오면 `DiagnosisFlowSessionNotFoundException`(`400 DIAGNOSIS_SESSION_NOT_FOUND`)으로 거절하고 서버가 임의로 흐름을 되살리지 않는다(클라가 `/start`로 복구); **`/next`가 받을 수 있는 답은 `pendingField`(서버가 직전에 낸 문항) 하나뿐**이며 없거나 다르면 `400 INVALID_INPUT` — 기대 답을 정본 순서로 역산하지 않는 이유는 6슬롯에 없는 문항(`regionRetry`)이 흐름에 끼어들 수 있어서다(그때 순서가 가리키는 슬롯과 실제로 낸 문항이 어긋난다); 선형 순서는 `DiagnosisFlowStep`의 **선언 순서**(`REGION → PURPOSE → UNIVERSITY_OR_DISTRICT → CONDITIONS → MONTHLY_RENT → ARC_STATUS`)가 정본이며 `ofField(답한 field).next()`로 따라간다 — `Diagnosis.validateComplete`가 `conditions`를 필수로 보지 않아(비어도 통과) 답 필드 null로 진행을 추론하지 않는다; 마지막 슬롯(`arcStatus`)을 답하면 서버가 `draft`를 `COMPLETED`로 자동 확정하고(확정 시점을 클라가 주지 않음) 세션을 삭제한다; ① 지역 답 직후 지역-only 매칭이 0건이면 `pendingField = "regionRetry"`로 예외질문을 내고(서버가 미리 필터링하는 유일한 지점; 정본 슬롯은 전진하지 않는다), 그 예/아니오는 진단 답이 아니라 흐름 제어 응답이라 `draft`에 저장되지 않고 둘 다 터미널이라 세션을 삭제한다 — "예"=`RESTART`(클라가 `/start`로 새 세션을 열어 재시도)·"아니오"=`TERMINATED`(진단 종료); **진행 중 세션을 되돌리는 전이는 없다**(재시작은 언제나 `/start`의 새 세션으로); 조회·매칭은 본인 소유(`userId`)에 한한다.
+
+**상태(enum, v2 흐름):**
+
+| enum | 값 | 의미 |
+| --- | --- | --- |
+| `DiagnosisFlowStep` | `REGION`·`PURPOSE`·`UNIVERSITY_OR_DISTRICT`·`CONDITIONS`·`MONTHLY_RENT`·`ARC_STATUS` | 진단 6단계의 **정본 선형 순서**(선언 순서가 정본) + 슬롯↔`field` 매핑(`UNIVERSITY_OR_DISTRICT`만 `field()`가 없음 — 저장된 `purpose`로 `university`/`district` 택일하며, `ofField`는 그 둘을 모두 `UNIVERSITY_OR_DISTRICT`로 되돌린다). `step()`(1..6)은 위치에서 **파생**하므로 순서와 어긋날 수 없고, v1 경로 파라미터↔`field` 변환과 응답 표시에만 쓴다. v2 전용이 아니다: v2는 선언 순서(`ofField(...).next()`)로 진행을 강제하고, **v1도 `ofStep(step)`으로 클라가 지정한 단계에서 낼 문항 `field`를 이 매핑으로 지목**한다 |
+| `FlowResultCode` | `NEXT_QUESTION` | 다음 질문이 남음(마지막 슬롯 전). ① 지역 0건 예외질문(`field=regionRetry`)도 **이 코드**로 내려간다(`question` 채움) |
+| | `RESTART` | 지역 예외질문 "예" → 클라이언트가 `POST /start`로 처음부터 재시도(코드만, 세션 삭제) |
+| | `COMPLETED` | 자동 확정 — `diagnosisId`만 채움(매칭 유무 미확인·추천 매물 비포함) |
+| | `TERMINATED` | 지역 예외질문 "아니오" → 진단 종료(코드만, 세션 삭제) |
+
+> `FlowResultCode`는 `POST /api/v2/diagnoses/start`·`/next`의 정상 `200` 응답 `data`에 실리는 결과코드(태그드 유니온)이며 에러가 아니다 — `DiagnosisStatus`(도메인 전이 enum)와 분리한다. payload는 결과코드별로 `question`(NEXT_QUESTION) 또는 `diagnosisId`(COMPLETED)뿐이고 **매물 요약은 실리지 않는다** — 조회 시점은 클라이언트가 정해 `GET /api/v2/diagnoses/{id}/recommendations`(`V2RecommendationResponse { content, markers, page }`)를 호출한다. **매칭 0건에 해당하는 결과코드는 없다** — 0건인지는 추천을 실제로 조회해야 알 수 있어(그러려면 클라가 요청하지 않은 쿼리를 서버가 돌려야 한다) 그 응답의 빈 `content`로 드러낸다. v2는 v1의 `RecommendationSuggestions`(조정 제안)를 쓰지 않으므로 v2 추천 응답에는 그 필드가 없다(v1의 `diagnosisSuggestions` 자산은 v1 전용으로 유지·미참조). 상세: [ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md), 시퀀스 [US-2-7](sequence-diagrams/02-diagnosis-recommendation/us-2-7-v2-server-driven-flow.md).
+>
+> **① 지역 0건 예외질문(`regionRetry`)은 진단 답 필드가 아니다** — 그 답(`YES`/`NO`)은 `DiagnosisCriteria`에 없어 `Diagnosis`의 어떤 필드로도 저장되지 않고 정본 슬롯도 전진시키지 않는 **흐름 제어 응답**이다(진단 답과 달리 `applyAnswer`를 타지 않는다). 단, **그 응답이 폐기 기록의 방아쇠**다 — 예/아니오 어느 쪽이든 세션을 지우기 전에 그때까지의 `draft`(=`region`만 채워진 부분 답)를 `DISCARDED` 진단으로 저장한다(지역 수요 신호 — 위 `DiagnosisStatus` 참조). 즉 저장되지 않는 건 **`YES`/`NO` 값**이지 그 시점의 진단 초안이 아니다. 동시에 서버 코드에 하드코딩한 합성 문구가 아니라 **`diagnosisQuestions` 카탈로그의 일반 문항**(`field: "regionRetry"`, `select {type: "SINGLE", max: 1}`, `options[].code`=`YES`/`NO`)이라 문항·번역 정본이 다른 6단계와 같은 곳에 있다(인라인 언어-키 맵도 동일). 카탈로그는 **순서를 담지 않고 `field`로 문항을 식별**하므로 이 문항도 다른 문항과 동등하게 들어가고, 정본 6슬롯 밖이라는 사실은 코드(`DiagnosisFlowStep`에 없음)에만 있다. v1 `GET /questions/1`은 `DiagnosisFlowStep.ofStep(1).field()`=`region`으로 조회해 계약이 불변이다. 시드는 다른 카탈로그 문항과 같이 Mongock `@ChangeUnit`으로 적재하며(기배포 환경용 멱등 추가 ChangeUnit 포함), 적재 순서·컬렉션 등 물리 사항은 [database-design](../database/database-design.md) 소관이라 여기서 다루지 않는다.
 
 ---
 
@@ -771,10 +800,10 @@
 | `question` | 인라인 언어-키 맵 | 문제 본문 — `{ "en": .., "ja": .., "ko": .. }` 언어 코드를 키로 하는 맵. 서버가 `getLanguage`로 얻은 표시 언어 키로 선택(부재 시 영어(`en`) 폴백) |
 | `choices` | `List<QuizChoice>` | 4지선다 보기(키 A~D, 보기 텍스트). 키 A~D는 언어 무관 |
 | `correctChoice` | enum `ChoiceKey` | 정답 보기 키. `GET random`에는 절대 포함하지 않고 **오답 응답에만** 반환 |
-| `explanation` | 인라인 언어-키 맵 | 오답 사유(해설) — `{ "en": .., "ja": .. }` 언어-키 맵. 서버가 표시 언어 키로 선택(부재 시 `en` 폴백), **오답 응답에만** 반환 |
+| `explanation` | 인라인 언어-키 맵 | 해설(정답 근거·오답 사유) — `{ "en": .., "ja": .. }` 언어-키 맵. 서버가 표시 언어 키로 선택(부재 시 `en` 폴백), **채점 응답에 반환(정답·오답 공통)** |
 | `active` | boolean | 랜덤 풀 게이팅(`true`인 퀴즈만 랜덤 선정 대상) |
 
-**불변식:** `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; 보기 키 A~D는 **언어 무관**(채점은 키로 판정); `question`·`choices[].text`·`explanation`은 **인라인 언어-키 맵**으로 저장하고 서버가 `getLanguage` 표시 언어 키로 골라 응답(해당 언어 키 부재 시 영어(`en`) 폴백; diagnosis와 동일 i18n 경로); **채점은 무상태** — 서버가 `selectedChoice`를 `Quiz.correctChoice`와 대조해 정답이면 `{ quizId, selectedChoice, correct:true }`, 오답이면 `{ quizId, selectedChoice, correct:false, correctChoice, explanation }`을 반환하며 제출·적립·이력·이벤트를 남기지 않는다(멱등·재응시 가능); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `GET random`에는 `correctChoice`·`explanation`을 포함하지 않는다(정답 응답에도 미포함 — 정답 시 `explanation` 동봉 여부는 **(확인 필요)**); `quizId`가 없거나 활성 풀이 공백이면 `404 QUIZ_NOT_FOUND`; **접근은 외국인 임차인 활성 사용자(`userType=TENANT`·`status=ACTIVE`)로 제한** — 비-`ACTIVE`는 `403 AUTH_ONBOARDING_REQUIRED`(01-auth-onboarding 교차 참조). 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 두어 `TENANT`·`ACTIVE` 강제는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검사가 필요하며 아직 **미구현·(확인 필요)**. "랜덤"은 활성 풀에서의 **랜덤 선정**을 뜻하고 동적 생성이 아니다 **(확인 필요)**.
+**불변식:** `choices`는 정확히 4개·키 `A`·`B`·`C`·`D` 각 1개(중복·누락 없음); `correctChoice`는 `choices` 키 집합에 포함; 보기 키 A~D는 **언어 무관**(채점은 키로 판정); `question`·`choices[].text`·`explanation`은 **인라인 언어-키 맵**으로 저장하고 서버가 `getLanguage` 표시 언어 키로 골라 응답(해당 언어 키 부재 시 영어(`en`) 폴백; diagnosis와 동일 i18n 경로); **채점은 무상태** — 서버가 `selectedChoice`를 `Quiz.correctChoice`와 대조해 정답이면 `{ quizId, selectedChoice, correct:true, explanation }`, 오답이면 `{ quizId, selectedChoice, correct:false, correctChoice, explanation }`을 반환하며 제출·적립·이력·이벤트를 남기지 않는다(멱등·재응시 가능); `selectedChoice`는 A~D 중 하나(그 외 `400 INVALID_INPUT`); `GET random`에는 `correctChoice`·`explanation`을 포함하지 않는다(채점 응답에서만 노출 — `explanation`은 정답·오답 모두 반환, `correctChoice`는 오답 응답에만); `quizId`가 없거나 활성 풀이 공백이면 `404 QUIZ_NOT_FOUND`; **접근은 외국인 임차인 활성 사용자(`userType=TENANT`·`status=ACTIVE`)로 제한** — 비-`ACTIVE`는 `403 AUTH_ONBOARDING_REQUIRED`(01-auth-onboarding 교차 참조). 현재 `SecurityConfig`는 `/api/v1/quizzes/**`를 `authenticated()`로만 열어 두어 `TENANT`·`ACTIVE` 강제는 `hasRole("USER")` + 애플리케이션 레벨 `userType=TENANT` 검사가 필요하며 아직 **미구현·(확인 필요)**. "랜덤"은 활성 풀에서의 **랜덤 선정**을 뜻하고 동적 생성이 아니다 **(확인 필요)**.
 
 **값 객체(VO):**
 
@@ -851,9 +880,9 @@
 
 > [API 스펙](../api/specs/08-life-tips.md) · [시퀀스](sequence-diagrams/08-life-tips/README.md) · `allowedDependencies = {common, user}`(번역용 표시 언어 조회 `getLanguage`) · **1차 MVP 이후**
 
-온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
+온보딩을 마친(ACTIVE) 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용** 큐레이션 컨텍스트다(홈 부가 기능). 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 `community`(7절)와 구분). 주제·팁의 표시 텍스트(주제명·주제 설명·제목·내용)는 사용자의 **등록 국가→언어**로 번역해 내려주며(US-8-3), 진단 i18n과 **완전히 동일한 전략**을 재사용한다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md), US-2-6) — 표시 문자열을 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드하고, 서버가 `user` 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며 해당 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님). 식별자(`code`/`id`)와 이미지 URL(주제의 `LifeTipTopic.imageUrl`·`backgroundImageUrl`, 팁의 `LifeTip.imageUrl` 사진)은 언어 무관 불변이고 표시 텍스트만 언어별이다. 문서형·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏; 진단 카탈로그 저장 방식([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md))과 정합).
 
-**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시명(`name`)은 언어-키 맵으로 임베드된다. 식별자 `code`(주제 코드, 언어 무관 불변).
+**`LifeTipTopic`** — 생활 팁을 묶는 주제(애그리거트 루트). 운영이 적재한 큐레이션 카탈로그로, 언어 무관 식별 `code`(UPPER_SNAKE)와 노출 순서(`order`)를 가지며 표시 텍스트(표시명 `name`·짧은 설명 `shortDescription`·긴 설명 `longDescription`)는 언어-키 맵으로 임베드되고, 화면에 그릴 이미지(홈 카드용 `imageUrl`·상세 상단 배경용 `backgroundImageUrl`)는 언어 무관 절대 CDN URL이다. 식별자 `code`(주제 코드, 언어 무관 불변).
 
 **속성:**
 
@@ -861,9 +890,13 @@
 | --- | --- | --- |
 | `code` | 식별자(String) | 주제 코드(UPPER_SNAKE, 언어 무관 불변 식별자). 예: `MOVING_IN`·`ADMINISTRATION`·`TRANSPORT`·`FINANCE`·`HOUSING`. US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다 |
 | `name` | 언어-키 맵 | 표시명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백) |
-| `order` | int | 노출 순서(오름차순) |
+| `shortDescription` | 언어-키 맵 | 짧은 설명(번역 대상). `{ "en": …, "ja": …, "ko": … }` 인라인 언어-키 맵 — 서버가 사용자 언어 키로 선택(부재 시 `en` 폴백). 홈 화면 주제 카드 문구, **필수(NOT NULL)** |
+| `longDescription` | 언어-키 맵 | 긴 설명(번역 대상). 인라인 언어-키 맵(서버가 사용자 언어 키로 선택, 부재 시 `en` 폴백). 주제 상세 상단 문구, **필수(NOT NULL)** |
+| `imageUrl` | String | 주제 카드 이미지 URL(언어 무관 절대 CDN URL, 불변). 홈 화면 카드에 그린다. 팁 사진(`LifeTip.imageUrl`, nullable)과 **다른 리소스**이며 **필수(NOT NULL)** |
+| `backgroundImageUrl` | String | 주제 상세 상단 배경 이미지 URL(언어 무관 절대 CDN URL, 불변). 상세 화면 상단에 그린다. **필수(NOT NULL)** |
+| `order` | int | 노출 순서(오름차순, 내부 정렬값 — 응답에 노출하지 않음) |
 
-**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`은 표시 문자열만 언어별이고 `code`·`order`는 언어 무관; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
+**불변식:** `code`는 전 주제에 걸쳐 유일(UPPER_SNAKE, 언어 무관 불변); 목록은 `order` 오름차순으로 노출하고 고정·소규모 카탈로그라 페이지네이션 없이 전체 배열을 한 번에 반환한다(비페이지 — api-design-guide §4 목록 규약 미적용, US-7-3 신고 사유 카탈로그와 동일 성격); `name`·`shortDescription`·`longDescription`은 표시 문자열만 언어별이고 `code`·`order`·`imageUrl`·`backgroundImageUrl`는 언어 무관; 표시 텍스트 3종(`name`·`shortDescription`·`longDescription`)과 이미지 2종(`imageUrl`·`backgroundImageUrl`)은 모두 **필수(NOT NULL)** — 홈 카드는 `imageUrl`+`shortDescription`, 상세 상단은 `backgroundImageUrl`+`longDescription`을 항상 그리므로 팁의 `LifeTip.imageUrl`(nullable, "사진 없는 팁" 허용)과 달리 "이미지·설명 없는 주제" 경계 케이스를 두지 않는다; 존재하지 않는 주제 `code`로 팁을 조회하면 `404 LIFE_TIP_TOPIC_NOT_FOUND`(신규 도메인 에러코드 — `ErrorCode` 등록 필요, `*_NOT_FOUND` 규약).
 
 **`LifeTip`** — 하나의 주제에 속한 생활 팁 항목(애그리거트 루트). 주제 : 팁 = **1 : N**. `title`·`content`는 언어-키 맵으로 임베드되고 `imageUrl`은 언어 무관(사진)이다. 식별자 `id`, 소속 주제 참조 `topicCode`(→ `LifeTipTopic.code`, 애플리케이션 레벨 조인·DB 조인 없음).
 

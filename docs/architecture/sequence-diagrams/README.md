@@ -24,7 +24,7 @@
 | # | 모듈 | 폴더 | 다이어그램 수 |
 | --- | --- | --- | --- |
 | 1 | 소셜 로그인 · 온보딩 | [01-auth-onboarding/](01-auth-onboarding/README.md) | 5 |
-| 2 | 맞춤 진단 & 매물 추천 | [02-diagnosis-recommendation/](02-diagnosis-recommendation/README.md) | 4 |
+| 2 | 맞춤 진단 & 매물 추천 | [02-diagnosis-recommendation/](02-diagnosis-recommendation/README.md) | 6 |
 | 3 | 매물 탐색 · 찜 | [03-listings-favorites/](03-listings-favorites/README.md) | 5 |
 | 4 | 매물 예약(신청) 독립 · (후속) 문의·인앱 채팅 | [04-booking-inquiry-chat/](04-booking-inquiry-chat/README.md) | 5 |
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community/](05-community/README.md) | 5 |
@@ -32,4 +32,4 @@
 | 7 | 신고 처리 | [07-reports/](07-reports/README.md) | 3 |
 | 8 | 생활 팁 (주제별 생활 정보) | [08-life-tips/](08-life-tips/README.md) | 2 |
 
-총 32개 다이어그램.
+총 34개 다이어그램.

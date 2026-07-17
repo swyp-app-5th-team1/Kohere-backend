@@ -72,7 +72,7 @@ class QuizMongoIntegrationTest {
   }
 
   @Test
-  @DisplayName("정답이면 correct=true만, 오답이면 정답 키와 번역된 해설을 반환한다")
+  @DisplayName("정답·오답 모두 번역된 해설을 반환하고, 오답이면 정답 키도 함께 반환한다")
   void gradeAnswer() {
     seedQuiz();
     given(userAccountService.getLanguage(10L)).willReturn("ko");
@@ -81,7 +81,7 @@ class QuizMongoIntegrationTest {
         gamificationService.gradeAnswer(10L, 4001L, new AnswerQuizRequest("A"));
     assertThat(correct.correct()).isTrue();
     assertThat(correct.correctChoice()).isNull();
-    assertThat(correct.explanation()).isNull();
+    assertThat(correct.explanation()).isEqualTo("확정일자를 받으면 보증금을 보호받습니다.");
 
     AnswerResultResponse wrong =
         gamificationService.gradeAnswer(10L, 4001L, new AnswerQuizRequest("B"));

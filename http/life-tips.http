@@ -89,7 +89,11 @@ Content-Type: application/json
   "visaType": "STUDENTS_TRAINEES"
 }
 
-### 6. 생활 팁 주제 목록 조회 — 노출 순서대로 전체(번역된 name, 비페이지)
+### 6. 생활 팁 주제 목록 조회 — 노출 순서대로 전체(주제별 6필드, 비페이지)
+#    각 주제 = code · name · shortDescription · longDescription · imageUrl · backgroundImageUrl (확장 4필드 모두 필수·NOT NULL).
+#      · name·shortDescription·longDescription = 표시 언어(온보딩 국가)로 고른 번역 문자열 하나(미지원 언어는 en 폴백).
+#      · imageUrl·backgroundImageUrl = 언어 무관 불변 절대 CDN URL(번역 안 함). §8 팁 사진(imageUrl, nullable)과는 다른 리소스다.
+#      · 홈 화면 카드 = imageUrl + shortDescription, 주제 상세 상단 = backgroundImageUrl + longDescription.
 #    ↓ 이미 ACTIVE 회원이면 {{onboarding...}} 대신 {{login.response.body.$.data.accessToken}} 로 바꿔도 된다.
 # @name topics
 GET {{baseUrl}}/api/v1/life-tips/topics

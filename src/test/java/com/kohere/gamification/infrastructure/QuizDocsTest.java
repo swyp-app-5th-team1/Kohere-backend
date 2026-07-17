@@ -127,7 +127,7 @@ class QuizDocsTest {
                 resourceDetails().summary("랜덤 퀴즈 조회 — 활성 풀에서 무작위 1개(등록 국가 언어로 번역, 정답·해설 미포함)"),
                 responseFields(randomResponseFields())));
 
-    // ② 정답 제출 — 정답: correct=true만(정답·해설 미노출)
+    // ② 정답 제출 — 정답: correct=true + 번역된 해설(정답 키는 미노출)
     mockMvc
         .perform(
             post("/api/v1/quizzes/{quizId}/answer", 4001L)
@@ -136,10 +136,11 @@ class QuizDocsTest {
                 .content(answerJson("A")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.correct").value(true))
+        .andExpect(jsonPath("$.data.explanation").value("확정일자를 받으면 보증금을 보호받습니다."))
         .andDo(
             document(
                 "quiz-answer-correct",
-                resourceDetails().summary("정답 제출·채점 — 정답(correct=true, 무상태·정답/해설 미노출)"),
+                resourceDetails().summary("정답 제출·채점 — 정답(correct=true + 번역된 해설, 무상태·정답 키 미노출)"),
                 pathParameters(parameterWithName("quizId").description("채점 대상 퀴즈 ID")),
                 requestFields(answerRequestFields()),
                 responseFields(answerCorrectResponseFields())));
@@ -356,7 +357,8 @@ class QuizDocsTest {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.quizId", JsonFieldType.NUMBER, "채점 대상 퀴즈 ID"),
         field("data.selectedChoice", JsonFieldType.STRING, "제출한 보기 키(A~D)"),
-        field("data.correct", JsonFieldType.BOOLEAN, "정답 여부(정답이면 true) — 정답 시 정답·해설은 미노출"),
+        field("data.correct", JsonFieldType.BOOLEAN, "정답 여부(정답이면 true) — 정답 시 정답 키는 미노출"),
+        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 사용자 언어 번역)"),
         errorNull());
   }
 
@@ -367,7 +369,7 @@ class QuizDocsTest {
         field("data.selectedChoice", JsonFieldType.STRING, "제출한 보기 키(A~D)"),
         field("data.correct", JsonFieldType.BOOLEAN, "정답 여부(오답이면 false)"),
         field("data.correctChoice", JsonFieldType.STRING, "정답 보기 키(오답 시에만)"),
-        field("data.explanation", JsonFieldType.STRING, "오답 사유·해설(오답 시에만, 사용자 언어 번역)"),
+        field("data.explanation", JsonFieldType.STRING, "해설(정답·오답 모두, 사용자 언어 번역)"),
         errorNull());
   }
 

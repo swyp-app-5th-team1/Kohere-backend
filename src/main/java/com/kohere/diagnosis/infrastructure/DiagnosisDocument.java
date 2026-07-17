@@ -45,5 +45,7 @@ public class DiagnosisDocument {
   private Integer monthlyRentMax;
   private ArcStatus arcStatus;
   private DiagnosisStatus status;
+
+  /** 종료 시각. {@code COMPLETED}는 제출 확정 시각, {@code DISCARDED}는 폐기 시각. */
   private Instant submittedAt;
 }

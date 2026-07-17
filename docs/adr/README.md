@@ -59,6 +59,7 @@
 | [0033](./0033-business-registry-verification.md) | 임대인 사업자등록번호는 온보딩과 분리된 무상태 API로 비즈노 조회·검증한다 | Proposed | 2026-06-30 |
 | [0034](./0034-landlord-phone-sms-verification.md) | 임대인 연락처는 SMS 인증번호로 검증하고 이메일은 수집하지 않는다 | Proposed | 2026-06-30 |
 | [0035](./0035-gamification-quiz-random-stateless-catalog.md) | 학습 퀴즈를 무상태 랜덤 4지선다로 재설계하고 문항 카탈로그를 MongoDB에 언어-키 맵으로 저장 | Proposed | 2026-07-02 |
+| [0036](./0036-diagnosis-v2-server-driven-flow.md) | 진단 질의응답을 서버 주도(start/next) 흐름으로 /api/v2에 신설하고 진행 상태를 별도 flow-session에 둔다 | Proposed | 2026-07-15 |
 
 > 새 ADR을 추가하면 이 표에 한 행을 추가한다.
 

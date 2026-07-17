@@ -16,7 +16,7 @@
 #
 # 참고:
 #   - 응답 봉투는 { success, data, error } 라서 값 경로는 response.body.$.data.* 다.
-#   - 정답 판정은 서버 전용이다. 조회(§6) 응답에는 correctChoice/explanation 이 없고, 채점(§7~) 응답에서만(오답 시) 내려온다.
+#   - 정답 판정은 서버 전용이다. 조회(§6) 응답에는 correctChoice/explanation 이 없고, 채점(§7~) 응답에서만 내려온다 — explanation 은 정답·오답 모두, correctChoice 는 오답 시에만.
 #   - 표시 언어는 온보딩 국가로 결정된다(country=KR→ko, 그 외 미지원 언어는 en 폴백). 아래 온보딩은 country=VN(→en 폴백) 예시다.
 
 @baseUrl = http://localhost:8080
@@ -95,7 +95,7 @@ GET {{baseUrl}}/api/v1/quizzes/random
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 
 ### 7. 정답 제출·채점 (§6에서 받은 quizId 로) — 무상태(200 OK, 제출 기록·포인트 없음)
-#    정답이면 { correct:true } 만, 오답이면 correctChoice + explanation(번역)이 함께 온다.
+#    정답이면 correct:true + explanation(번역)이, 오답이면 correctChoice + explanation(번역)이 함께 온다.
 POST {{baseUrl}}/api/v1/quizzes/{{random.response.body.$.data.quizId}}/answer
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}
 Content-Type: application/json
@@ -104,7 +104,7 @@ Content-Type: application/json
   "selectedChoice": "A"
 }
 
-### 8. (결정적 예시) 시드 퀴즈 4001 정답 제출 — A가 정답 → correct=true
+### 8. (결정적 예시) 시드 퀴즈 4001 정답 제출 — A가 정답 → correct=true + explanation(번역)
 #    시드 4001: "전세 계약 시 임차인의 대항력·우선변제권을 확보해 주는 제도는?" (정답 A=확정일자)
 POST {{baseUrl}}/api/v1/quizzes/4001/answer
 Authorization: Bearer {{onboarding.response.body.$.data.accessToken}}

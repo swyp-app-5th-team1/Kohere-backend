@@ -46,21 +46,17 @@ public class GamificationService {
     return new RandomQuizResponse(quiz.id(), pickLabel(quiz.question(), language), choices);
   }
 
-  /** 제출한 보기를 저장된 정답과 대조해 채점한다(무상태). 오답이면 정답 키·해설(번역)을 반환한다. */
+  /** 제출한 보기를 저장된 정답과 대조해 채점한다(무상태). 정답·오답 모두 해설(번역)을, 오답이면 정답 키도 함께 반환한다. */
   public AnswerResultResponse gradeAnswer(long userId, long quizId, AnswerQuizRequest request) {
     assertTenant(userId);
     Quiz quiz = quizRepository.findById(quizId).orElseThrow(QuizNotFoundException::new);
     ChoiceKey selected = ChoiceKey.valueOf(request.selectedChoice());
+    String explanation = pickLabel(quiz.explanation(), resolveLanguage(userId));
     if (quiz.isCorrect(selected)) {
-      return new AnswerResultResponse(quiz.id(), selected.name(), true, null, null);
+      return new AnswerResultResponse(quiz.id(), selected.name(), true, null, explanation);
     }
-    String language = resolveLanguage(userId);
     return new AnswerResultResponse(
-        quiz.id(),
-        selected.name(),
-        false,
-        quiz.correctChoice().name(),
-        pickLabel(quiz.explanation(), language));
+        quiz.id(), selected.name(), false, quiz.correctChoice().name(), explanation);
   }
 
   /** 외국인 세입자(userType=TENANT) 전용 게이트. 임대인 등은 403(FORBIDDEN)으로 거부한다. */

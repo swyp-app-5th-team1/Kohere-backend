@@ -55,7 +55,13 @@ public class LifeTipService {
   }
 
   private static TopicListResponse.Topic toTopic(LifeTipTopic topic, String language) {
-    return new TopicListResponse.Topic(topic.code(), pickLabel(topic.name(), language));
+    return new TopicListResponse.Topic(
+        topic.code(),
+        pickLabel(topic.name(), language),
+        pickLabel(topic.shortDescription(), language),
+        pickLabel(topic.longDescription(), language),
+        topic.imageUrl(),
+        topic.backgroundImageUrl());
   }
 
   private static TipListResponse.Tip toTip(LifeTip tip, String language) {

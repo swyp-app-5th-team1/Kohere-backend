@@ -204,7 +204,24 @@ class DiagnosisDocsTest {
                 requestFields(answerCodesRequestFields()),
                 responseFields(answerSavedResponseFields())));
 
-    saveAnswer(token, answerRentJson(300000, 600000));
+    // 답 저장(월세 범위) — ⑤만 답의 형태가 다르다. code/codes가 아니라 min·max 두 숫자다
+    // (select.type=NUMBER_RANGE, options 비움 — 고정 선택지 목록이라는 가정에서 의도적으로 분리된 예외).
+    mockMvc
+        .perform(
+            post("/api/v1/diagnoses/answers")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(answerRentJson(300000, 600000)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.saved").value(true))
+        .andDo(
+            document(
+                "diagnosis-submit-answer-rent",
+                resourceDetails()
+                    .summary("단계 답 저장 — ⑤ 월세 범위(monthlyRent)는 code가 아니라 min·max 두 숫자로 전송"),
+                requestFields(answerRentRequestFields()),
+                responseFields(answerSavedResponseFields())));
+
     saveAnswer(token, answerJson("arcStatus", "ARC_ISSUED"));
 
     // ③ 진행 중 진단 확정 → 201 Created (Location 헤더 포함)
@@ -678,6 +695,14 @@ class DiagnosisDocsTest {
         field("codes", JsonFieldType.ARRAY, "다중 선택 답의 코드 집합(최대 3개, 중복 불가)"));
   }
 
+  /** ⑤ 월세 범위 답 — 코드가 아닌 두 숫자(min·max)로 보내는 유일한 단계라 별도 서술한다. */
+  private static List<FieldDescriptor> answerRentRequestFields() {
+    return List.of(
+        field("field", JsonFieldType.STRING, "답을 저장할 제출 필드명(⑤ 월세 범위는 monthlyRent 고정)"),
+        field("min", JsonFieldType.NUMBER, "월세 범위 하한(KRW 정수, 0 이상이고 max 이하)"),
+        field("max", JsonFieldType.NUMBER, "월세 범위 상한(KRW 정수, min 이상)"));
+  }
+
   private static List<FieldDescriptor> answerSavedResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
@@ -819,7 +844,6 @@ class DiagnosisDocsTest {
   private void seedQuestions() {
     questionMongoRepository.save(
         question(
-            1,
             "region",
             "SINGLE",
             1,
@@ -830,7 +854,6 @@ class DiagnosisDocsTest {
                 option("GYEONGGI", "Gyeonggi", "경기"))));
     questionMongoRepository.save(
         question(
-            3,
             "university",
             "SINGLE",
             1,
@@ -840,7 +863,6 @@ class DiagnosisDocsTest {
                 option("HUFS_KHU_KOREA", "HUFS · Kyung Hee · Korea Univ.", "한국외대·경희대·고려대"))));
     questionMongoRepository.save(
         question(
-            3,
             "district",
             "SINGLE",
             1,
@@ -867,14 +889,12 @@ class DiagnosisDocsTest {
   }
 
   private static DiagnosisQuestionDocument question(
-      int step,
       String field,
       String selectType,
       int max,
       Map<String, String> question,
       List<OptionSpec> options) {
     return DiagnosisQuestionDocument.builder()
-        .step(step)
         .field(field)
         .active(true)
         .question(question)

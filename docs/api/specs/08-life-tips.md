@@ -7,8 +7,8 @@
 
 온보딩을 마친 세입자(외국인)가 한국 생활에 필요한 정보를 **주제(topic)** 별로 묶어 조회하는 **읽기 전용 큐레이션** 기능이다. 사용자는 먼저 주제 목록을 보고(US-8-1), 특정 주제를 고르면 그 주제에 속한 생활 팁(**제목 · 내용 · 사진**) 전체 리스트를 받는다(US-8-2). 한 주제에는 여러 개의 제목-내용-사진 항목이 들어갈 수 있다(주제 : 팁 = **1 : N**). 콘텐츠는 운영이 시드로 적재하는 큐레이션 콘텐츠이며 사용자 작성·수정·좋아요·신고가 없다(UGC인 커뮤니티(05)와 구분된다).
 
-- **번역이 이 기능의 바탕이다**: 주제명(`name`)·제목(`title`)·내용(`content`) 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려준다(US-8-3). 진단 i18n과 **완전히 동일한 전략**을 재사용하며 별도 메커니즘을 만들지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md), US-2-6). 표시 문자열은 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드되고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
-- **식별자·사진은 언어 무관 불변**: 주제·팁의 식별자(`code`/`id`)와 사진 `imageUrl`은 언어와 무관하게 동일하고, 표시 텍스트만 언어별이다. 응답 스키마도 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
+- **번역이 이 기능의 바탕이다**: 주제명(`name`)·주제 설명(`shortDescription`·`longDescription`)·제목(`title`)·내용(`content`) 표시 텍스트는 사용자의 **등록 국가→언어**로 번역해 내려준다(US-8-3). 진단 i18n과 **완전히 동일한 전략**을 재사용하며 별도 메커니즘을 만들지 않는다([ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md), US-2-6). 표시 문자열은 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드되고, 서버가 `user` 모듈 공개 query `getLanguage(userId)`로 취득한 언어 키로 문자열을 골라 조립하며, 해당 언어 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
+- **식별자·이미지·사진은 언어 무관 불변**: 주제·팁의 식별자(`code`/`id`), 주제 이미지(`LifeTipTopic.imageUrl`·`backgroundImageUrl`), 팁 사진(`LifeTip.imageUrl`)은 언어와 무관하게 동일하고, 표시 텍스트만 언어별이다. 응답 스키마도 언어와 무관하게 동일하다(서버가 언어 문자열만 채운다).
 - **비페이지**: 두 목록 모두 **고정·소규모 카탈로그**라 페이지네이션 없이 전체 배열을 한 번에 반환한다(페이지 객체 없음 — api-design-guide §4 목록 규약 미적용, 신고 사유 목록 US-7-3과 동일 성격).
 - **읽기 전용**: 생활 팁 도메인은 조회만 제공하며, 발행/구독하는 도메인 이벤트가 없다(1차 MVP 이후 홈 부가 기능).
 - **저장소**: 문서형·가변 스키마·언어-키 맵 임베드 특성상 **MongoDB**에 둔다([ADR-0005](../../adr/0005-polyglot-persistence.md) 폴리글랏, [ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md) 진단 카탈로그 저장 방식과 정합). 카탈로그는 Mongock `@ChangeUnit`(모듈별)로 `lifeTipTopics`/`lifeTips`에 시드 적재한다(진단 카탈로그 시드와 동일 방식, [ADR-0032](../../adr/0032-mongodb-migration-runner.md)).
@@ -27,7 +27,9 @@
 | 주제 `code` (`LifeTipTopic._id`) | UPPER_SNAKE string | 언어 무관 불변 식별자. 예: `MOVING_IN`, `ADMINISTRATION`, `TRANSPORT`, `FINANCE`, `HOUSING`. 노출 순서(`order`) 오름차순으로 정렬된다. US-8-2에서 특정 주제의 팁을 지정하는 path 키로 쓰인다 |
 | 팁 `id` (`LifeTip._id`) | ObjectId hex string | 언어 무관 불변 팁 식별자. 하나의 주제(`topicCode`)에 속한다(주제 : 팁 = 1 : N) |
 | 표시 텍스트 `name`/`title`/`content` | 번역 문자열 | 도큐먼트 안 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채운 결과. 응답에는 언어 문자열 하나만 담긴다 |
-| `imageUrl` | string \| null | 팁 사진(언어 무관). 사진이 없는 팁은 `null`(또는 생략) |
+| 주제 설명 `shortDescription`/`longDescription` | 번역 문자열 | 주제의 짧은 설명(홈 카드용)·긴 설명(주제 상세 상단용). `name`과 동일한 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채운다. 주제 목록 응답에 함께 노출된다 |
+| `LifeTipTopic.imageUrl`/`backgroundImageUrl` | string (NOT NULL) | 주제 카드 이미지·주제 상세 상단 배경 이미지(언어 무관 절대 CDN URL). 홈 카드·상세 상단이 항상 이미지를 그리므로 두 필드 모두 필수다(주제엔 "이미지 없는" 경계 케이스가 없다) |
+| `LifeTip.imageUrl` | string \| null | 팁 사진(언어 무관). 사진이 없는 팁은 `null`(또는 생략) |
 
 ---
 
@@ -35,7 +37,7 @@
 
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
-| GET | `/api/v1/life-tips/topics` | 생활 팁 주제 전체 목록(노출 순서, 등록 국가 언어로 번역). 비페이지 | 필수 | 200 |
+| GET | `/api/v1/life-tips/topics` | 생활 팁 주제 전체 목록(이미지·짧은/긴 설명 포함, 노출 순서, 등록 국가 언어로 번역). 비페이지 | 필수 | 200 |
 | GET | `/api/v1/life-tips/topics/{topicCode}/tips` | 해당 주제의 팁 전체(제목·내용·사진, 노출 순서, 등록 국가 언어로 번역). 비페이지 | 필수 | 200 |
 
 > **인증 = ROLE_USER(ACTIVE 세입자)**. 표시 언어를 등록 국가에서 도출하려면 온보딩으로 국가·언어가 확정된 사용자여야 하므로, 대상 액터는 **ACTIVE 상태(온보딩 완료)의 세입자(`userType=TENANT`)** 이고 모든 조회는 정식 인증(`ROLE_USER`)을 요구한다(진단 보호 엔드포인트와 동일 게이트). 온보딩 미완료(`PENDING`/`TERMS_AGREED`, `ROLE_ONBOARDING`) 토큰은 `403 AUTH_ONBOARDING_REQUIRED`, 인증 누락/위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`다. 구현 시 [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)의 정식 인증(ROLE_USER) 티어에 `/api/v1/life-tips/**`를 등록한다 — 기본 `anyRequest().authenticated()`는 온보딩 스코프 토큰도 통과시켜 ACTIVE 게이트가 아니기 때문이다.
@@ -46,11 +48,11 @@
 
 ### 1. GET `/api/v1/life-tips/topics` — 생활 팁 주제 목록 조회
 
-생활 팁이 어떤 주제로 나뉘어 있는지 **주제 전체 목록**을 노출 순서(`order` 오름차순)대로 반환한다(US-8-1). 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그이며, 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE)와 표시명 `name`(언어-키 맵)을 가진다. 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`을 채워 노출 순서대로 반환한다. 주제 수는 고정·소규모라 **페이지네이션 없이 전체 배열을 한 번에** 반환한다.
+생활 팁이 어떤 주제로 나뉘어 있는지 **주제 전체 목록**을 노출 순서(`order` 오름차순)대로 반환한다(US-8-1). 주제(`LifeTipTopic`)는 운영이 적재한 큐레이션 카탈로그이며, 각 주제는 언어 무관 식별 `code`(UPPER_SNAKE), 표시명 `name`·짧은 설명 `shortDescription`·긴 설명 `longDescription`(각각 언어-키 맵), 카드 이미지 `imageUrl`·배경 이미지 `backgroundImageUrl`(언어 무관 절대 CDN URL)을 가진다. 홈 화면 주제 카드는 `imageUrl` + `shortDescription`으로, 주제 상세 상단은 `backgroundImageUrl` + `longDescription`으로 그려지며, 앱은 목록에서 받은 주제 객체를 상세 화면까지 그대로 들고 간다(주제는 5건 고정·소규모라 6필드를 한 응답에 실어도 과다 전송 비용이 없다). 서버는 `user`의 `getLanguage(userId)`로 표시 언어를 정하고 그 언어 키(없으면 `en`)로 `name`·`shortDescription`·`longDescription`을 채우며, 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 언어와 무관하게 그대로 싣는다. 주제 수는 고정·소규모라 **페이지네이션 없이 전체 배열을 한 번에** 반환한다.
 
 - **인증**: 필수(ROLE_USER = ACTIVE 세입자).
-- **동작**: `lifeTipTopics` 컬렉션의 전체 주제를 `order` 오름차순으로 정렬해 `{ code, name }` 목록으로 조립한다. `code`는 도큐먼트 `_id`(UPPER_SNAKE)를 그대로 싣고, `name`은 도큐먼트 `name` 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채운다.
-- **번역(US-8-3)**: 반환 표시명(`name`)만 사용자 표시 언어로 번역한다. `code`는 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`의 등록 국가(`countries.lang`)에서 도출한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
+- **동작**: `lifeTipTopics` 컬렉션의 전체 주제를 `order` 오름차순으로 정렬해 `{ code, name, shortDescription, longDescription, imageUrl, backgroundImageUrl }` 목록으로 조립한다. `code`는 도큐먼트 `_id`(UPPER_SNAKE)를 그대로 싣고, `name`·`shortDescription`·`longDescription`은 각 도큐먼트의 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en` 폴백) 채우며, `imageUrl`·`backgroundImageUrl`은 도큐먼트의 절대 CDN URL을 언어와 무관하게 그대로 싣는다(항상 존재 — NOT NULL).
+- **번역(US-8-3)**: 표시 텍스트 `name`·`shortDescription`·`longDescription`만 사용자 표시 언어로 번역한다. `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 언어와 무관하게 동일하다. 표시 언어는 `Accept-Language` 헤더가 아니라 `user`의 등록 국가(`countries.lang`)에서 도출한다(아래 [i18n 절](#i18n번역--adr-0029-재사용)).
 - **페이지네이션**: 없음. 고정·소규모 카탈로그라 페이지 객체 없이 전체 배열을 반환한다(api-design-guide §4 비적용, US-7-3과 동일 성격).
 
 #### Headers
@@ -69,25 +71,60 @@
 
 #### 성공 Response — 200 OK (공통 래퍼)
 
-표시명(`name`)은 등록 국가가 일본인 사용자 예시(미지원 언어면 `en` 폴백). `code`는 번역과 무관하게 동일하다. 페이지 객체 없이 `topics[]` 전체 배열이 노출 순서대로 담긴다.
+표시 텍스트(`name`·`shortDescription`·`longDescription`)는 등록 국가가 일본인 사용자 예시(미지원 언어면 `en` 폴백). `code`와 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 번역과 무관하게 동일하다. 페이지 객체 없이 `topics[]` 전체 배열이 노출 순서대로 담긴다.
 
 ```jsonc
 {
   "success": true,
   "data": {
     "topics": [
-      { "code": "MOVING_IN",      "name": "入居・引っ越し" },
-      { "code": "ADMINISTRATION", "name": "行政手続き" },
-      { "code": "TRANSPORT",      "name": "交通" },
-      { "code": "FINANCE",        "name": "銀行・金融" },
-      { "code": "HOUSING",        "name": "住まい" }
+      {
+        "code": "MOVING_IN",
+        "name": "入居・引っ越し",
+        "shortDescription": "入居手続きから引っ越しの段取りまで、韓国での新生活スタートに必要な基本情報。",
+        "longDescription": "賃貸契約後の入居手続き、公共料金の開通、引っ越し業者の手配、転入に伴う各種届け出まで、韓国で新しい住まいに移る際の流れをまとめました。初めての入居でも迷わないよう、順を追って確認できます。",
+        "imageUrl": "https://cdn.kohere.app/life-tips/topics/moving-in/card.png",
+        "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/moving-in/background.png"
+      },
+      {
+        "code": "ADMINISTRATION",
+        "name": "行政手続き",
+        "shortDescription": "外国人登録や在留カード関連など、区役所で行う行政手続きの要点。",
+        "longDescription": "外国人登録、住所変更、在留資格の更新、印鑑登録など、韓国で暮らすうえで欠かせない行政手続きを解説します。必要書類や窓口、期限を事前に把握して、スムーズに手続きを進めましょう。",
+        "imageUrl": "https://cdn.kohere.app/life-tips/topics/administration/card.png",
+        "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/administration/background.png"
+      },
+      {
+        "code": "TRANSPORT",
+        "name": "交通",
+        "shortDescription": "地下鉄・バスの乗り方や交通カードなど、韓国の移動に役立つ情報。",
+        "longDescription": "T-moneyカードの購入・チャージ方法、地下鉄とバスの乗り換え、タクシーやシェア自転車の利用まで、韓国での日常の移動に必要な交通情報をまとめました。運賃や乗り換え割引の仕組みも紹介します。",
+        "imageUrl": "https://cdn.kohere.app/life-tips/topics/transport/card.png",
+        "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/transport/background.png"
+      },
+      {
+        "code": "FINANCE",
+        "name": "銀行・金融",
+        "shortDescription": "銀行口座の開設や送金・公共料金の支払いなど、お金まわりの基本。",
+        "longDescription": "外国人の銀行口座開設、モバイルバンキングの設定、海外送金、公共料金や家賃の自動振替まで、韓国での金融サービスの使い方を解説します。必要書類や手数料の目安もあわせて確認できます。",
+        "imageUrl": "https://cdn.kohere.app/life-tips/topics/finance/card.png",
+        "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/finance/background.png"
+      },
+      {
+        "code": "HOUSING",
+        "name": "住まい",
+        "shortDescription": "チョンセ・ウォルセなど韓国独自の賃貸制度と住まい選びのポイント。",
+        "longDescription": "チョンセ（전세）とウォルセ（월세）の違い、保証金と管理費の仕組み、契約時の注意点、退去時の精算まで、韓国の住まいに関する制度と実務をまとめました。物件選びで失敗しないための基礎知識が身につきます。",
+        "imageUrl": "https://cdn.kohere.app/life-tips/topics/housing/card.png",
+        "backgroundImageUrl": "https://cdn.kohere.app/life-tips/topics/housing/background.png"
+      }
     ]
   },
   "error": null
 }
 ```
 
-> `topics[]`는 `order` 오름차순으로 정렬된 전체 주제다(페이지네이션 없음). `code`는 언어 무관 불변 식별자(UPPER_SNAKE)이며, `name`만 서버가 `lifeTipTopics` 도큐먼트의 `name` 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en`) 채운 번역 문자열이다. 미지원 언어면 같은 `code`에 대해 `name`이 영어로 폴백된다(에러 아님). 주제가 0건이면 `topics: []`(에러 아님).
+> `topics[]`는 `order` 오름차순으로 정렬된 전체 주제다(페이지네이션 없음). `code`는 언어 무관 불변 식별자(UPPER_SNAKE)이고, 이미지 2필드(`imageUrl`·`backgroundImageUrl`)는 언어 무관 절대 CDN URL로 항상 존재한다(NOT NULL). `name`·`shortDescription`·`longDescription`은 서버가 `lifeTipTopics` 도큐먼트의 각 인라인 언어-키 맵에서 사용자 언어 키를 골라(없으면 `en`) 채운 번역 문자열이다. 미지원 언어면 같은 `code`에 대해 세 텍스트가 영어로 폴백된다(에러 아님). 홈 카드는 `imageUrl`+`shortDescription`, 주제 상세 상단은 `backgroundImageUrl`+`longDescription`으로 그린다. 주제가 0건이면 `topics: []`(에러 아님).
 
 #### 발생 가능한 에러
 
@@ -176,9 +213,9 @@ Request Body: 없음.
 
 - **번역 기준 = 사용자 등록 국가**: 표시 언어는 온보딩에서 수집한 등록 국가에서 도출한다. `Accept-Language` 헤더·토큰 클레임은 사용하지 않는다 — 사용자가 `Accept-Language`를 다른 값으로 보내도 응답 언어는 등록 국가로 결정된다.
 - **표시 언어 취득**: 서버가 `user` 모듈의 **공개 query `getLanguage(userId)`를 동기 호출**해 표시 언어를 취득한다. `user`가 `countries.lang`으로 국가→언어를 도출한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5 — 모듈 의존 `lifetip → user` 추가, 진단 `diagnosis → user`와 동일 근거).
-- **인라인 언어-키 맵 임베드**: 표시 문자열은 별도 메시지 컬렉션 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드한다 — 주제는 `name`, 팁은 `title`·`content` 각각 언어-키 맵이다(진단 문항 `question`·옵션 `label`과 동일 방식).
+- **인라인 언어-키 맵 임베드**: 표시 문자열은 별도 메시지 컬렉션 없이 주제·팁 도큐먼트 안 **인라인 언어-키 맵**(`{ "en": …, "ja": …, "ko": … }`)으로 임베드한다 — 주제는 `name`·`shortDescription`·`longDescription`, 팁은 `title`·`content` 각각 언어-키 맵이다(진단 문항 `question`·옵션 `label`과 동일 방식).
 - **`en` 폴백**: 서버는 사용자 언어 키로 문자열을 고르고, 그 키가 없으면 **영어(`en`)로 폴백**한다(에러 아님).
-- **식별자·사진 불변**: 주제·팁 식별자(`code`/`id`)와 `imageUrl`(사진)은 언어 무관 불변이고 표시 텍스트(`name`/`title`/`content`)만 언어별이다. **응답 스키마는 언어와 무관하게 동일**하며 서버가 언어 문자열만 채운다.
+- **식별자·이미지·사진 불변**: 주제·팁 식별자(`code`/`id`), 주제 이미지(`LifeTipTopic.imageUrl`·`backgroundImageUrl`), 팁 사진(`LifeTip.imageUrl`)은 언어 무관 불변이고 표시 텍스트(주제 `name`·`shortDescription`·`longDescription`, 팁 `title`·`content`)만 언어별이다. **응답 스키마는 언어와 무관하게 동일**하며 서버가 언어 문자열만 채운다.
 
 ---
 

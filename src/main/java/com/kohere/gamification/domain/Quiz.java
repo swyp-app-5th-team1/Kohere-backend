@@ -12,7 +12,7 @@ import java.util.Map;
  * @param question 언어-키 맵 문항(예: {@code {"en": "...", "ko": "..."}})
  * @param choices 4지선다 보기(키 A~D + 언어-키 맵 텍스트)
  * @param correctChoice 정답 보기 키(A~D). 조회 응답에는 노출하지 않고 오답 채점 시에만 반환한다
- * @param explanation 오답 사유·해설 언어-키 맵. 오답 채점 시에만 반환한다
+ * @param explanation 해설 언어-키 맵. 채점 시 정답·오답 모두 반환한다
  */
 public record Quiz(
     Long id,
