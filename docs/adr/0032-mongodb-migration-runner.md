@@ -35,6 +35,7 @@ Accepted
 5. **표류 수렴.** 제각각인 인덱스 부트스트랩(`DiagnosisIndexInitializer`·`ListingMongoIndexInitializer`)을 **단일 규약으로 통일**해 트리거·조건·예외처리 표류를 없앤다 — 멱등 인덱스 생성을 Mongock `@ChangeUnit`에 넣을지 통일된 부트스트랩 빈으로 남길지는 구현 시 정하되, 둘 중 무엇이든 모듈마다 제각각이 아니라 하나로 모은다.
 6. **비파괴·전진.** **사용자·운영 데이터(`diagnoses` 등)** 는 컬렉션 통째 drop이 아니라 **영향 문서만 교체/이행**한다([ADR-0005](./0005-polyglot-persistence.md) D7). 단 **서버 소유 레퍼런스 카탈로그**(`diagnosisQuestions`·`diagnosisSuggestions`)의 init 베이스라인(order 0000)은 결정성을 위해 **비우고 캐노니컬 시드를 재적재**할 수 있다(레퍼런스 데이터 한정 — 사용자 데이터엔 불가). 마이그레이션은 **신 스키마 코드(엔티티·enum) 이후**에 적용한다 — 일이 "구 데이터를 신 스키마로 이행"이기 때문이다.
 7. **의존성·호환.** [build.gradle](../../build.gradle)에 Spring Boot 3.5(Framework 6.2)·`spring-data-mongodb` 호환 Mongock 버전을 추가하고 ADR 주석을 단다(Flyway 주석과 대칭). 버전 호환은 **추가 전 검증**한다([ADR-0016](./0016-downgrade-to-spring-boot-3.md) 원칙 — 미성숙 도구가 Boot 호환을 막는 사례 회피).
+8. **애플리케이션 데이터 로더보다 먼저 실행.** Mongock의 Spring runner는 `InitializingBean`으로 설정한다. 기본 `ApplicationRunner` 방식은 로컬 fixture 로더·인덱스 초기화기와 실행 순서가 보장되지 않아, 신 스키마 객체가 구 validator에 먼저 저장될 수 있다. 따라서 모든 미적용 changeUnit을 완료한 뒤 로컬 fixture를 포함한 `ApplicationRunner`가 실행되게 한다.
 
 첫 적용은 진단 ③ 대학 그룹화·⑤ 월세 범위([ADR-0028](./0028-diagnosis-questions-catalog-store.md))다: **order 0000**(`DiagnosisCatalogSeedChangeUnit`)이 `diagnosisQuestions`(6 그룹·step-5 `NUMBER_RANGE`)·`diagnosisSuggestions` 캐노니컬 카탈로그를 비우고 적재하고, **order 0001**(`DiagnosisGroupAndRentRangeChangeUnit`)이 기존 `diagnoses` 문서의 `university`(개별→그룹 코드)·`monthlyBudgetMax`(→`monthlyRentMin`/`monthlyRentMax`)를 in-place 백필한다 — **신 스키마 코드 이후**.
 

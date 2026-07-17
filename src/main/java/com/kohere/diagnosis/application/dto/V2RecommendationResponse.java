@@ -37,7 +37,7 @@ public record V2RecommendationResponse(
                     new RecommendationResponse.RecommendedListing(
                         v.listingId(),
                         v.title(),
-                        v.type(),
+                        new RecommendationResponse.CodeLabel(v.type().code(), v.type().label()),
                         v.monthlyRentMin(),
                         v.monthlyRentMax(),
                         v.minDeposit(),
@@ -45,7 +45,12 @@ public record V2RecommendationResponse(
                         v.thumbnailUrl(),
                         v.lat(),
                         v.lng(),
-                        v.conditions()))
+                        v.conditions().stream()
+                            .map(
+                                value ->
+                                    new RecommendationResponse.CodeLabel(
+                                        value.code(), value.label()))
+                            .toList()))
             .toList();
     List<RecommendationResponse.MapMarker> markers =
         result.content().stream()

@@ -245,7 +245,7 @@
 | `id` | 식별자 | 애그리거트 식별자 |
 | `schemaVersion` | int | 문서 구조 버전 |
 | `landlordId` | 식별자 | 매물을 등록한 임대인 → `userType=LANDLORD`인 `User` 식별자 참조 |
-| `title` | String | 매물 제목 |
+| `title` | VO `LocalizedText` | 매물 제목 `{ko,en}` |
 | `type` | enum `ListingType` | 매물 유형 |
 | `status` | enum `ListingStatus` | 공개/임시저장/중지/삭제 상태 |
 | `rentalType` | enum `RentalType` | 매물 공통 임대 방식 |
@@ -275,7 +275,7 @@
 | 속성 | 타입 | 설명 |
 | --- | --- | --- |
 | `roomOfferId` | 식별자 | Listing 내부 방 상품 식별자 |
-| `name` | String | 사용자에게 노출되는 방 상품명 |
+| `name` | VO `LocalizedText` | 사용자에게 노출되는 방 상품명 `{ko,en}` |
 | `status` | enum `RoomOfferStatus` | 판매/노출 상태 |
 | `pricing` | VO `Pricing` | 월세·보증금·관리비·통화 |
 | `inventory` | VO `Inventory` | 전체 수량·계약 가능 수량·다음 입주 가능일 |
@@ -283,6 +283,8 @@
 | `roomImageUrls` | `List<String>` | 방 상품 전용 이미지 |
 
 **불변식:** `pricing.monthlyRent`·`pricing.deposit`·`pricing.maintenanceFee`는 KRW 정수 ≥0; Listing 루트의 `contract.minStayMonths <= contract.maxStayMonths`; `inventory.availableCount <= inventory.totalCount`이고 둘 다 0 이상; 계약 확정은 `availableCount > 0`인 방 상품에서만 가능하며 확정 시 수량을 원자적으로 1 감소시킨다; 가격·개인 욕실/2인실 여부 등 필터 결과가 달라지는 조건이 다르면 별도의 `RoomOffer`로 분리한다.
+
+**다국어 표시:** 매물마다 달라지는 제목·주소·역명·방 이름·환불 설명은 `LocalizedText(ko,en)`로 Listing에 저장한다. 검색·검증용 enum/시설/조건 code는 번역하지 않고, 별도 `listingCatalog`의 `{category,code,label:{ko,en}}`와 응답 시 결합한다. 프론트 응답은 `{code,label}`이며 label은 표시, code는 필터 요청에 사용한다. 로그인 사용자의 언어는 `listing → user::api getLanguage` 동기 조회로 결정하고 비로그인·미지원 언어는 영어로 폴백한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)).
 
 **`Favorite`** — 사용자가 매물을 찜한 사실 애그리거트 루트. 식별자 `id`, 비즈니스 키 `(userId, listingId)`.
 

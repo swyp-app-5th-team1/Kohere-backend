@@ -18,7 +18,7 @@ import org.springframework.data.mongodb.core.mapping.MongoId;
 /**
  * MongoDB {@code listings} 컬렉션 전용 저장 모델.
  *
- * <p>이 클래스는 실제 MongoDB 문서(v2 스키마)의 필드 배치를 그대로 표현한다. 따라서 프론트 응답 호환을 위해 유지되는 과거 API 키와는 다를 수 있다. 예를
+ * <p>이 클래스는 실제 MongoDB 문서(v3 스키마)의 필드 배치를 그대로 표현한다. 따라서 프론트 응답 호환을 위해 유지되는 과거 API 키와는 다를 수 있다. 예를
  * 들어 임대 방식·계약기간·환불 정책·성별 정책은 DB에는 Listing 루트에 저장하지만, 상세 API 응답에서는 기존 계약을 지키기 위해 roomOffer 응답에 다시
  * 조립해서 내려준다. 도메인 모델과의 변환은 {@link ListingMongoMapper}가 담당한다.
  */
@@ -33,7 +33,7 @@ class ListingDocument {
   @MongoId private final ObjectId id;
   private final int schemaVersion;
   private final Long landlordId;
-  private final String title;
+  private final LocalizedTextDocument title;
   private final ListingType type;
   private final Listing.ListingStatus status;
   private final Listing.RentalType rentalType;
@@ -54,12 +54,22 @@ class ListingDocument {
   private final Instant createdAt;
   private final Instant updatedAt;
 
-  /** MongoDB에 저장되는 주소 하위 문서다. */
-  record AddressDocument(String city, String district, String fullAddress, String detail) {}
+  /** MongoDB에 공통으로 저장되는 {@code {ko, en}} 다국어 문구 하위 문서다. */
+  record LocalizedTextDocument(String ko, String en) {}
+
+  /** MongoDB에 저장되는 주소 하위 문서다. 검색 코드는 문자열, 표시 주소는 다국어 문서로 보관한다. */
+  record AddressDocument(
+      String city,
+      String district,
+      LocalizedTextDocument fullAddress,
+      LocalizedTextDocument detail) {}
 
   /** MongoDB에 저장되는 가까운 교통 정보와 주변 편의시설 안내 하위 문서다. */
   record NearestTransitDocument(
-      Listing.TransitType type, String name, int walkMinutes, String nearbyPlacesDescription) {}
+      Listing.TransitType type,
+      LocalizedTextDocument name,
+      int walkMinutes,
+      LocalizedTextDocument nearbyPlacesDescription) {}
 
   /** MongoDB에 저장되는 건물 정보 하위 문서다. */
   record BuildingDocument(
@@ -96,7 +106,7 @@ class ListingDocument {
       int monthlyRent, int deposit, int maintenanceFee, Listing.Currency currency) {}
 
   /** MongoDB에 저장되는 환불 정책 하위 문서다. */
-  record RefundPolicyDocument(Listing.RefundPolicyCode code, String description) {}
+  record RefundPolicyDocument(Listing.RefundPolicyCode code, LocalizedTextDocument description) {}
 
   /** MongoDB에 저장되는 계약 조건 하위 문서다. */
   record ContractDocument(int minStayMonths, int maxStayMonths) {}
@@ -107,7 +117,7 @@ class ListingDocument {
   /** MongoDB에 저장되는 방 상품 하위 문서다. */
   record RoomOfferDocument(
       String roomOfferId,
-      String name,
+      LocalizedTextDocument name,
       Listing.RoomOfferStatus status,
       PricingDocument pricing,
       InventoryDocument inventory,

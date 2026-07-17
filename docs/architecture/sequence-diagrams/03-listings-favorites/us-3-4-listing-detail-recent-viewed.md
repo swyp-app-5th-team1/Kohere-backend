@@ -8,6 +8,7 @@ sequenceDiagram
     participant C as 앱(클라이언트)
     participant SEC as 공통 보안 필터
     participant LIST as listing 모듈
+    participant USER as user 공개 API
     participant DB as MongoDB
 
     U->>C: 매물 카드 탭 (상세 보기)
@@ -15,12 +16,14 @@ sequenceDiagram
     Note over SEC: JWT 검증 (서명·만료·클레임)
     SEC->>LIST: 인증된 요청 전달 (userId)
     alt 존재하는 매물
+        LIST->>USER: getLanguage(userId)
+        USER-->>LIST: 사용자가 선택한 표시 언어<br/>(미지원은 en)
         Note over LIST: 상세 구성 (직접 연락처 미노출)<br/>건물 공통정보 + roomOffers[] 방 상품<br/>(userId, listingId) 유니크로<br/>최근 본 매물 upsert, viewedAt 갱신<br/>저장 실패해도 상세 응답은 성공 유지
         LIST->>DB: ObjectId listingId로 매물 상세 조회
-        DB-->>LIST: 건물 매물 상세 + roomOffers[] + favoriteCount
+        DB-->>LIST: 건물 매물 상세 + roomOffers[] + favoriteCount<br/>+ listingCatalog 공통 코드 번역
         LIST->>DB: 최근 본 매물 기록 저장<br/>(userId, listingId) upsert, viewedAt 갱신<br/>사용자별 최신 30개 초과분 정리
         DB-->>LIST: 저장/정리 완료
-        LIST-->>C: 200 OK<br/>data( listingId(ObjectId string), imageUrls[], type,<br/>location, address, propertyPolicies,<br/>featureSummary, roomOffers[], favorited, favoriteCount )
+        LIST-->>C: 200 OK<br/>고유 문구=사용자 언어 문자열<br/>공통 표시 코드={code,label}<br/>roomOffers[], favorited, favoriteCount
         C-->>U: 사진 갤러리 + 상세 정보 표시
     else 없음/비공개/삭제
         LIST-->>C: 404 Not Found<br/>error.code=LISTING_NOT_FOUND
@@ -46,4 +49,5 @@ sequenceDiagram
 
 - `GET /api/v1/listings/{listingId}`는 인증 필수이며, 공통 보안 필터가 JWT를 검증한 뒤 `userId`를 `listing` 모듈로 전달한다. `listing` 모듈은 MongoDB에서 건물 공통 상세(`imageUrls[]`·`type`·`location`·`address`·`propertyPolicies`·`facilities`)와 방 상품 목록(`roomOffers[]`: 가격·재고·필터 태그)을 조회하고, 상세 응답의 `featureSummary`와 방별 계약/성별/임대방식 호환 필드는 서버에서 조립한다. 직접 연락처는 노출하지 않고 신청·문의는 채팅으로 연결한다.
 - 상세 조회가 성공하면 `listing` 모듈이 MongoDB에 `(userId, listingId)` 유니크 upsert로 최근 본 매물을 기록(`viewedAt` 갱신)하고, 사용자별 최신 30개 초과분은 오래된 기록부터 삭제한다. 저장/정리 실패는 상세 조회를 실패시키지 않고 로그로 남긴다.
+- `listing`은 `user::api getLanguage(userId)`로 표시 언어를 얻는다. 제목·주소·역명·방 이름·설명은 매물의 `{ko,en}`에서 선택하고, 시설·조건 등 공통 코드는 `listingCatalog`의 번역과 결합해 `{code,label}`로 반환한다. 프론트는 label을 표시하고 code를 요청/비교에 사용한다.
 - 없음/비공개/삭제 매물은 `404 LISTING_NOT_FOUND`(MongoDB 조회로 부재 확인), 최근 본 매물은 인증 필수 `GET /api/v1/users/me/recent-listings`로 공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 `listing` 모듈로 전달하며(토큰 없음/만료/위조면 SEC가 `401`로 차단해 MongoDB 접근 없음), 검증 통과 후 MongoDB에서 공개 매물만 최신순 최대 10건 조회한다.

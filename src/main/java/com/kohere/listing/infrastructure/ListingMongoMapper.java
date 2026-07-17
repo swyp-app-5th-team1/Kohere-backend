@@ -2,6 +2,7 @@ package com.kohere.listing.infrastructure;
 
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.LocalizedText;
 import java.util.List;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
@@ -9,7 +10,7 @@ import org.springframework.data.mongodb.core.geo.GeoJsonPoint;
 /**
  * 순수 도메인 모델과 MongoDB 저장 모델의 변환을 한곳에서 담당한다.
  *
- * <p>MongoDB 문서는 v2 저장 스키마를 따른다. v2에서는 매물 전체에 공통인 임대 방식·계약기간·환불 정책·성별 정책이 루트에 있고, 방 상품에는 가격·재고·검색
+ * <p>MongoDB 문서는 v3 저장 스키마를 따른다. v3에서는 매물 전체에 공통인 임대 방식·계약기간·환불 정책·성별 정책이 루트에 있고, 방 상품에는 가격·재고·검색
  * 태그만 남는다. 이 매퍼는 저장 구조와 도메인 구조를 1:1로 맞추는 역할만 하며, 프론트 호환 응답 조립은 {@code ListingResponseMapper}에서
  * 담당한다.
  */
@@ -23,7 +24,7 @@ final class ListingMongoMapper {
         .id(document.getId().toHexString())
         .schemaVersion(document.getSchemaVersion())
         .landlordId(document.getLandlordId())
-        .title(document.getTitle())
+        .title(toDomain(document.getTitle()))
         .type(document.getType())
         .status(document.getStatus())
         .rentalType(document.getRentalType())
@@ -53,7 +54,7 @@ final class ListingMongoMapper {
         .id(id)
         .schemaVersion(listing.getSchemaVersion())
         .landlordId(listing.getLandlordId())
-        .title(listing.getTitle())
+        .title(toDocument(listing.getTitle()))
         .type(listing.getType())
         .status(listing.getStatus())
         .rentalType(listing.getRentalType())
@@ -89,13 +90,19 @@ final class ListingMongoMapper {
   /** 저장 문서의 주소 값을 도메인 주소 값으로 변환한다. */
   private static Listing.Address toDomain(ListingDocument.AddressDocument address) {
     return new Listing.Address(
-        address.city(), address.district(), address.fullAddress(), address.detail());
+        address.city(),
+        address.district(),
+        toDomain(address.fullAddress()),
+        toDomainNullable(address.detail()));
   }
 
   /** 도메인 주소 값을 저장 문서 주소 값으로 변환한다. */
   private static ListingDocument.AddressDocument toDocument(Listing.Address address) {
     return new ListingDocument.AddressDocument(
-        address.city(), address.district(), address.fullAddress(), address.detail());
+        address.city(),
+        address.district(),
+        toDocument(address.fullAddress()),
+        toDocumentNullable(address.detail()));
   }
 
   /** 저장 문서의 가까운 교통 정보를 도메인 값으로 변환한다. */
@@ -104,7 +111,10 @@ final class ListingMongoMapper {
       return null;
     }
     return new Listing.NearestTransit(
-        transit.type(), transit.name(), transit.walkMinutes(), transit.nearbyPlacesDescription());
+        transit.type(),
+        toDomain(transit.name()),
+        transit.walkMinutes(),
+        toDomain(transit.nearbyPlacesDescription()));
   }
 
   /** 도메인 가까운 교통 정보를 저장 문서 값으로 변환한다. */
@@ -113,7 +123,10 @@ final class ListingMongoMapper {
       return null;
     }
     return new ListingDocument.NearestTransitDocument(
-        transit.type(), transit.name(), transit.walkMinutes(), transit.nearbyPlacesDescription());
+        transit.type(),
+        toDocument(transit.name()),
+        transit.walkMinutes(),
+        toDocument(transit.nearbyPlacesDescription()));
   }
 
   /** 저장 문서의 건물 정보를 도메인 값으로 변환한다. */
@@ -194,14 +207,14 @@ final class ListingMongoMapper {
 
   /** 저장 문서의 환불 정책을 도메인 값으로 변환한다. */
   private static Listing.RefundPolicy toDomain(ListingDocument.RefundPolicyDocument refundPolicy) {
-    return new Listing.RefundPolicy(refundPolicy.code(), refundPolicy.description());
+    return new Listing.RefundPolicy(refundPolicy.code(), toDomain(refundPolicy.description()));
   }
 
   /** 도메인 환불 정책을 저장 문서 값으로 변환한다. */
   private static ListingDocument.RefundPolicyDocument toDocument(
       Listing.RefundPolicy refundPolicy) {
     return new ListingDocument.RefundPolicyDocument(
-        refundPolicy.code(), refundPolicy.description());
+        refundPolicy.code(), toDocument(refundPolicy.description()));
   }
 
   /** 저장 문서의 계약기간을 도메인 값으로 변환한다. */
@@ -218,7 +231,7 @@ final class ListingMongoMapper {
   private static Listing.RoomOffer toDomain(ListingDocument.RoomOfferDocument roomOffer) {
     return new Listing.RoomOffer(
         roomOffer.roomOfferId(),
-        roomOffer.name(),
+        toDomain(roomOffer.name()),
         roomOffer.status(),
         new Listing.Pricing(
             roomOffer.pricing().monthlyRent(),
@@ -237,7 +250,7 @@ final class ListingMongoMapper {
   private static ListingDocument.RoomOfferDocument toDocument(Listing.RoomOffer roomOffer) {
     return new ListingDocument.RoomOfferDocument(
         objectIdHexOrNew(roomOffer.roomOfferId(), "roomOfferId"),
-        roomOffer.name(),
+        toDocument(roomOffer.name()),
         roomOffer.status(),
         new ListingDocument.PricingDocument(
             roomOffer.pricing().monthlyRent(),
@@ -263,6 +276,29 @@ final class ListingMongoMapper {
       Listing.Descriptions descriptions) {
     return new ListingDocument.DescriptionsDocument(
         descriptions.ko(), descriptions.en(), descriptions.extraNotes());
+  }
+
+  /** MongoDB의 다국어 하위 문서를 도메인 값 객체로 변환한다. */
+  private static LocalizedText toDomain(ListingDocument.LocalizedTextDocument text) {
+    if (text == null) {
+      throw new InvalidInputException("필수 다국어 문구가 누락되었습니다.");
+    }
+    return new LocalizedText(text.ko(), text.en());
+  }
+
+  /** nullable 다국어 하위 문서를 변환한다. 주소 상세처럼 값 자체가 없을 수 있는 필드에만 사용한다. */
+  private static LocalizedText toDomainNullable(ListingDocument.LocalizedTextDocument text) {
+    return text == null ? null : toDomain(text);
+  }
+
+  /** 도메인 다국어 값을 MongoDB 저장 하위 문서로 변환한다. */
+  private static ListingDocument.LocalizedTextDocument toDocument(LocalizedText text) {
+    return new ListingDocument.LocalizedTextDocument(text.ko(), text.en());
+  }
+
+  /** nullable 다국어 값을 MongoDB 저장 하위 문서로 변환한다. */
+  private static ListingDocument.LocalizedTextDocument toDocumentNullable(LocalizedText text) {
+    return text == null ? null : toDocument(text);
   }
 
   private static ObjectId objectIdOrNew(String value, String field) {

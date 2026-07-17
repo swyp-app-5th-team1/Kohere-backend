@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 public class ListingRecommendationServiceImpl implements ListingRecommendationService {
 
   private final ListingRepository listingRepository;
+  private final ListingLocalizationService listingLocalizationService;
 
   /**
    * 진단 조건을 매물 저장소 조회 조건으로 변환하고 추천 응답 view로 매핑한다.
@@ -34,6 +35,14 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
    */
   @Override
   public PageResponse<RecommendedListingView> recommendByCriteria(RecommendationCriteria criteria) {
+    return recommendByCriteria(criteria, "en");
+  }
+
+  /** 추천 카드의 제목·type·conditions를 지정 언어로 조립한다. */
+  @Override
+  public PageResponse<RecommendedListingView> recommendByCriteria(
+      RecommendationCriteria criteria, String language) {
+    ListingLocalizationContext localization = listingLocalizationService.contextFor(language);
     PageResponse<Listing> listings =
         listingRepository.recommend(
             criteria.region(),
@@ -46,7 +55,9 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
             criteria.size(),
             criteria.sort());
     return PageResponse.of(
-        listings.content().stream().map(ListingResponseMapper::toRecommendedView).toList(),
+        listings.content().stream()
+            .map(listing -> ListingResponseMapper.toRecommendedView(listing, localization))
+            .toList(),
         listings.page());
   }
 

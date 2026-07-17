@@ -1,7 +1,9 @@
 package com.kohere.listing.application;
 
+import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.listing.application.dto.CodeLabelResponse;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
@@ -10,45 +12,46 @@ import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.FavoriteListing;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingCatalogCategory;
 import com.kohere.listing.domain.ListingSearchResult;
+import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.RecentListingView;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-/** Listing 도메인 모델을 클라이언트 응답 DTO와 모듈 간 published view로 변환한다. */
+/** Listing 도메인 모델을 사용자 언어가 적용된 API 응답과 모듈 간 published view로 변환한다. */
 final class ListingResponseMapper {
 
   private ListingResponseMapper() {}
 
-  /**
-   * 목록/키워드 검색 화면의 매물 응답을 만든다.
-   *
-   * <p>저장소는 이미 Listing 단위로 중복을 제거하고, 그 매물 안에서 검색 조건을 통과한 활성 {@code roomOffers}만 담아 넘긴다. 응답은 상세 조회와
-   * 같은 public listing 문서 구조를 유지하되, 거리 계산 결과만 목록/검색 맥락의 계산값으로 덧붙인다.
-   */
-  static ListingSummaryResponse toSummary(ListingSearchResult result, Integer distanceMeters) {
+  /** 목록/키워드 검색 화면의 매물 응답을 현재 사용자 언어로 만든다. */
+  static ListingSummaryResponse toSummary(
+      ListingSearchResult result, Integer distanceMeters, ListingLocalizationContext localization) {
     Listing listing = result.listing();
     return new ListingSummaryResponse(
         listing.getId(),
-        listing.getTitle(),
-        listing.getType(),
+        localization.text(listing.getTitle()),
+        localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType()),
         listing.getStatus(),
-        listing.getRentalType(),
-        listing.getRefundPolicy(),
+        localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
+        toRefundPolicy(listing, localization),
         listing.getContract(),
-        listing.getGenderPolicy(),
+        localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
-        listing.getAddress(),
-        listing.getNearestTransit(),
+        toAddress(listing, localization),
+        toNearestTransit(listing, localization),
         listing.getNearbyUniversityCodes(),
-        listing.getBuilding(),
+        toBuilding(listing, localization),
         listing.getPropertyPolicies(),
-        listing.getFacilities(),
-        listingConditions(listing),
-        result.roomOffers().stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
-        listing.getDescriptions(),
+        toFacilities(listing, localization),
+        conditionResponses(listing, localization),
+        result.roomOffers().stream()
+            .map(roomOffer -> toRoomOfferResponse(roomOffer, localization))
+            .toList(),
+        toDescriptions(listing, localization),
         listing.getImageUrls(),
         distanceMeters,
         false,
@@ -60,16 +63,17 @@ final class ListingResponseMapper {
   /**
    * diagnosis 모듈에 전달할 추천 매물 published view를 만든다.
    *
-   * <p>추천 조회는 방 상품이 아니라 매물 단위 카드로 내려가므로, 월세는 단일 값이 아니라 활성 방 상품 전체의 최저~최고 범위({@code
-   * monthlyRentMin}/{@code monthlyRentMax})로 집계한다. 보증금도 같은 규칙으로 {@code minDeposit}/{@code
-   * maxDeposit} 범위를 내려준다. 조건 태그는 추천 카드의 Property Details 배지에 바로 쓸 수 있도록 매물의 활성 방 상품 전체 기준으로 계산한다.
+   * <p>현재 추천 published API는 아직 code/label 구조를 사용하지 않으므로 기본 영어 문구와 기존 raw code 계약을 유지한다. listing
+   * HTTP API의 다국어 응답과 별개의 모듈 간 계약이다.
    */
-  static RecommendedListingView toRecommendedView(Listing listing) {
+  static RecommendedListingView toRecommendedView(
+      Listing listing, ListingLocalizationContext localization) {
     List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
     return new RecommendedListingView(
         listing.getId(),
-        listing.getTitle(),
-        listing.getType().name(),
+        localization.text(listing.getTitle()),
+        toPublishedCodeLabel(
+            localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType())),
         minMonthlyRent(activeOffers),
         maxMonthlyRent(activeOffers),
         minDeposit(activeOffers),
@@ -77,22 +81,29 @@ final class ListingResponseMapper {
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
-        listingConditions(listing).stream().map(Enum::name).toList());
+        conditionResponses(listing, localization).stream()
+            .map(ListingResponseMapper::toPublishedCodeLabel)
+            .toList());
+  }
+
+  /** application 응답 code/label을 모듈 간 공개 타입으로 복사한다. */
+  private static ListingCodeLabelView toPublishedCodeLabel(CodeLabelResponse response) {
+    return new ListingCodeLabelView(response.code(), response.label());
   }
 
   /**
    * booking 모듈에 전달할 예약용 방 상품 published view를 만든다.
    *
-   * <p>이미 공개(PUBLISHED)·활성(ACTIVE)으로 선별된 매물·방 상품을 받아 요약·가격·입주 가능일을 원시 타입으로 조립한다(내부 도메인 타입 미공유).
+   * <p>booking 공개 계약에는 사용자 언어 인자가 없으므로 외국인 앱 기본값인 영어를 사용한다.
    */
   static RoomOfferBookingView toBookingView(Listing listing, Listing.RoomOffer offer) {
     return new RoomOfferBookingView(
         listing.getId(),
         offer.roomOfferId(),
-        listing.getTitle(),
+        listing.getTitle().resolve(LocalizedText.DEFAULT_LANGUAGE),
         thumbnailUrl(listing),
-        listing.getAddress().fullAddress(),
-        offer.name(),
+        listing.getAddress().fullAddress().resolve(LocalizedText.DEFAULT_LANGUAGE),
+        offer.name().resolve(LocalizedText.DEFAULT_LANGUAGE),
         offer.pricing().deposit(),
         offer.pricing().monthlyRent(),
         offer.inventory().nextAvailableFrom(),
@@ -105,33 +116,29 @@ final class ListingResponseMapper {
         listing.getId(), listing.getLocation().latitude(), listing.getLocation().longitude());
   }
 
-  /**
-   * 내 찜 목록에서 사용할 매물 응답 DTO를 만든다.
-   *
-   * <p>목록 항목은 이미 "내가 찜한 매물"이라는 전제에서 조회되므로 {@code favorited=true}로 고정한다. 공개 API에 내려줄 수 있는 listing 문서
-   * 필드는 상세 조회와 같은 형태로 유지하고, 찜 목록 전용 계산값인 {@code favoritedAt}만 마지막에 덧붙인다.
-   */
-  static FavoriteListingResponse toFavoriteListing(FavoriteListing favoriteListing) {
+  /** 내 찜 목록에서 사용할 매물 응답을 현재 사용자 언어로 만든다. */
+  static FavoriteListingResponse toFavoriteListing(
+      FavoriteListing favoriteListing, ListingLocalizationContext localization) {
     Listing listing = favoriteListing.listing();
     return new FavoriteListingResponse(
         listing.getId(),
-        listing.getTitle(),
-        listing.getType(),
+        localization.text(listing.getTitle()),
+        localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType()),
         listing.getStatus(),
-        listing.getRentalType(),
-        listing.getRefundPolicy(),
+        localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
+        toRefundPolicy(listing, localization),
         listing.getContract(),
-        listing.getGenderPolicy(),
+        localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
-        listing.getAddress(),
-        listing.getNearestTransit(),
+        toAddress(listing, localization),
+        toNearestTransit(listing, localization),
         listing.getNearbyUniversityCodes(),
-        listing.getBuilding(),
+        toBuilding(listing, localization),
         listing.getPropertyPolicies(),
-        listing.getFacilities(),
-        listingConditions(listing),
-        activeRoomOfferResponses(listing),
-        listing.getDescriptions(),
+        toFacilities(listing, localization),
+        conditionResponses(listing, localization),
+        activeRoomOfferResponses(listing, localization),
+        toDescriptions(listing, localization),
         listing.getImageUrls(),
         true,
         listing.getFavoriteCount(),
@@ -140,33 +147,29 @@ final class ListingResponseMapper {
         favoriteListing.favorite().getFavoritedAt());
   }
 
-  /**
-   * 최근 본 매물 화면에서 사용할 매물 응답을 만든다.
-   *
-   * <p>최근 본 목록은 검색 필터가 없으므로 공개 매물 안의 활성 방 상품 전체를 내려준다. {@code favorited}는 목록 조회 시
-   * FavoriteRepository에서 한 번에 계산한 사용자별 찜 여부이며, {@code viewedAt}만 최근 본 목록 전용 필드다.
-   */
-  static RecentListingResponse toRecentListing(RecentListingView recentListing, boolean favorited) {
+  /** 최근 본 매물 응답을 현재 사용자 언어로 만든다. */
+  static RecentListingResponse toRecentListing(
+      RecentListingView recentListing, boolean favorited, ListingLocalizationContext localization) {
     Listing listing = recentListing.listing();
     return new RecentListingResponse(
         listing.getId(),
-        listing.getTitle(),
-        listing.getType(),
+        localization.text(listing.getTitle()),
+        localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType()),
         listing.getStatus(),
-        listing.getRentalType(),
-        listing.getRefundPolicy(),
+        localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
+        toRefundPolicy(listing, localization),
         listing.getContract(),
-        listing.getGenderPolicy(),
+        localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
-        listing.getAddress(),
-        listing.getNearestTransit(),
+        toAddress(listing, localization),
+        toNearestTransit(listing, localization),
         listing.getNearbyUniversityCodes(),
-        listing.getBuilding(),
+        toBuilding(listing, localization),
         listing.getPropertyPolicies(),
-        listing.getFacilities(),
-        listingConditions(listing),
-        activeRoomOfferResponses(listing),
-        listing.getDescriptions(),
+        toFacilities(listing, localization),
+        conditionResponses(listing, localization),
+        activeRoomOfferResponses(listing, localization),
+        toDescriptions(listing, localization),
         listing.getImageUrls(),
         favorited,
         listing.getFavoriteCount(),
@@ -175,38 +178,28 @@ final class ListingResponseMapper {
         recentListing.recentListing().getViewedAt());
   }
 
-  /** 상세 화면에서 사용할 매물 상세 DTO를 만든다. */
-  static ListingDetailResponse toDetail(Listing listing) {
-    return toDetail(listing, false);
-  }
-
-  /**
-   * 상세 화면에서 사용할 매물 상세 DTO를 만든다.
-   *
-   * <p>응답 필드 배치는 MongoDB v2 저장 구조에 가깝게 유지한다. 다만 공개 상세 화면에 노출할 수 있도록 {@code roomOffers[]}는 ACTIVE
-   * 항목만 내려주고, 현재 사용자 기준 찜 여부({@code favorited})만 계산값으로 추가한다.
-   */
-  static ListingDetailResponse toDetail(Listing listing, boolean favorited) {
-    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
+  /** 상세 화면에서 사용할 매물 응답을 현재 사용자 언어로 만든다. */
+  static ListingDetailResponse toDetail(
+      Listing listing, boolean favorited, ListingLocalizationContext localization) {
     return new ListingDetailResponse(
         listing.getId(),
-        listing.getTitle(),
-        listing.getType(),
+        localization.text(listing.getTitle()),
+        localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType()),
         listing.getStatus(),
-        listing.getRentalType(),
-        listing.getRefundPolicy(),
+        localization.codeLabel(ListingCatalogCategory.RENTAL_TYPE, listing.getRentalType()),
+        toRefundPolicy(listing, localization),
         listing.getContract(),
-        listing.getGenderPolicy(),
+        localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
-        listing.getAddress(),
-        listing.getNearestTransit(),
+        toAddress(listing, localization),
+        toNearestTransit(listing, localization),
         listing.getNearbyUniversityCodes(),
-        listing.getBuilding(),
+        toBuilding(listing, localization),
         listing.getPropertyPolicies(),
-        listing.getFacilities(),
-        listingConditions(listing),
-        activeOffers.stream().map(ListingResponseMapper::toRoomOfferResponse).toList(),
-        listing.getDescriptions(),
+        toFacilities(listing, localization),
+        conditionResponses(listing, localization),
+        activeRoomOfferResponses(listing, localization),
+        toDescriptions(listing, localization),
         listing.getImageUrls(),
         favorited,
         listing.getFavoriteCount(),
@@ -214,26 +207,136 @@ final class ListingResponseMapper {
         listing.getUpdatedAt());
   }
 
+  /** 도메인 좌표를 프론트가 바로 쓰는 lat/lng 응답으로 바꾼다. */
   private static ListingDetailResponse.GeoPoint toGeoPoint(Listing listing) {
     return new ListingDetailResponse.GeoPoint(
         listing.getLocation().latitude(), listing.getLocation().longitude());
   }
 
+  /** 행정 코드는 보존하고 전체/상세 주소만 사용자 언어로 선택한다. */
+  private static ListingDetailResponse.AddressResponse toAddress(
+      Listing listing, ListingLocalizationContext localization) {
+    Listing.Address address = listing.getAddress();
+    return new ListingDetailResponse.AddressResponse(
+        address.city(),
+        address.district(),
+        localization.text(address.fullAddress()),
+        localization.text(address.detail()));
+  }
+
+  /** 가까운 교통수단 코드는 code/label로, 고유 문구는 선택된 언어로 바꾼다. */
+  private static ListingDetailResponse.NearestTransitResponse toNearestTransit(
+      Listing listing, ListingLocalizationContext localization) {
+    Listing.NearestTransit transit = listing.getNearestTransit();
+    return new ListingDetailResponse.NearestTransitResponse(
+        localization.codeLabel(ListingCatalogCategory.TRANSIT_TYPE, transit.type()),
+        localization.text(transit.name()),
+        transit.walkMinutes(),
+        localization.text(transit.nearbyPlacesDescription()));
+  }
+
+  /** 건물 유형만 code/label로 바꾸고 물리 정보는 그대로 보존한다. */
+  private static ListingDetailResponse.BuildingResponse toBuilding(
+      Listing listing, ListingLocalizationContext localization) {
+    Listing.Building building = listing.getBuilding();
+    return new ListingDetailResponse.BuildingResponse(
+        localization.codeLabel(ListingCatalogCategory.BUILDING_TYPE, building.type()),
+        building.usedFloorMin(),
+        building.usedFloorMax(),
+        building.totalFloors(),
+        building.parkingAvailable(),
+        building.elevatorAvailable());
+  }
+
+  /** 환불 정책의 안정적인 code와 현재 언어의 고유 설명 문장을 조합한다. */
+  private static ListingDetailResponse.RefundPolicyResponse toRefundPolicy(
+      Listing listing, ListingLocalizationContext localization) {
+    return new ListingDetailResponse.RefundPolicyResponse(
+        listing.getRefundPolicy().code().name(),
+        localization.text(listing.getRefundPolicy().description()));
+  }
+
+  /** facilities의 모든 화면 표시 코드를 해당 카테고리의 code/label 응답으로 바꾼다. */
+  private static ListingDetailResponse.FacilitiesResponse toFacilities(
+      Listing listing, ListingLocalizationContext localization) {
+    Listing.Facilities facilities = listing.getFacilities();
+    return new ListingDetailResponse.FacilitiesResponse(
+        enumCodeLabels(
+            facilities.heatingSystem(), ListingCatalogCategory.HEATING_SYSTEM, localization),
+        stringCodeLabels(facilities.kitchen(), ListingCatalogCategory.KITCHEN, localization),
+        stringCodeLabels(facilities.laundry(), ListingCatalogCategory.LAUNDRY, localization),
+        stringCodeLabels(
+            facilities.livingAmenities(), ListingCatalogCategory.LIVING_AMENITY, localization),
+        stringCodeLabels(
+            facilities.securityFeatures(), ListingCatalogCategory.SECURITY_FEATURE, localization),
+        facilities.commonSpaces().stream()
+            .map(
+                space ->
+                    new ListingDetailResponse.CommonSpaceResponse(
+                        localization.codeLabel(ListingCatalogCategory.COMMON_SPACE, space.type()),
+                        space.count()))
+            .toList(),
+        stringCodeLabels(
+            facilities.providedSupplies(), ListingCatalogCategory.PROVIDED_SUPPLY, localization));
+  }
+
+  /** 상세 설명은 현재 언어 하나만 선택하고 extraNotes는 기존 요청 범위대로 그대로 둔다. */
+  private static ListingDetailResponse.DescriptionsResponse toDescriptions(
+      Listing listing, ListingLocalizationContext localization) {
+    return new ListingDetailResponse.DescriptionsResponse(
+        localization.text(listing.getDescriptions().text()),
+        listing.getDescriptions().extraNotes());
+  }
+
+  /** 공개 응답에 포함할 ACTIVE 방 상품을 현재 언어 응답으로 바꾼다. */
   private static List<ListingDetailResponse.RoomOfferResponse> activeRoomOfferResponses(
-      Listing listing) {
+      Listing listing, ListingLocalizationContext localization) {
     return activeRoomOffers(listing).stream()
-        .map(ListingResponseMapper::toRoomOfferResponse)
+        .map(roomOffer -> toRoomOfferResponse(roomOffer, localization))
         .toList();
   }
 
+  /** 방 이름을 선택 언어로, filterTags를 code/label 목록으로 바꾼다. */
+  private static ListingDetailResponse.RoomOfferResponse toRoomOfferResponse(
+      Listing.RoomOffer roomOffer, ListingLocalizationContext localization) {
+    return new ListingDetailResponse.RoomOfferResponse(
+        roomOffer.roomOfferId(),
+        localization.text(roomOffer.name()),
+        roomOffer.status(),
+        roomOffer.pricing(),
+        roomOffer.inventory(),
+        enumCodeLabels(roomOffer.filterTags(), ListingCatalogCategory.CONDITION_TAG, localization),
+        roomOffer.roomImageUrls());
+  }
+
+  /** 매물 카드·상세 조건 합집합을 프론트가 사용할 code/label 목록으로 바꾼다. */
+  private static List<CodeLabelResponse> conditionResponses(
+      Listing listing, ListingLocalizationContext localization) {
+    return enumCodeLabels(
+        listingConditions(listing), ListingCatalogCategory.CONDITION_TAG, localization);
+  }
+
+  /** enum 코드 집합을 enum 선언 순서가 유지되는 안정적인 code/label 목록으로 바꾼다. */
+  private static List<CodeLabelResponse> enumCodeLabels(
+      Set<? extends Enum<?>> codes,
+      ListingCatalogCategory category,
+      ListingLocalizationContext localization) {
+    return codes.stream()
+        .sorted(Comparator.comparingInt(code -> code.ordinal()))
+        .map(code -> localization.codeLabel(category, code))
+        .toList();
+  }
+
+  /** 문자열 코드 집합을 코드 오름차순의 안정적인 code/label 목록으로 바꾼다. */
+  private static List<CodeLabelResponse> stringCodeLabels(
+      Set<String> codes, ListingCatalogCategory category, ListingLocalizationContext localization) {
+    return codes.stream().sorted().map(code -> localization.codeLabel(category, code)).toList();
+  }
+
   /**
-   * 매물 카드와 상세의 Property Details 배지에 사용할 매물 단위 조건 목록을 만든다.
+   * ACTIVE 방 상품의 filterTags 합집합과 매물 정책에서 파생되는 NO_ARC 조건을 만든다.
    *
-   * <p>{@code roomOffers[].filterTags}는 방 타입마다 다른 조건이다. 프론트가 매물 카드나 상세 상단에서 "이 매물이 제공하는 조건"을 한 줄로
-   * 보여줄 때는 활성 방 상품 전체의 태그 합집합이 필요하다. 그래서 INACTIVE 방은 제외하고 ACTIVE 방의 태그만 합친다.
-   *
-   * <p>{@code NO_ARC}는 방 상품 태그가 아니라 매물 정책({@code propertyPolicies.arcRequired=false})에서 파생되는 조건이다.
-   * 따라서 방 태그 합집합을 만든 뒤 ARC가 필요 없는 매물이면 별도로 {@code NO_ARC}를 추가한다.
+   * <p>이 메서드는 저장 값을 바꾸지 않고 응답에서만 매물 단위 조건을 계산한다.
    */
   private static Set<ConditionTag> listingConditions(Listing listing) {
     EnumSet<ConditionTag> conditions = EnumSet.noneOf(ConditionTag.class);
@@ -246,46 +349,29 @@ final class ListingResponseMapper {
     return Collections.unmodifiableSet(conditions);
   }
 
-  /** 방 상품 하나를 상세 응답의 roomOffers 항목으로 변환한다. */
-  private static ListingDetailResponse.RoomOfferResponse toRoomOfferResponse(
-      Listing.RoomOffer roomOffer) {
-    return new ListingDetailResponse.RoomOfferResponse(
-        roomOffer.roomOfferId(),
-        roomOffer.name(),
-        roomOffer.status(),
-        roomOffer.pricing(),
-        roomOffer.inventory(),
-        roomOffer.filterTags(),
-        roomOffer.roomImageUrls());
-  }
-
-  /**
-   * 필터 없는 공개 응답에서 내려줄 활성 방 상품만 추린다.
-   *
-   * <p>찜 목록과 최근 본 매물은 검색 조건이 없으므로, 공개 화면에 노출 가능한 ACTIVE 방 상품 전체를 내려준다.
-   */
+  /** 공개 화면에 노출할 수 있는 ACTIVE 방 상품만 반환한다. */
   private static List<Listing.RoomOffer> activeRoomOffers(Listing listing) {
     return listing.getRoomOffers().stream()
         .filter(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE)
         .toList();
   }
 
-  /** 추천 published view에서 쓸 활성 방 상품 중 가장 낮은 월세다. */
+  /** 추천 카드에 사용할 활성 방 상품 중 가장 낮은 월세다. */
   private static int minMonthlyRent(List<Listing.RoomOffer> offers) {
     return offers.stream().mapToInt(offer -> offer.pricing().monthlyRent()).min().orElseThrow();
   }
 
-  /** 추천 published view에서 쓸 활성 방 상품 중 가장 높은 월세다. */
+  /** 추천 카드에 사용할 활성 방 상품 중 가장 높은 월세다. */
   private static int maxMonthlyRent(List<Listing.RoomOffer> offers) {
     return offers.stream().mapToInt(offer -> offer.pricing().monthlyRent()).max().orElseThrow();
   }
 
-  /** 조건을 통과한 방 상품들의 보증금 최저값이다. */
+  /** 추천 카드에 사용할 보증금 최저값이다. */
   private static int minDeposit(List<Listing.RoomOffer> offers) {
     return offers.stream().mapToInt(offer -> offer.pricing().deposit()).min().orElseThrow();
   }
 
-  /** 조건을 통과한 방 상품들의 보증금 최고값이다. */
+  /** 추천 카드에 사용할 보증금 최고값이다. */
   private static int maxDeposit(List<Listing.RoomOffer> offers) {
     return offers.stream().mapToInt(offer -> offer.pricing().deposit()).max().orElseThrow();
   }

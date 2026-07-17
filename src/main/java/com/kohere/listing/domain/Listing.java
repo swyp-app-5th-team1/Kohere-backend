@@ -11,7 +11,7 @@ import lombok.Getter;
 /**
  * 주소와 공용시설을 공유하는 건물/숙소 단위 매물 애그리거트다.
  *
- * <p>이 모델은 MongoDB에 저장되는 v2 스키마의 의미를 코드로 표현한다. 매물 전체에 동일하게 적용되는 임대 방식·계약기간·환불 정책·성별 정책은 Listing 루트가
+ * <p>이 모델은 MongoDB에 저장되는 v3 스키마의 의미를 코드로 표현한다. 매물 전체에 동일하게 적용되는 임대 방식·계약기간·환불 정책·성별 정책은 Listing 루트가
  * 소유하고, 가격·재고·방 이미지처럼 방 상품마다 달라지는 값만 {@link RoomOffer}가 소유한다. 프론트 API가 기존 응답 키를 유지해야 하는 경우에는
  * application 계층의 응답 매퍼가 루트 값을 방 응답에 다시 조립한다.
  *
@@ -24,14 +24,14 @@ public class Listing {
   /** 매물의 고유 식별자다. MongoDB 문서 id와 대응된다. */
   private final String id;
 
-  /** 저장 스키마 버전이다. v1/v2 문서 변환과 호환성 판단에 사용한다. */
+  /** 저장 스키마 버전이다. 레거시 문서 변환과 호환성 판단에 사용한다. */
   private final int schemaVersion;
 
   /** 매물을 소유하거나 관리하는 집주인 계정 id다. */
   private final Long landlordId;
 
-  /** 목록과 상세 화면에 노출되는 매물명이다. */
-  private final String title;
+  /** 목록과 상세 화면에 노출되는 한국어·영어 매물명이다. */
+  private final LocalizedText title;
 
   /** 고시원, 빌라, 아파트 같은 매물의 큰 분류다. */
   private final ListingType type;
@@ -249,8 +249,14 @@ public class Listing {
     }
   }
 
-  /** 행정구역과 화면 표시 주소를 묶은 주소 값이다. */
-  public record Address(String city, String district, String fullAddress, String detail) {}
+  /**
+   * 행정구역 코드와 사용자에게 보여줄 다국어 주소를 묶은 값이다.
+   *
+   * <p>{@code city}/{@code district}는 검색에 쓰는 언어 무관 코드이므로 그대로 유지하고, 실제 화면에 노출되는 전체 주소와 상세 주소만
+   * 한국어·영어로 저장한다. 상세 주소는 데이터에 없을 수 있으므로 {@code null}을 허용한다.
+   */
+  public record Address(
+      String city, String district, LocalizedText fullAddress, LocalizedText detail) {}
 
   /**
    * 매물에서 가장 가까운 대중교통과 도보 시간, 주변 편의시설 안내 문구를 나타낸다.
@@ -260,7 +266,10 @@ public class Listing {
    * 내려줄 수 있다.
    */
   public record NearestTransit(
-      TransitType type, String name, int walkMinutes, String nearbyPlacesDescription) {
+      TransitType type,
+      LocalizedText name,
+      int walkMinutes,
+      LocalizedText nearbyPlacesDescription) {
     public NearestTransit {
       if (walkMinutes < 0) {
         throw new InvalidInputException("도보 시간은 0 이상이어야 합니다.");
@@ -317,8 +326,8 @@ public class Listing {
     }
   }
 
-  /** 환불 정책 코드와 집주인/서비스 설명 문구를 함께 보관한다. */
-  public record RefundPolicy(RefundPolicyCode code, String description) {}
+  /** 환불 정책 코드와 사용자에게 보여줄 한국어·영어 설명 문구를 함께 보관한다. */
+  public record RefundPolicy(RefundPolicyCode code, LocalizedText description) {}
 
   /** 매물 전체에 적용되는 최소·최대 계약기간이다. 환불 정책은 별도 루트 값인 {@link RefundPolicy}가 소유한다. */
   public record Contract(int minStayMonths, int maxStayMonths) {
@@ -341,7 +350,7 @@ public class Listing {
   /** 같은 가격·재고·검색 태그를 공유하는 방 묶음이다. 여러 실제 방은 availableCount로 관리한다. */
   public record RoomOffer(
       String roomOfferId,
-      String name,
+      LocalizedText name,
       RoomOfferStatus status,
       Pricing pricing,
       Inventory inventory,
@@ -353,6 +362,17 @@ public class Listing {
     }
   }
 
-  /** 한국어·영어 상세 설명과 자유 입력 주의사항이다. */
-  public record Descriptions(String ko, String en, String extraNotes) {}
+  /**
+   * 한국어·영어 상세 설명과 자유 입력 주의사항이다.
+   *
+   * <p>기존 MongoDB 모양({@code descriptions.ko/en/extraNotes})을 유지한다. 화면 응답에서는 {@link #text()}로 만든 다국어
+   * 값을 사용자 언어에 맞게 하나의 문자열로 선택한다. {@code extraNotes}는 이번 변경 범위에서 번역하지 않는다.
+   */
+  public record Descriptions(String ko, String en, String extraNotes) {
+
+    /** 설명의 한국어·영어 값을 공통 다국어 값 객체로 묶는다. */
+    public LocalizedText text() {
+      return new LocalizedText(ko, en);
+    }
+  }
 }

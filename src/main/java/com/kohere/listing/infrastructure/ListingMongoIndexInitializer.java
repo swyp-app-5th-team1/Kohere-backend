@@ -32,11 +32,77 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
   }
 
   /**
-   * MongoDB가 저장 단계에서 확인할 listings v2 JSON Schema다.
+   * MongoDB가 저장 단계에서 확인할 listings v3 JSON Schema다.
    *
    * <p>도메인 검증이 1차 방어선이고, 이 스키마는 로컬 DB나 운영 DB에 잘못된 형태의 문서가 직접 들어오는 것을 막는 2차 방어선이다.
    */
   static Document listingJsonSchema() {
+    return new Document("bsonType", "object")
+        .append(
+            "required",
+            java.util.List.of(
+                "_id",
+                "schemaVersion",
+                "landlordId",
+                "title",
+                "type",
+                "status",
+                "rentalType",
+                "refundPolicy",
+                "contract",
+                "genderPolicy",
+                "location",
+                "address",
+                "nearestTransit",
+                "nearbyUniversityCodes",
+                "building",
+                "propertyPolicies",
+                "facilities",
+                "roomOffers",
+                "descriptions",
+                "imageUrls",
+                "favoriteCount",
+                "createdAt",
+                "updatedAt"))
+        .append(
+            "properties",
+            new Document()
+                .append("_id", bsonType("objectId"))
+                .append(
+                    "schemaVersion",
+                    new Document("bsonType", "int").append("enum", java.util.List.of(3)))
+                .append("landlordId", bsonType("long"))
+                .append("title", localizedTextSchema())
+                .append("type", bsonType("string"))
+                .append("status", bsonType("string"))
+                .append("rentalType", bsonType("string"))
+                .append("refundPolicy", refundPolicySchema())
+                .append("contract", contractSchema())
+                .append("genderPolicy", bsonType("string"))
+                .append("location", locationSchema())
+                .append("address", addressSchema())
+                .append("nearestTransit", nearestTransitSchema())
+                .append("nearbyUniversityCodes", stringArraySchema())
+                .append("building", buildingSchema())
+                .append("propertyPolicies", propertyPoliciesSchema())
+                .append("facilities", facilitiesSchema())
+                .append(
+                    "roomOffers",
+                    new Document("bsonType", "array").append("items", roomOfferSchema()))
+                .append("descriptions", descriptionsSchema())
+                .append("imageUrls", stringArraySchema())
+                .append("favoriteCount", bsonType("int"))
+                .append("createdAt", bsonType("date"))
+                .append("updatedAt", bsonType("date")));
+  }
+
+  /**
+   * 과거 0105 ChangeUnit이 적용했던 listings v2 JSON Schema다.
+   *
+   * <p>이미 배포된 마이그레이션의 의미를 바꾸지 않기 위해 v3 스키마와 별도로 보존한다. 신규 최종 validator는 {@link
+   * #listingJsonSchema()}를 사용한다.
+   */
+  static Document listingV2JsonSchema() {
     return new Document("bsonType", "object")
         .append(
             "required",
@@ -74,19 +140,19 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
                 .append("type", bsonType("string"))
                 .append("status", bsonType("string"))
                 .append("rentalType", bsonType("string"))
-                .append("refundPolicy", refundPolicySchema())
+                .append("refundPolicy", refundPolicyV2Schema())
                 .append("contract", contractSchema())
                 .append("genderPolicy", bsonType("string"))
                 .append("location", locationSchema())
-                .append("address", addressSchema())
-                .append("nearestTransit", nearestTransitSchema())
+                .append("address", addressV2Schema())
+                .append("nearestTransit", nearestTransitV2Schema())
                 .append("nearbyUniversityCodes", stringArraySchema())
                 .append("building", buildingSchema())
                 .append("propertyPolicies", propertyPoliciesSchema())
                 .append("facilities", facilitiesSchema())
                 .append(
                     "roomOffers",
-                    new Document("bsonType", "array").append("items", roomOfferSchema()))
+                    new Document("bsonType", "array").append("items", roomOfferV2Schema()))
                 .append("descriptions", descriptionsSchema())
                 .append("imageUrls", stringArraySchema())
                 .append("favoriteCount", bsonType("int"))
@@ -104,8 +170,28 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
     return new Document("bsonType", "array").append("items", bsonType("string"));
   }
 
+  /** 한국어와 영어가 모두 필요한 사용자 표시 문구의 공통 하위 문서 스키마다. */
+  private static Document localizedTextSchema() {
+    return new Document("bsonType", "object")
+        .append("required", java.util.List.of("ko", "en"))
+        .append(
+            "properties",
+            new Document().append("ko", bsonType("string")).append("en", bsonType("string")));
+  }
+
   /** 환불 정책 하위 문서 스키마다. */
   private static Document refundPolicySchema() {
+    return new Document("bsonType", "object")
+        .append("required", java.util.List.of("code", "description"))
+        .append(
+            "properties",
+            new Document()
+                .append("code", bsonType("string"))
+                .append("description", localizedTextSchema()));
+  }
+
+  /** v2 환불 정책은 표시 설명을 단일 문자열로 저장했다. */
+  private static Document refundPolicyV2Schema() {
     return new Document("bsonType", "object")
         .append("required", java.util.List.of("code", "description"))
         .append(
@@ -146,12 +232,44 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
             new Document()
                 .append("city", bsonType("string"))
                 .append("district", bsonType("string"))
+                .append("fullAddress", localizedTextSchema())
+                .append(
+                    "detail",
+                    new Document(
+                        "anyOf",
+                        java.util.List.of(
+                            localizedTextSchema(), new Document("bsonType", "null")))));
+  }
+
+  /** v2 주소는 사용자 표시 주소를 단일 문자열로 저장했다. */
+  private static Document addressV2Schema() {
+    return new Document("bsonType", "object")
+        .append("required", java.util.List.of("city", "district", "fullAddress"))
+        .append(
+            "properties",
+            new Document()
+                .append("city", bsonType("string"))
+                .append("district", bsonType("string"))
                 .append("fullAddress", bsonType("string"))
                 .append("detail", new Document("bsonType", java.util.List.of("string", "null"))));
   }
 
   /** 가까운 교통수단 하위 문서 스키마다. */
   private static Document nearestTransitSchema() {
+    return new Document("bsonType", "object")
+        .append(
+            "required", java.util.List.of("type", "name", "walkMinutes", "nearbyPlacesDescription"))
+        .append(
+            "properties",
+            new Document()
+                .append("type", bsonType("string"))
+                .append("name", localizedTextSchema())
+                .append("walkMinutes", bsonType("int"))
+                .append("nearbyPlacesDescription", localizedTextSchema()));
+  }
+
+  /** v2 교통 정보는 역명과 주변 안내를 단일 문자열로 저장했다. */
+  private static Document nearestTransitV2Schema() {
     return new Document("bsonType", "object")
         .append(
             "required", java.util.List.of("type", "name", "walkMinutes", "nearbyPlacesDescription"))
@@ -263,6 +381,31 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
             "properties",
             new Document()
                 .append("roomOfferId", bsonType("string"))
+                .append("name", localizedTextSchema())
+                .append("status", bsonType("string"))
+                .append("pricing", pricingSchema())
+                .append("inventory", inventorySchema())
+                .append("filterTags", stringArraySchema())
+                .append("roomImageUrls", stringArraySchema()));
+  }
+
+  /** v2 방 상품은 사용자 표시 방 이름을 단일 문자열로 저장했다. */
+  private static Document roomOfferV2Schema() {
+    return new Document("bsonType", "object")
+        .append(
+            "required",
+            java.util.List.of(
+                "roomOfferId",
+                "name",
+                "status",
+                "pricing",
+                "inventory",
+                "filterTags",
+                "roomImageUrls"))
+        .append(
+            "properties",
+            new Document()
+                .append("roomOfferId", bsonType("string"))
                 .append("name", bsonType("string"))
                 .append("status", bsonType("string"))
                 .append("pricing", pricingSchema())
@@ -346,6 +489,16 @@ class ListingMongoIndexInitializer implements ApplicationRunner {
             .on("status", ASC)
             .on("propertyPolicies.arcRequired", ASC)
             .named("listings_status_arc_required"));
+
+    var catalogIndexOperations = mongoTemplate.indexOps(ListingCatalogDocument.class);
+
+    // category+code는 프론트에 전달할 하나의 번역 항목을 식별한다. 같은 코드가 카테고리별로 다른 라벨을 가질 수 있다.
+    catalogIndexOperations.createIndex(
+        new Index()
+            .on("category", ASC)
+            .on("code", ASC)
+            .unique()
+            .named("listing_catalog_category_code"));
 
     var searchPlaceIndexOperations = mongoTemplate.indexOps(SearchPlaceDocument.class);
 

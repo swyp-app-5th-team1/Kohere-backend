@@ -176,7 +176,7 @@ public class DiagnosisService {
     return new RecommendationResponse.RecommendedListing(
         v.listingId(),
         v.title(),
-        v.type(),
+        new RecommendationResponse.CodeLabel(v.type().code(), v.type().label()),
         v.monthlyRentMin(),
         v.monthlyRentMax(),
         v.minDeposit(),
@@ -184,7 +184,9 @@ public class DiagnosisService {
         v.thumbnailUrl(),
         v.lat(),
         v.lng(),
-        v.conditions());
+        v.conditions().stream()
+            .map(value -> new RecommendationResponse.CodeLabel(value.code(), value.label()))
+            .toList());
   }
 
   private static DiagnosisResponse toResponse(Diagnosis d) {

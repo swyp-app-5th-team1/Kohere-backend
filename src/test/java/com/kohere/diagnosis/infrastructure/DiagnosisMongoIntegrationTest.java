@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
@@ -34,6 +35,7 @@ import com.kohere.diagnosis.domain.UniversityGroup;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
+import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.listing.api.RecommendedListingView;
@@ -94,6 +96,11 @@ class DiagnosisMongoIntegrationTest {
     diagnosisMongoRepository.deleteAll();
     questionMongoRepository.deleteAll();
     suggestionMongoRepository.deleteAll();
+    given(userAccountService.getLanguage(anyLong())).willReturn("en");
+    given(listingRecommendationService.recommendByCriteria(any(), anyString()))
+        .willAnswer(
+            invocation ->
+                listingRecommendationService.recommendByCriteria(invocation.getArgument(0)));
   }
 
   @Test
@@ -315,7 +322,7 @@ class DiagnosisMongoIntegrationTest {
                 new RecommendedListingView(
                     "6858e2000000000000000001",
                     "Cozy",
-                    "CO_LIVING",
+                    new ListingCodeLabelView("CO_LIVING", "Co-living"),
                     550000,
                     650000,
                     1_000_000,
@@ -323,14 +330,14 @@ class DiagnosisMongoIntegrationTest {
                     "http://img",
                     37.5,
                     126.9,
-                    List.of("FEMALE_ONLY"))));
+                    List.of(new ListingCodeLabelView("FEMALE_ONLY", "Female Only")))));
 
     RecommendationResponse rec =
         diagnosisService.getRecommendations(
             userId, created.diagnosisId(), 0, 20, "recommended,desc");
     assertThat(rec.content()).hasSize(1);
     assertThat(rec.content().get(0).listingId()).isEqualTo("6858e2000000000000000001");
-    assertThat(rec.content().get(0).type()).isEqualTo("CO_LIVING");
+    assertThat(rec.content().get(0).type().code()).isEqualTo("CO_LIVING");
     assertThat(rec.content().get(0).minDeposit()).isEqualTo(1_000_000);
     assertThat(rec.content().get(0).maxDeposit()).isEqualTo(1_500_000);
     assertThat(rec.markers()).hasSize(1);
@@ -351,7 +358,7 @@ class DiagnosisMongoIntegrationTest {
                 new RecommendedListingView(
                     "6858e2000000000000000002",
                     "Matched Room",
-                    "GOSHIWON",
+                    new ListingCodeLabelView("GOSHIWON", "Goshiwon"),
                     300000,
                     450000,
                     500000,
@@ -359,7 +366,7 @@ class DiagnosisMongoIntegrationTest {
                     "http://img",
                     37.4,
                     126.9,
-                    List.of("FEMALE_ONLY"))));
+                    List.of(new ListingCodeLabelView("FEMALE_ONLY", "Female Only")))));
 
     diagnosisService.getRecommendations(userId, created.diagnosisId(), 0, 20, null);
 

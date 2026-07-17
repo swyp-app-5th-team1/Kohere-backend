@@ -14,11 +14,20 @@ import com.kohere.common.response.PageResponse;
 public interface ListingRecommendationService {
 
   /**
-   * 진단 조건으로 매칭한 추천 매물을 오프셋 페이지로 반환한다(매칭 0건이면 빈 content). 조정 제안(suggestions)·소유권 검증·번역은
-   * 호출자(diagnosis) 책임이며 본 쿼리는 매물 매칭 결과만 돌려준다.
+   * 진단 조건으로 매칭한 추천 매물을 오프셋 페이지로 반환한다(매칭 0건이면 빈 content). 조정 제안(suggestions)·소유권 검증은 호출자(diagnosis)
+   * 책임이며, 언어를 별도로 전달하지 않는 내부 존재 확인 호출은 영어를 사용한다.
    *
    * @param criteria 매칭 조건(지역·예산·조건·대학/지역) + 페이지네이션·정렬
    * @return 추천 매물 요약 + 좌표의 오프셋 페이지
    */
   PageResponse<RecommendedListingView> recommendByCriteria(RecommendationCriteria criteria);
+
+  /**
+   * 진단 사용자의 표시 언어를 적용해 추천 매물을 반환한다.
+   *
+   * @param criteria 매칭 조건과 페이지네이션
+   * @param language user 모듈이 결정한 ISO 639-1 표시 언어. 미지원 값은 영어로 폴백
+   */
+  PageResponse<RecommendedListingView> recommendByCriteria(
+      RecommendationCriteria criteria, String language);
 }

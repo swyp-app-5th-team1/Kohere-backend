@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * 저장 전 애플리케이션 경로에서 매물 문서의 필수 구조와 도메인 불변식을 검증한다.
  *
- * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v2 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
+ * <p>MongoDB는 스키마리스라 잘못된 모양의 문서도 저장 자체는 가능하다. 그래서 애플리케이션이 저장하기 직전에 v3 스키마의 필수 필드와 값 범위를 검증해, 조회 시점의
  * NullPointerException이나 잘못된 검색 결과를 미리 막는다.
  */
 public final class ListingValidator {
@@ -16,9 +16,9 @@ public final class ListingValidator {
 
   public static void validateForSave(Listing listing) {
     requireNonNull(listing, "listing이 필요합니다.");
-    require(listing.getSchemaVersion() == 2, "schemaVersion은 2여야 합니다.");
+    require(listing.getSchemaVersion() == 3, "schemaVersion은 3이어야 합니다.");
     requireNonNull(listing.getLandlordId(), "landlordId가 필요합니다.");
-    requireText(listing.getTitle(), "title이 필요합니다.");
+    requireLocalizedText(listing.getTitle(), "title");
     requireNonNull(listing.getType(), "type이 필요합니다.");
     requireNonNull(listing.getStatus(), "status가 필요합니다.");
     requireNonNull(listing.getRentalType(), "rentalType이 필요합니다.");
@@ -44,15 +44,18 @@ public final class ListingValidator {
     requireNonNull(address, "address가 필요합니다.");
     requireText(address.city(), "address.city가 필요합니다.");
     requireText(address.district(), "address.district가 필요합니다.");
-    requireText(address.fullAddress(), "address.fullAddress가 필요합니다.");
+    requireLocalizedText(address.fullAddress(), "address.fullAddress");
+    if (address.detail() != null) {
+      requireLocalizedText(address.detail(), "address.detail");
+    }
   }
 
   private static void validateNearestTransit(Listing.NearestTransit transit) {
     requireNonNull(transit, "nearestTransit이 필요합니다.");
     requireNonNull(transit.type(), "nearestTransit.type이 필요합니다.");
-    requireText(transit.name(), "nearestTransit.name이 필요합니다.");
-    requireText(
-        transit.nearbyPlacesDescription(), "nearestTransit.nearbyPlacesDescription이 필요합니다.");
+    requireLocalizedText(transit.name(), "nearestTransit.name");
+    requireLocalizedText(
+        transit.nearbyPlacesDescription(), "nearestTransit.nearbyPlacesDescription");
   }
 
   private static void validateBuilding(Listing.Building building) {
@@ -91,7 +94,7 @@ public final class ListingValidator {
 
   private static void validateRoomOffer(Listing.RoomOffer roomOffer) {
     requireNonNull(roomOffer, "roomOffers 항목이 필요합니다.");
-    requireText(roomOffer.name(), "roomOffers.name이 필요합니다.");
+    requireLocalizedText(roomOffer.name(), "roomOffers.name");
     requireNonNull(roomOffer.status(), "roomOffers.status가 필요합니다.");
     validatePricing(roomOffer.pricing());
     requireNonNull(roomOffer.inventory(), "roomOffers.inventory가 필요합니다.");
@@ -116,6 +119,7 @@ public final class ListingValidator {
   private static void validateRefundPolicy(Listing.RefundPolicy refundPolicy) {
     requireNonNull(refundPolicy, "refundPolicy가 필요합니다.");
     requireNonNull(refundPolicy.code(), "refundPolicy.code가 필요합니다.");
+    requireLocalizedText(refundPolicy.description(), "refundPolicy.description");
   }
 
   private static void validateDescriptions(Listing.Descriptions descriptions) {
@@ -133,6 +137,13 @@ public final class ListingValidator {
 
   private static void requireText(String value, String message) {
     require(value != null && !value.isBlank(), message);
+  }
+
+  /** 다국어 표시 필드에 한국어와 영어가 모두 들어 있는지 검증한다. */
+  private static void requireLocalizedText(LocalizedText value, String field) {
+    requireNonNull(value, field + "가 필요합니다.");
+    requireText(value.ko(), field + ".ko가 필요합니다.");
+    requireText(value.en(), field + ".en이 필요합니다.");
   }
 
   private static void requireNonNull(Object value, String message) {

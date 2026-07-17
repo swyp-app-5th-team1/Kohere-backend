@@ -10,15 +10,15 @@ import io.mongock.api.annotations.RollbackExecution;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 
-/** listings 컬렉션의 MongoDB validator를 v2 저장 스키마에 맞춘다. */
-@ChangeUnit(id = "listing-validator-v2", order = "0105", author = "kohere")
-public class ListingValidatorV2ChangeUnit {
+/** listings 다국어 v3 이행이 끝난 뒤 MongoDB strict validator를 적용한다. */
+@ChangeUnit(id = "listing-validator-v3", order = "0110", author = "kohere")
+public class ListingValidatorV3ChangeUnit {
 
+  /** 새로 생성되는 컬렉션과 기존 컬렉션 모두 같은 v3 검증 규칙을 사용하게 한다. */
   @Execution
   public void execution(MongoTemplate mongo) {
     Document validator =
-        new Document("$jsonSchema", ListingMongoIndexInitializer.listingV2JsonSchema());
-
+        new Document("$jsonSchema", ListingMongoIndexInitializer.listingJsonSchema());
     if (!mongo.collectionExists(ListingDocument.COLLECTION_NAME)) {
       mongo
           .getDb()
@@ -41,7 +41,7 @@ public class ListingValidatorV2ChangeUnit {
     mongo.executeCommand(command);
   }
 
-  /** forward-only: v2 validator 적용은 되돌리지 않는다. */
+  /** forward-only: v3 저장 계약을 롤백으로 느슨하게 만들지 않는다. */
   @RollbackExecution
   public void rollback() {
     // no-op

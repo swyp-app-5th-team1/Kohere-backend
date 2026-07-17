@@ -5,6 +5,8 @@
 
 매물 리스트/지도/키워드 검색, 매물 상세, 찜 토글·찜 목록, 최근 본 매물을 다룬다. 도메인 모듈은 `listing`이며 도메인 에러 코드 prefix는 `LISTING`이다. `listingId`는 MongoDB ObjectId의 24자리 hex 문자열이다. 좌표는 WGS84 십진수(소수 6자리 권장), 금액은 KRW 정수, 날짜·시각은 UTC ISO-8601, enum은 UPPER_SNAKE_CASE다. 목록은 모두 **오프셋 페이지네이션**(`page`·`size`)을 사용한다.
 
+> **다국어 응답 규칙([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md))**: 매물명·주소·역명·방 이름·설명은 서버가 사용자 언어 문자열 하나를 선택해 반환한다. `type`·`rentalType`·`genderPolicy`·교통/건물/시설/조건처럼 UI에 표시하는 공통 코드는 `{ "code": "FEMALE_ONLY", "label": "Female Only" }` 형태다. 프론트는 **label을 표시**하고 **code를 필터 요청과 내부 비교에 사용**한다. 로그인 사용자는 계정에서 선택한 표시 언어(`users.lang`), 비로그인 사용자는 영어가 기본이며 미지원 언어도 영어로 폴백한다. 요청의 `type`·`conditions`는 계속 기존 UPPER_SNAKE code를 보낸다.
+
 공통 enum:
 
 - `ListingType`: `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE`, `OTHER`
@@ -67,32 +69,32 @@ Request Body: 없음
     "content": [
       {
         "listingId": "6858e2000000000000000001",
-        "title": "신촌 도보 5분 1인실 고시원",
-        "type": "GOSHIWON",
+        "title": "Single-room goshiwon, 5 minutes from Sinchon",
+        "type": { "code": "GOSHIWON", "label": "Goshiwon" },
         "status": "PUBLISHED",
-        "rentalType": "MONTHLY_RENT",
+        "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
         "refundPolicy": {
           "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "입주 7일 전 취소 시 전액 환불"
+          "description": "Full refund for cancellations made at least 7 days before move-in."
         },
         "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-        "genderPolicy": "FEMALE_ONLY",
+        "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
         "location": { "lat": 37.555134, "lng": 126.936893 },
         "address": {
           "city": "SEOUL",
           "district": "SEODAEMUN_GU",
-          "fullAddress": "서울 서대문구 ...",
+          "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
-          "type": "SUBWAY",
-          "name": "Seoul Nat'l Univ.",
+          "type": { "code": "SUBWAY", "label": "Subway" },
+          "name": "Sinchon Station",
           "walkMinutes": 5,
-          "nearbyPlacesDescription": "편의점, 약국"
+          "nearbyPlacesDescription": "Convenience store, pharmacy"
         },
         "nearbyUniversityCodes": ["YONSEI"],
         "building": {
-          "type": "VILLA",
+          "type": { "code": "VILLA", "label": "Villa" },
           "usedFloorMin": 1,
           "usedFloorMax": 2,
           "totalFloors": 4,
@@ -107,19 +109,23 @@ Request Body: 없음
           "englishAvailable": false
         },
         "facilities": {
-          "heatingSystem": ["CENTRAL"],
-          "kitchen": ["Shared Refrigerator", "Microwave"],
-          "laundry": ["COIN_LAUNDRY"],
-          "livingAmenities": ["WIFI"],
-          "securityFeatures": ["CCTV"],
-          "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
-          "providedSupplies": ["Bedding"]
+          "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
+          "kitchen": [{ "code": "MICROWAVE", "label": "Microwave" }],
+          "laundry": [{ "code": "COIN_LAUNDRY", "label": "Coin Laundry" }],
+          "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
+          "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
+          "commonSpaces": [{ "type": { "code": "SHARED_TOILET", "label": "Shared Toilet" }, "count": 6 }],
+          "providedSupplies": [{ "code": "BEDDING", "label": "Bedding" }]
         },
-        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION", "NO_ARC"],
+        "conditions": [
+          { "code": "ENGLISH_OK", "label": "English OK" },
+          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
+          { "code": "NO_ARC", "label": "No ARC Required" }
+        ],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
-            "name": "스탠다드 1인실",
+            "name": "Standard Single Room",
             "status": "ACTIVE",
             "pricing": {
               "monthlyRent": 380000,
@@ -132,13 +138,15 @@ Request Body: 없음
               "availableCount": 2,
               "nextAvailableFrom": null
             },
-            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+            "filterTags": [
+              { "code": "ENGLISH_OK", "label": "English OK" },
+              { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" }
+            ],
             "roomImageUrls": []
           }
         ],
         "descriptions": {
-          "ko": "지하철역 도보 5분 이내...",
-          "en": "A well-maintained gosiwon...",
+          "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
           "extraNotes": "외국인 환영"
         },
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
@@ -164,7 +172,7 @@ Request Body: 없음
 - 카드 제목은 `title`, 대표 이미지는 `imageUrls[0]`, 주소는 `address.fullAddress`, 교통 배지는 `nearestTransit.name`과 `nearestTransit.walkMinutes`를 사용한다.
 - 가격/보증금/관리비는 `roomOffers[].pricing`에서 읽는다. 여러 방 타입이 있으면 프론트에서 최저~최고 범위를 계산해 카드에 표시한다.
 - 계약기간은 방 타입이 아니라 매물 공통 값인 `contract.minStayMonths/maxStayMonths`를 사용한다.
-- 조건 배지/Property Details features는 상위 `conditions`를 사용한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이며, `propertyPolicies.arcRequired=false`이면 `NO_ARC`가 함께 포함된다.
+- 조건 배지/Property Details features는 상위 `conditions`의 `label`을 표시한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이며, `propertyPolicies.arcRequired=false`이면 `code=NO_ARC`가 함께 포함된다. 필터 요청에는 `code`를 보낸다.
 - 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
 - 방 타입별 세부 조건 배지가 필요하면 각 `roomOffers[].filterTags`를 사용한다.
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
@@ -354,35 +362,35 @@ Request Body: 없음
   "success": true,
   "data": {
     "listingId": "6858e2000000000000000001",
-    "title": "신촌 도보 5분 1인실 고시원",
-    "type": "GOSHIWON",
+    "title": "Single-room goshiwon, 5 minutes from Sinchon",
+    "type": { "code": "GOSHIWON", "label": "Goshiwon" },
     "status": "PUBLISHED",
-    "rentalType": "MONTHLY_RENT",
+    "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
     "refundPolicy": {
       "code": "FULL_REFUND_BEFORE_7_DAYS",
-      "description": "입주 7일 전 취소 시 전액 환불"
+      "description": "Full refund for cancellations made at least 7 days before move-in."
     },
     "contract": {
       "minStayMonths": 2,
       "maxStayMonths": 6
     },
-    "genderPolicy": "FEMALE_ONLY",
+    "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
     "location": { "lat": 37.555134, "lng": 126.936893 },
     "address": {
       "city": "SEOUL",
       "district": "SEODAEMUN_GU",
-      "fullAddress": "서울 서대문구 신촌로 ...",
-      "detail": "3층 305호"
+      "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
+      "detail": "Room 305, 3rd floor"
     },
     "nearestTransit": {
-      "type": "SUBWAY",
-      "name": "Seoul Nat'l Univ.",
+      "type": { "code": "SUBWAY", "label": "Subway" },
+      "name": "Sinchon Station",
       "walkMinutes": 5,
-      "nearbyPlacesDescription": "CU, 스타벅스, 약국, 헬스장"
+      "nearbyPlacesDescription": "CU, Starbucks, pharmacy, gym"
     },
     "nearbyUniversityCodes": ["YONSEI", "EWHA"],
     "building": {
-      "type": "VILLA",
+      "type": { "code": "VILLA", "label": "Villa" },
       "usedFloorMin": 2,
       "usedFloorMax": 3,
       "totalFloors": 5,
@@ -397,19 +405,24 @@ Request Body: 없음
       "englishAvailable": true
     },
     "facilities": {
-      "heatingSystem": ["CENTRAL"],
-      "kitchen": ["Shared Refrigerator", "Microwave"],
-      "laundry": ["WASHER", "IRON"],
-      "livingAmenities": ["WIFI", "TV", "SOFA"],
-      "securityFeatures": ["CCTV", "DIGITAL_DOOR_LOCK"],
-      "commonSpaces": [{ "type": "STUDY_ROOM", "count": null }],
-      "providedSupplies": ["TOILET_PAPER", "SLIPPERS"]
+      "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
+      "kitchen": [{ "code": "SHARED_REFRIGERATOR", "label": "Shared Refrigerator" }],
+      "laundry": [{ "code": "SHARED_WASHER", "label": "Shared Washer" }],
+      "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
+      "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
+      "commonSpaces": [{ "type": { "code": "STUDY_ROOM", "label": "Study Room" }, "count": null }],
+      "providedSupplies": [{ "code": "SLIPPERS", "label": "Slippers" }]
     },
-    "conditions": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE", "NO_ARC"],
+    "conditions": [
+      { "code": "FEMALE_ONLY", "label": "Female Only" },
+      { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
+      { "code": "NO_MAINT_FEE", "label": "No Maintenance Fee" },
+      { "code": "NO_ARC", "label": "No ARC Required" }
+    ],
     "roomOffers": [
       {
         "roomOfferId": "6858e2000000000000000101",
-        "name": "스탠다드 1인실",
+        "name": "Standard Single Room",
         "status": "ACTIVE",
         "pricing": {
           "monthlyRent": 300000,
@@ -422,15 +435,18 @@ Request Body: 없음
           "availableCount": 2,
           "nextAvailableFrom": null
         },
-        "filterTags": ["FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
+        "filterTags": [
+          { "code": "FEMALE_ONLY", "label": "Female Only" },
+          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
+          { "code": "NO_MAINT_FEE", "label": "No Maintenance Fee" }
+        ],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/6858e2000000000000000001/rooms/101.jpg"
         ]
       }
     ],
     "descriptions": {
-      "ko": "신촌역 도보권의 조용한 1인실 고시원입니다.",
-      "en": "A quiet goshiwon within walking distance of Sinchon Station.",
+      "description": "A quiet goshiwon within walking distance of Sinchon Station.",
       "extraNotes": "직접 연락처는 노출하지 않으며 신청은 앱에서 진행합니다."
     },
     "imageUrls": [
@@ -449,6 +465,7 @@ Request Body: 없음
 - 상단 제목/하트는 `title`, `favorited`, `favoriteCount`를 사용한다.
 - 사진 갤러리는 `imageUrls`와 `roomOffers[].roomImageUrls`를 사용한다. 카드 대표 이미지는 `imageUrls[0]`를 우선 사용한다.
 - 가격 영역은 `roomOffers[].pricing`, 계약기간은 `contract`, 주소/지도는 `address`와 `location`, 교통 정보는 `nearestTransit`으로 표시한다.
+- `{code,label}` 형태는 `label`을 화면에 표시하고 `code`를 필터 요청·아이콘/분기 비교에 사용한다. `title`·주소·역명·방 이름·`descriptions.description`은 이미 사용자 언어 문자열 하나로 선택되어 온다.
 - Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
 - 시설/정책 섹션은 `building`, `propertyPolicies`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
@@ -552,32 +569,32 @@ Request Body: 없음
     "content": [
       {
         "listingId": "6858e2000000000000000001",
-        "title": "신촌 도보 5분 1인실 고시원",
-        "type": "GOSHIWON",
+        "title": "Single-room goshiwon, 5 minutes from Sinchon",
+        "type": { "code": "GOSHIWON", "label": "Goshiwon" },
         "status": "PUBLISHED",
-        "rentalType": "MONTHLY_RENT",
+        "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
         "refundPolicy": {
           "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "입주 7일 전 취소 시 전액 환불"
+          "description": "Full refund for cancellations made at least 7 days before move-in."
         },
         "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-        "genderPolicy": "FEMALE_ONLY",
+        "genderPolicy": { "code": "FEMALE_ONLY", "label": "Female Only" },
         "location": { "lat": 37.555134, "lng": 126.936893 },
         "address": {
           "city": "SEOUL",
           "district": "SEODAEMUN_GU",
-          "fullAddress": "서울 서대문구 ...",
+          "fullAddress": "Sinchon-ro, Seodaemun-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
-          "type": "SUBWAY",
-          "name": "Seoul Nat'l Univ.",
+          "type": { "code": "SUBWAY", "label": "Subway" },
+          "name": "Sinchon Station",
           "walkMinutes": 5,
-          "nearbyPlacesDescription": "편의점, 약국"
+          "nearbyPlacesDescription": "Convenience store, pharmacy"
         },
         "nearbyUniversityCodes": ["YONSEI"],
         "building": {
-          "type": "VILLA",
+          "type": { "code": "VILLA", "label": "Villa" },
           "usedFloorMin": 1,
           "usedFloorMax": 2,
           "totalFloors": 4,
@@ -592,19 +609,22 @@ Request Body: 없음
           "englishAvailable": false
         },
         "facilities": {
-          "heatingSystem": ["CENTRAL"],
-          "kitchen": ["Shared Refrigerator", "Microwave"],
-          "laundry": ["COIN_LAUNDRY"],
-          "livingAmenities": ["WIFI"],
-          "securityFeatures": ["CCTV"],
-          "commonSpaces": [{ "type": "SHARED_TOILET", "count": 6 }],
-          "providedSupplies": ["Bedding"]
+          "heatingSystem": [{ "code": "CENTRAL", "label": "Central Heating" }],
+          "kitchen": [{ "code": "MICROWAVE", "label": "Microwave" }],
+          "laundry": [{ "code": "COIN_LAUNDRY", "label": "Coin Laundry" }],
+          "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
+          "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
+          "commonSpaces": [{ "type": { "code": "SHARED_TOILET", "label": "Shared Toilet" }, "count": 6 }],
+          "providedSupplies": [{ "code": "BEDDING", "label": "Bedding" }]
         },
-        "conditions": ["ENGLISH_OK", "NO_ARC"],
+        "conditions": [
+          { "code": "ENGLISH_OK", "label": "English OK" },
+          { "code": "NO_ARC", "label": "No ARC Required" }
+        ],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000101",
-            "name": "스탠다드 1인실",
+            "name": "Standard Single Room",
             "status": "ACTIVE",
             "pricing": {
               "monthlyRent": 450000,
@@ -617,13 +637,12 @@ Request Body: 없음
               "availableCount": 2,
               "nextAvailableFrom": null
             },
-            "filterTags": ["ENGLISH_OK"],
+            "filterTags": [{ "code": "ENGLISH_OK", "label": "English OK" }],
             "roomImageUrls": []
           }
         ],
         "descriptions": {
-          "ko": "지하철역 도보 5분 이내...",
-          "en": "A well-maintained gosiwon...",
+          "description": "A well-maintained goshiwon within a five-minute walk of the subway station.",
           "extraNotes": "외국인 환영"
         },
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],
@@ -670,32 +689,32 @@ Request Body: 없음
     "content": [
       {
         "listingId": "6858e2000000000000000001",
-        "title": "홍대입구 코리빙 2인실",
-        "type": "CO_LIVING",
+        "title": "Hongdae Co-living Double Room",
+        "type": { "code": "CO_LIVING", "label": "Co-living" },
         "status": "PUBLISHED",
-        "rentalType": "MONTHLY_RENT",
+        "rentalType": { "code": "MONTHLY_RENT", "label": "Monthly Rent" },
         "refundPolicy": {
           "code": "FULL_REFUND_BEFORE_7_DAYS",
-          "description": "입주 7일 전 취소 시 전액 환불"
+          "description": "Full refund for cancellations made at least 7 days before move-in."
         },
         "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-        "genderPolicy": "ANY",
+        "genderPolicy": { "code": "ANY", "label": "Any Gender" },
         "location": { "lat": 37.5571, "lng": 126.9245 },
         "address": {
           "city": "SEOUL",
           "district": "MAPO_GU",
-          "fullAddress": "서울 마포구 ...",
+          "fullAddress": "Mapo-gu, Seoul",
           "detail": null
         },
         "nearestTransit": {
-          "type": "SUBWAY",
-          "name": "Hongdae Sta.",
+          "type": { "code": "SUBWAY", "label": "Subway" },
+          "name": "Hongik Univ. Station",
           "walkMinutes": 8,
-          "nearbyPlacesDescription": "편의점, 카페"
+          "nearbyPlacesDescription": "Convenience store, cafe"
         },
         "nearbyUniversityCodes": ["HONGIK"],
         "building": {
-          "type": "OFFICETEL",
+          "type": { "code": "OFFICETEL", "label": "Officetel" },
           "usedFloorMin": 5,
           "usedFloorMax": 7,
           "totalFloors": 12,
@@ -710,19 +729,23 @@ Request Body: 없음
           "englishAvailable": true
         },
         "facilities": {
-          "heatingSystem": ["INDIVIDUAL"],
-          "kitchen": ["Shared Refrigerator", "Microwave"],
-          "laundry": ["WASHER"],
-          "livingAmenities": ["WIFI"],
-          "securityFeatures": ["CCTV"],
-          "commonSpaces": [{ "type": "LOUNGE", "count": 1 }],
-          "providedSupplies": ["Toilet Paper"]
+          "heatingSystem": [{ "code": "INDIVIDUAL", "label": "Individual Heating" }],
+          "kitchen": [{ "code": "SHARED_REFRIGERATOR", "label": "Shared Refrigerator" }],
+          "laundry": [{ "code": "SHARED_WASHER", "label": "Shared Washer" }],
+          "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
+          "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
+          "commonSpaces": [{ "type": { "code": "LOUNGE", "label": "Lounge" }, "count": 1 }],
+          "providedSupplies": [{ "code": "TISSUE", "label": "Tissue" }]
         },
-        "conditions": ["ENGLISH_OK", "ADDRESS_REGISTRATION", "NO_ARC"],
+        "conditions": [
+          { "code": "ENGLISH_OK", "label": "English OK" },
+          { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
+          { "code": "NO_ARC", "label": "No ARC Required" }
+        ],
         "roomOffers": [
           {
             "roomOfferId": "6858e2000000000000000201",
-            "name": "코리빙 2인실",
+            "name": "Co-living Double Room",
             "status": "ACTIVE",
             "pricing": {
               "monthlyRent": 580000,
@@ -735,13 +758,15 @@ Request Body: 없음
               "availableCount": 1,
               "nextAvailableFrom": null
             },
-            "filterTags": ["ENGLISH_OK", "ADDRESS_REGISTRATION"],
+            "filterTags": [
+              { "code": "ENGLISH_OK", "label": "English OK" },
+              { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" }
+            ],
             "roomImageUrls": []
           }
         ],
         "descriptions": {
-          "ko": "홍대입구역 인근 코리빙...",
-          "en": "Co-living near Hongdae...",
+          "description": "Co-living near Hongdae...",
           "extraNotes": "공용 라운지 이용 가능"
         },
         "imageUrls": ["https://cdn.kohere.app/listings/6858e2000000000000000001/main.jpg"],

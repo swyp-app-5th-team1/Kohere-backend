@@ -1,37 +1,30 @@
 package com.kohere.listing.application.dto;
 
-import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-/**
- * 내 찜 목록 응답 DTO. public listing 문서 구조에 찜한 시각을 더한다.
- *
- * @param conditions 찜 목록 카드 조건 배지에 사용할 매물 단위 조건 목록. ACTIVE 방 상품들의 {@code filterTags} 합집합에 매물 정책 파생
- *     조건을 더한 값이다.
- */
+/** 내 찜 목록 카드 응답이다. 상세 응답과 같은 번역 구조에 찜한 시각을 더한다. */
 public record FavoriteListingResponse(
     String listingId,
     String title,
-    ListingType type,
+    CodeLabelResponse type,
     Listing.ListingStatus status,
-    Listing.RentalType rentalType,
-    Listing.RefundPolicy refundPolicy,
+    CodeLabelResponse rentalType,
+    ListingDetailResponse.RefundPolicyResponse refundPolicy,
     Listing.Contract contract,
-    Listing.GenderPolicy genderPolicy,
+    CodeLabelResponse genderPolicy,
     ListingDetailResponse.GeoPoint location,
-    Listing.Address address,
-    Listing.NearestTransit nearestTransit,
+    ListingDetailResponse.AddressResponse address,
+    ListingDetailResponse.NearestTransitResponse nearestTransit,
     Set<String> nearbyUniversityCodes,
-    Listing.Building building,
+    ListingDetailResponse.BuildingResponse building,
     Listing.PropertyPolicies propertyPolicies,
-    Listing.Facilities facilities,
-    Set<ConditionTag> conditions,
+    ListingDetailResponse.FacilitiesResponse facilities,
+    List<CodeLabelResponse> conditions,
     List<ListingDetailResponse.RoomOfferResponse> roomOffers,
-    Listing.Descriptions descriptions,
+    ListingDetailResponse.DescriptionsResponse descriptions,
     List<String> imageUrls,
     boolean favorited,
     int favoriteCount,

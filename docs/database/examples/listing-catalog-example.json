@@ -1,0 +1,20 @@
+[
+  {
+    "_id": "CONDITION_TAG:FEMALE_ONLY",
+    "category": "CONDITION_TAG",
+    "code": "FEMALE_ONLY",
+    "label": { "ko": "여성 전용", "en": "Female Only" }
+  },
+  {
+    "_id": "TRANSIT_TYPE:SUBWAY",
+    "category": "TRANSIT_TYPE",
+    "code": "SUBWAY",
+    "label": { "ko": "지하철", "en": "Subway" }
+  },
+  {
+    "_id": "LIVING_AMENITY:WIFI",
+    "category": "LIVING_AMENITY",
+    "code": "WIFI",
+    "label": { "ko": "와이파이", "en": "Wi-Fi" }
+  }
+]

@@ -32,6 +32,7 @@ import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -72,6 +73,8 @@ public class ListingService {
   private final FavoriteRepository favoriteRepository;
   private final RecentListingRepository recentListingRepository;
   private final SearchPlaceRepository searchPlaceRepository;
+  private final ListingLocalizationService listingLocalizationService;
+  private final UserAccountService userAccountService;
 
   /**
    * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
@@ -80,7 +83,18 @@ public class ListingService {
    * 한 번만 내려가며, 가격·보증금·관리비·계약기간·재고는 조건을 통과한 방 상품들의 범위와 합계로 내려간다.
    */
   public PageResponse<ListingSummaryResponse> getListings(ListingSearchRequest request) {
+    return getListings(null, request);
+  }
+
+  /**
+   * 로그인 사용자는 계정에서 선택한 표시 언어를, 비로그인 사용자는 MVP 기본 영어를 적용해 매물 목록을 반환한다.
+   *
+   * @param userId 인증되지 않은 공개 조회이면 {@code null}
+   */
+  public PageResponse<ListingSummaryResponse> getListings(
+      Long userId, ListingSearchRequest request) {
     ListingSearchCondition condition = buildSearchCondition(request);
+    ListingLocalizationContext localization = localizationFor(userId);
 
     PageResponse<ListingSearchResult> listings = listingRepository.search(condition);
     return PageResponse.of(
@@ -88,7 +102,7 @@ public class ListingService {
             .map(
                 result ->
                     ListingResponseMapper.toSummary(
-                        result, distanceMeters(result.listing(), condition)))
+                        result, distanceMeters(result.listing(), condition), localization))
             .toList(),
         listings.page());
   }
@@ -100,11 +114,18 @@ public class ListingService {
    * matchedPlace=null}, {@code content=[]}, {@code totalElements=0}으로 200 OK를 반환한다.
    */
   public ListingKeywordSearchResponse searchListings(ListingKeywordSearchRequest request) {
+    return searchListings(null, request);
+  }
+
+  /** 사용자 언어를 적용해 키워드 주변 매물 카드를 조회한다. 비로그인 사용자는 영어가 기본이다. */
+  public ListingKeywordSearchResponse searchListings(
+      Long userId, ListingKeywordSearchRequest request) {
     String keyword = validateAndNormalizeKeyword(request.getKeyword());
     validatePage(request.getPage(), request.getSize());
+    ListingLocalizationContext localization = localizationFor(userId);
 
     return SearchPlaceMatcher.bestMatch(keyword, searchPlaceRepository.findActive())
-        .map(place -> searchListingsAround(place, request))
+        .map(place -> searchListingsAround(place, request, localization))
         .orElseGet(() -> emptyKeywordSearchResponse(request.getPage(), request.getSize()));
   }
 
@@ -130,7 +151,8 @@ public class ListingService {
     Listing listing = requirePublishedListing(listingId);
     boolean favorited =
         favoriteRepository.findByUserIdAndListingId(userId, listing.getId()).isPresent();
-    ListingDetailResponse response = ListingResponseMapper.toDetail(listing, favorited);
+    ListingDetailResponse response =
+        ListingResponseMapper.toDetail(listing, favorited, localizationFor(userId));
 
     recordRecentListing(userId, listing.getId());
 
@@ -145,10 +167,13 @@ public class ListingService {
    */
   public PageResponse<FavoriteListingResponse> getMyFavorites(Long userId, int page, int size) {
     validatePage(page, size);
+    ListingLocalizationContext localization = localizationFor(userId);
     PageResponse<FavoriteListing> favorites =
         favoriteRepository.findPublishedByUserIdOrderByFavoritedAtDesc(userId, page, size);
     return PageResponse.of(
-        favorites.content().stream().map(ListingResponseMapper::toFavoriteListing).toList(),
+        favorites.content().stream()
+            .map(favorite -> ListingResponseMapper.toFavoriteListing(favorite, localization))
+            .toList(),
         favorites.page());
   }
 
@@ -159,6 +184,7 @@ public class ListingService {
    * 비공개/삭제/노출중지 매물은 사용자가 과거에 봤더라도 목록에서 숨긴다.
    */
   public RecentListingsResponse getRecentListings(Long userId) {
+    ListingLocalizationContext localization = localizationFor(userId);
     List<RecentListingView> recentListings =
         recentListingRepository.findPublishedByUserIdOrderByViewedAtDesc(
             userId, RECENT_LISTINGS_RESPONSE_LIMIT);
@@ -171,7 +197,7 @@ public class ListingService {
             .map(
                 view ->
                     ListingResponseMapper.toRecentListing(
-                        view, favoritedListingIds.contains(view.listing().getId())))
+                        view, favoritedListingIds.contains(view.listing().getId()), localization))
             .toList());
   }
 
@@ -333,7 +359,9 @@ public class ListingService {
    * <p>목록 API와 같은 매물 카드 구조를 재사용하되, {@code distanceMeters}는 요청 bbox 중심이 아니라 검색된 POI 좌표를 기준으로 계산된다.
    */
   private ListingKeywordSearchResponse searchListingsAround(
-      SearchPlace place, ListingKeywordSearchRequest request) {
+      SearchPlace place,
+      ListingKeywordSearchRequest request,
+      ListingLocalizationContext localization) {
     ListingSearchCondition condition = buildKeywordSearchCondition(place, request);
     PageResponse<ListingSearchResult> listings = listingRepository.search(condition);
     return new ListingKeywordSearchResponse(
@@ -342,7 +370,7 @@ public class ListingService {
             .map(
                 result ->
                     ListingResponseMapper.toSummary(
-                        result, distanceMeters(result.listing(), condition)))
+                        result, distanceMeters(result.listing(), condition), localization))
             .toList(),
         listings.page());
   }
@@ -350,6 +378,17 @@ public class ListingService {
   /** POI 매칭이 없을 때 프론트가 빈 상태를 바로 판단할 수 있는 페이지 응답을 만든다. */
   private static ListingKeywordSearchResponse emptyKeywordSearchResponse(int page, int size) {
     return new ListingKeywordSearchResponse(null, List.of(), new PageInfo(page, size, 0, 0, false));
+  }
+
+  /**
+   * 팀의 기존 다국어 처리 방식과 동일하게 user 모듈에서 언어를 조회한다.
+   *
+   * <p>인증되지 않은 공개 목록/검색은 외국인 대상 MVP 정책에 따라 영어를 사용한다. user 모듈도 미지원 언어를 영어로 폴백하지만 listing 계층에서 한 번 더
+   * ko/en만 허용해 응답 규칙을 명확히 한다.
+   */
+  private ListingLocalizationContext localizationFor(Long userId) {
+    String language = userId == null ? "en" : userAccountService.getLanguage(userId);
+    return listingLocalizationService.contextFor(language);
   }
 
   /** keyword는 필수이며, 앞뒤 공백 제거 후 1~50자 안에 있어야 한다. */

@@ -5,6 +5,7 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resour
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -29,6 +30,7 @@ import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
+import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
@@ -94,6 +96,23 @@ class DiagnosisV2DocsTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
+  private static final String RECOMMENDATIONS_DESCRIPTION =
+      """
+      v2에서 확정된 진단 조건에 맞는 매물 카드와 지도 마커를 조회한다. 추천 조회 시점·페이지·정렬은 프론트가 결정한다.
+
+      **프론트 사용 방법**
+
+      - 매물 카드는 `content[]`로 렌더링한다.
+      - 매물 유형과 조건 배지는 `type.label`, `conditions[].label`을 화면에 표시한다.
+      - 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 사용한다.
+      - `title`과 `label`은 로그인 사용자의 계정 언어로 선택되어 온다.
+      - `markers[]`와 `content[]`는 같은 `listingId`로 연결한다.
+
+      **추천 결과가 0건일 때**
+
+      - `resultCode=NO_MATCH`, `content=[]`, `markers=[]`는 정상 응답이며 에러가 아니다.
+      - v2는 v1과 달리 `suggestions`를 반환하지 않는다.
+      """;
 
   // 서명이 깨진(다른 키로 서명) access 토큰. 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라, restdocs-api-spec 이
   // 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(비결정적 스니펫 병합 순서와 무관하게 Swagger 자물쇠 유지 —
@@ -137,6 +156,10 @@ class DiagnosisV2DocsTest {
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
     // 기본은 "그 지역에 매물이 있음" — ① 지역 조기 게이트를 통과시킨다. 0건 경로를 보는 테스트가 개별로 덮어쓴다.
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+    given(listingRecommendationService.recommendByCriteria(any(), anyString()))
+        .willAnswer(
+            invocation ->
+                listingRecommendationService.recommendByCriteria(invocation.getArgument(0)));
   }
 
   /** v2-1 시작 → v2-2 정본 6슬롯 진행 → 자동 확정 → v2-3 추천 조회(MATCHED·NO_MATCH)까지의 성공 경로. */
@@ -269,7 +292,8 @@ class DiagnosisV2DocsTest {
         // 뒤바뀌어도 타입은 그대로다 — 스니펫이 곧 클라이언트 계약이므로 값까지 못 박아 자리바꿈을 잡는다.
         .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"))
         .andExpect(jsonPath("$.data.content[0].title").value("Sinchon Co-living House A"))
-        .andExpect(jsonPath("$.data.content[0].type").value("CO_LIVING"))
+        .andExpect(jsonPath("$.data.content[0].type.code").value("CO_LIVING"))
+        .andExpect(jsonPath("$.data.content[0].type.label").value("Co-living"))
         .andExpect(jsonPath("$.data.content[0].monthlyRentMin").value(550000))
         .andExpect(jsonPath("$.data.content[0].monthlyRentMax").value(700000))
         .andExpect(jsonPath("$.data.content[0].minDeposit").value(1_000_000))
@@ -279,8 +303,9 @@ class DiagnosisV2DocsTest {
                 .value("https://cdn.kohere.app/listings/5001/thumb.jpg"))
         .andExpect(jsonPath("$.data.content[0].lat").value(37.555134))
         .andExpect(jsonPath("$.data.content[0].lng").value(126.936893))
-        .andExpect(jsonPath("$.data.content[0].conditions[0]").value("FEMALE_ONLY"))
-        .andExpect(jsonPath("$.data.content[0].conditions[1]").value("PRIVATE_BATH"))
+        .andExpect(jsonPath("$.data.content[0].conditions[0].code").value("FEMALE_ONLY"))
+        .andExpect(jsonPath("$.data.content[0].conditions[0].label").value("Female Only"))
+        .andExpect(jsonPath("$.data.content[0].conditions[1].code").value("PRIVATE_BATH"))
         .andExpect(jsonPath("$.data.markers[0].listingId").value("6858e2000000000000000001"))
         .andExpect(jsonPath("$.data.markers[0].lat").value(37.555134))
         .andExpect(jsonPath("$.data.markers[0].lng").value(126.936893))
@@ -288,7 +313,8 @@ class DiagnosisV2DocsTest {
             document(
                 "diagnosis-v2-recommendations",
                 resourceDetails()
-                    .summary("v2 진단 결과 추천 — 매물 요약 + 지도 마커(MATCHED). 조회 시점·페이지·정렬은 클라이언트가 정한다"),
+                    .summary("v2 진단 결과 추천 — 매물 요약 + 지도 마커(MATCHED)")
+                    .description(RECOMMENDATIONS_DESCRIPTION),
                 pathParameters(
                     parameterWithName("diagnosisId").description("COMPLETED로 받은 확정 진단 식별자(본인 소유)")),
                 queryParameters(recommendationQueryParameters()),
@@ -311,8 +337,8 @@ class DiagnosisV2DocsTest {
             document(
                 "diagnosis-v2-recommendations-no-match",
                 resourceDetails()
-                    .summary(
-                        "v2 진단 결과 추천 — 0건(NO_MATCH): 빈 목록. 에러가 아니며 조정 제안(suggestions) 없이 사유만 결과코드로 준다"),
+                    .summary("v2 진단 결과 추천 — 0건(NO_MATCH): 빈 목록, suggestions 없음")
+                    .description(RECOMMENDATIONS_DESCRIPTION),
                 pathParameters(
                     parameterWithName("diagnosisId").description("COMPLETED로 받은 확정 진단 식별자(본인 소유)")),
                 queryParameters(recommendationQueryParameters()),
@@ -724,7 +750,10 @@ class DiagnosisV2DocsTest {
     fields.add(field("data.resultCode", JsonFieldType.STRING, "매칭 결과(MATCHED) — 조건에 맞는 매물이 있다"));
     fields.add(field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"));
     fields.add(field("data.content[].title", JsonFieldType.STRING, "매물 제목"));
-    fields.add(field("data.content[].type", JsonFieldType.STRING, "주거 유형(원시 문자열)"));
+    fields.add(
+        field("data.content[].type.code", JsonFieldType.STRING, "주거 유형 서버 코드. 필터 요청·비교에 사용"));
+    fields.add(
+        field("data.content[].type.label", JsonFieldType.STRING, "사용자 언어의 주거 유형 표시명. 화면에 사용"));
     fields.add(field("data.content[].monthlyRentMin", JsonFieldType.NUMBER, "월세 범위 하한(KRW)"));
     fields.add(field("data.content[].monthlyRentMax", JsonFieldType.NUMBER, "월세 범위 상한(KRW)"));
     fields.add(field("data.content[].minDeposit", JsonFieldType.NUMBER, "보증금 범위 하한(KRW)"));
@@ -736,7 +765,10 @@ class DiagnosisV2DocsTest {
         field(
             "data.content[].conditions",
             JsonFieldType.ARRAY,
-            "추천 카드 조건 배지 목록. listing 모듈이 ACTIVE 방 타입들의 filterTags 합집합에 NO_ARC 같은 매물 정책 조건을 더해 내려주는 원시 문자열 코드"));
+            "추천 카드 조건 배지 code/label 목록. label은 표시하고 code는 필터 요청에 사용"));
+    fields.add(field("data.content[].conditions[].code", JsonFieldType.STRING, "조건의 언어 무관 서버 코드"));
+    fields.add(
+        field("data.content[].conditions[].label", JsonFieldType.STRING, "조건 배지에 표시할 사용자 언어 문구"));
     fields.add(
         field("data.markers[].listingId", JsonFieldType.STRING, "마커 매물 식별자(ObjectId hex 문자열)"));
     fields.add(field("data.markers[].lat", JsonFieldType.NUMBER, "마커 위도"));
@@ -887,7 +919,7 @@ class DiagnosisV2DocsTest {
       new RecommendedListingView(
           "6858e2000000000000000001",
           "Sinchon Co-living House A",
-          "CO_LIVING",
+          new ListingCodeLabelView("CO_LIVING", "Co-living"),
           550000,
           700000,
           1_000_000,
@@ -895,7 +927,9 @@ class DiagnosisV2DocsTest {
           "https://cdn.kohere.app/listings/5001/thumb.jpg",
           37.555134,
           126.936893,
-          List.of("FEMALE_ONLY", "PRIVATE_BATH"));
+          List.of(
+              new ListingCodeLabelView("FEMALE_ONLY", "Female Only"),
+              new ListingCodeLabelView("PRIVATE_BATH", "Private Bath")));
 
   private static PageResponse<RecommendedListingView> emptyPage() {
     return PageResponse.of(List.of(), new PageInfo(0, 20, 0L, 0, false));

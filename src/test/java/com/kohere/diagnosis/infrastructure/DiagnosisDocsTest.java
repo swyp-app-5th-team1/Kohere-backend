@@ -5,6 +5,7 @@ import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resour
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -30,6 +31,7 @@ import com.kohere.common.security.JwtTokenService;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisSuggestionDocument.ActionSpec;
+import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
@@ -86,6 +88,23 @@ class DiagnosisDocsTest {
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
   private static final String MALFORMED_BODY = "{ \"oops\" }";
+  private static final String RECOMMENDATIONS_DESCRIPTION =
+      """
+      확정된 진단 조건에 맞는 매물 카드와 지도 마커를 함께 조회한다.
+
+      **프론트 사용 방법**
+
+      - 매물 카드는 `content[]`로 렌더링한다.
+      - 매물 유형과 조건 배지는 `type.label`, `conditions[].label`을 화면에 표시한다.
+      - 필터 재요청이나 내부 비교에는 같은 객체의 `code`를 사용한다.
+      - `title`과 `label`은 로그인 사용자의 계정 언어로 선택되어 온다.
+      - `markers[]`와 `content[]`는 같은 `listingId`로 연결한다.
+
+      **추천 결과가 0건일 때**
+
+      - `content=[]`, `markers=[]`는 정상 응답이며 에러가 아니다.
+      - v1은 `suggestions.message`, `suggestions.actions[].detail`에 사용자 언어의 조정 안내를 제공한다.
+      """;
 
   // 서명이 깨진(다른 키로 서명) access 토큰. 서버 검증에서 401 UNAUTHENTICATED 를 유발하면서도 구조상 JWT 라,
   // restdocs-api-spec 이 무인증 예시에서도 bearerAuthJWT 보안 스킴을 도출하게 한다(모든 예시가 Bearer JWT 헤더를
@@ -128,6 +147,10 @@ class DiagnosisDocsTest {
     seedSuggestion();
     // 표시 언어는 user 공개 query로 취득(ADR-0029) — 등록 국가(KR→ko)를 가정해 한국어 라벨을 내려받는다.
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
+    given(listingRecommendationService.recommendByCriteria(any(), anyString()))
+        .willAnswer(
+            invocation ->
+                listingRecommendationService.recommendByCriteria(invocation.getArgument(0)));
   }
 
   @Test
@@ -293,7 +316,7 @@ class DiagnosisDocsTest {
                 new RecommendedListingView(
                     "6858e2000000000000000001",
                     "Sinchon Co-living House A",
-                    "CO_LIVING",
+                    new ListingCodeLabelView("CO_LIVING", "Co-living"),
                     550000,
                     700000,
                     1_000_000,
@@ -301,7 +324,9 @@ class DiagnosisDocsTest {
                     "https://cdn.kohere.app/listings/5001/thumb.jpg",
                     37.555134,
                     126.936893,
-                    List.of("FEMALE_ONLY", "PRIVATE_BATH"))));
+                    List.of(
+                        new ListingCodeLabelView("FEMALE_ONLY", "Female Only"),
+                        new ListingCodeLabelView("PRIVATE_BATH", "Private Bath")))));
     mockMvc
         .perform(
             get("/api/v1/diagnoses/{diagnosisId}/recommendations", diagnosisId)
@@ -314,7 +339,9 @@ class DiagnosisDocsTest {
         .andDo(
             document(
                 "diagnosis-recommendations",
-                resourceDetails().summary("진단 결과 추천 — 매물 요약 + 지도 마커(결과 있음)"),
+                resourceDetails()
+                    .summary("진단 결과 추천 — 매물 요약 + 지도 마커(결과 있음)")
+                    .description(RECOMMENDATIONS_DESCRIPTION),
                 pathParameters(parameterWithName("diagnosisId").description("진단 식별자(본인 소유)")),
                 queryParameters(recommendationQueryParameters()),
                 responseFields(recommendationWithContentFields())));
@@ -336,7 +363,8 @@ class DiagnosisDocsTest {
                 "diagnosis-recommendations-no-match",
                 resourceDetails()
                     .summary(
-                        "진단 결과 추천 — 0건: 빈 목록 + 조정 제안(reason/type은 enum, message/detail은 사용자 언어 번역)"),
+                        "진단 결과 추천 — 0건: 빈 목록 + 조정 제안(reason/type은 enum, message/detail은 사용자 언어 번역)")
+                    .description(RECOMMENDATIONS_DESCRIPTION),
                 pathParameters(parameterWithName("diagnosisId").description("진단 식별자(본인 소유)")),
                 queryParameters(recommendationQueryParameters()),
                 responseFields(recommendationNoMatchFields())));
@@ -775,7 +803,8 @@ class DiagnosisDocsTest {
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"),
         field("data.content[].listingId", JsonFieldType.STRING, "매물 식별자(ObjectId hex 문자열)"),
         field("data.content[].title", JsonFieldType.STRING, "매물 제목"),
-        field("data.content[].type", JsonFieldType.STRING, "주거 유형(원시 문자열)"),
+        field("data.content[].type.code", JsonFieldType.STRING, "주거 유형 서버 코드. 필터 요청·비교에 사용"),
+        field("data.content[].type.label", JsonFieldType.STRING, "사용자 언어의 주거 유형 표시명. 화면에 사용"),
         field("data.content[].monthlyRentMin", JsonFieldType.NUMBER, "월세 범위 하한(KRW)"),
         field("data.content[].monthlyRentMax", JsonFieldType.NUMBER, "월세 범위 상한(KRW)"),
         field("data.content[].minDeposit", JsonFieldType.NUMBER, "보증금 범위 하한(KRW)"),
@@ -786,7 +815,9 @@ class DiagnosisDocsTest {
         field(
             "data.content[].conditions",
             JsonFieldType.ARRAY,
-            "추천 카드 조건 배지 목록. listing 모듈이 ACTIVE 방 타입들의 filterTags 합집합에 NO_ARC 같은 매물 정책 조건을 더해 내려주는 원시 문자열 코드"),
+            "추천 카드 조건 배지 code/label 목록. label은 표시하고 code는 필터 요청에 사용"),
+        field("data.content[].conditions[].code", JsonFieldType.STRING, "조건의 언어 무관 서버 코드"),
+        field("data.content[].conditions[].label", JsonFieldType.STRING, "조건 배지에 표시할 사용자 언어 문구"),
         field("data.markers[].listingId", JsonFieldType.STRING, "마커 매물 식별자(ObjectId hex 문자열)"),
         field("data.markers[].lat", JsonFieldType.NUMBER, "마커 위도"),
         field("data.markers[].lng", JsonFieldType.NUMBER, "마커 경도"),

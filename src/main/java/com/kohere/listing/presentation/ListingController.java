@@ -40,8 +40,9 @@ public class ListingController {
   /** 지도 바텀시트에서 사용할 매물/건물 단위 카드 목록을 지도 범위와 필터 조건으로 조회한다. */
   @GetMapping
   public PageResponse<ListingSummaryResponse> getListings(
+      @AuthenticationPrincipal AuthPrincipal principal,
       @ModelAttribute ListingSearchRequest request) {
-    return listingService.getListings(request);
+    return listingService.getListings(userIdOrNull(principal), request);
   }
 
   /** 지도 SDK가 클러스터링할 수 있도록 현재 지도 범위 안의 개별 매물 마커 좌표를 조회한다. */
@@ -58,8 +59,9 @@ public class ListingController {
    */
   @GetMapping("/search")
   public ListingKeywordSearchResponse searchListings(
+      @AuthenticationPrincipal AuthPrincipal principal,
       @ModelAttribute ListingKeywordSearchRequest request) {
-    return listingService.searchListings(request);
+    return listingService.searchListings(userIdOrNull(principal), request);
   }
 
   /** 매물 상세 화면에서 사용할 객체별 상세 정보를 반환한다. */
@@ -93,5 +95,10 @@ public class ListingController {
   public FavoriteToggleResponse removeFavorite(
       @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String listingId) {
     return listingService.removeFavorite(principal.userId(), listingId);
+  }
+
+  /** 공개 API에서 인증 정보가 없으면 null을 반환해 서비스가 기본 영어를 선택하도록 한다. */
+  private static Long userIdOrNull(AuthPrincipal principal) {
+    return principal == null ? null : principal.userId();
   }
 }

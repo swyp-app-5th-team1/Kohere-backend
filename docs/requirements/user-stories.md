@@ -777,6 +777,8 @@
 
 외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 상세 조회·찜·최근 본 매물은 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 검증 실패 시 필드 상세는 `error.errors[]`에 담긴다.
 
+> **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물/임대/성별/교통/건물/시설/조건)는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·재고·상태·통화와 요청 code는 번역하지 않는다.
+
 ### US-3-1 — 매물 리스트 탐색(필터·정렬·페이지네이션)
 
 **As a** 한국 주거를 찾는 외국인 사용자
@@ -808,6 +810,10 @@
   Given 동일 매물에 대해
   When 비로그인 사용자가 호출하면 각 항목 `favorited=false`로, 로그인 사용자가 호출하면 본인의 찜 여부가 `favorited`에 반영되어 반환된다
   Then 두 경우 모두 `200 OK`이며 공개 데이터는 동일하다
+- 시나리오: 기본 영어 표시와 code 보존
+  Given 비로그인 사용자 또는 영어 국가로 등록한 사용자가
+  When 매물 목록을 호출하면
+  Then 제목·주소·역명·방 이름·설명은 영어 문자열이고, 공통 표시값은 예를 들어 `{ "code":"FEMALE_ONLY", "label":"Female Only" }`로 반환된다. 같은 필터를 다시 요청할 때는 label이 아니라 `code=FEMALE_ONLY`를 보낸다
 
 ### US-3-2 — 지도 bbox 마커 조회
 
@@ -890,6 +896,10 @@
   Given 인증된 사용자가 존재하는 매물을 조회하면
   When `GET /api/v1/listings/{listingId}` (Authorization 포함)
   Then `200 OK`로 상세(사진 `imageUrls[]`, `type`, `monthlyRent`, `deposit`, `contractTermOptions[]`, `location`, `conditions[]`, `landlord`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다
+- 시나리오: 한국어 사용자 표시
+  Given 계정의 표시 언어를 한국어(`ko`)로 선택한 사용자가
+  When 같은 매물 상세를 조회하면
+  Then 영문 사용자와 동일한 `code`를 받되 고유 문구와 `{code,label}`의 label은 한국어로 반환된다. 프론트의 필터 요청 code는 언어에 따라 달라지지 않는다
 - 시나리오: 리소스 없음
   Given 존재하지 않거나 비공개/삭제된 매물 ID로
   When 상세를 조회하면

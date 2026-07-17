@@ -90,4 +90,7 @@ app:
 mongock:
   migration-scan-package:
     - com.kohere
-  transaction-enabled: false # 단일 노드 Mongo·DocumentDB는 멀티도큐먼트 트랜잭션 미지원
+  # 마이그레이션은 로컬 fixture·인덱스 등 ApplicationRunner보다 먼저 끝나야 한다.
+  # 기본 ApplicationRunner 방식은 실행 순서가 같아, v3 fixture가 v2 validator에 먼저 저장되는 기동 실패를 만들 수 있다.
+  runner-type: InitializingBean
+  transactional: false # 단일 노드 Mongo·DocumentDB는 멀티도큐먼트 트랜잭션 미지원

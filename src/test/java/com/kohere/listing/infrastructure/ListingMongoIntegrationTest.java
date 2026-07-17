@@ -2,6 +2,8 @@ package com.kohere.listing.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.BDDMockito.given;
 
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.exception.InvalidInputException;
@@ -30,10 +32,12 @@ import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.RecentListingRepository;
 import com.kohere.listing.domain.SearchPlaceRepository;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import com.kohere.user.api.UserAccountService;
 import com.mongodb.client.model.InsertOneOptions;
 import java.time.Instant;
 import java.util.List;
@@ -49,6 +53,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -73,14 +78,36 @@ class ListingMongoIntegrationTest {
   @Autowired private ListingRecommendationService listingRecommendationService;
   @Autowired private SearchPlaceRepository searchPlaceRepository;
   @Autowired private MongoTemplate mongoTemplate;
+  @MockitoBean private UserAccountService userAccountService;
 
   /** 각 테스트가 독립적으로 실행되도록 listing 관련 컬렉션을 비운다. */
   @BeforeEach
   void cleanListingCollections() {
+    given(userAccountService.getLanguage(anyLong())).willReturn("en");
     mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
     mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(ListingCatalogDocument.COLLECTION_NAME).deleteMany(new Document());
+    // 실제 기동과 같은 0108→0111 순서를 거쳐 테스트도 최종 label 저장 구조만 읽게 한다.
+    new ListingCatalogSeedChangeUnit().execution(mongoTemplate);
+    new ListingCatalogLabelFieldChangeUnit().execution(mongoTemplate);
+  }
+
+  /** 레거시 카탈로그 시드가 실제 MongoDB에서 팀 공통 {@code label:{ko,en}} 구조로 이행되는지 확인한다. */
+  @Test
+  void catalogMigration_labels를_label로_이행한다() {
+    Document monthlyRent =
+        mongoTemplate
+            .getCollection(ListingCatalogDocument.COLLECTION_NAME)
+            .find(new Document("_id", "RENTAL_TYPE:MONTHLY_RENT"))
+            .first();
+
+    assertThat(monthlyRent).isNotNull();
+    assertThat(monthlyRent).doesNotContainKey("labels");
+    assertThat(monthlyRent.get("label", Document.class))
+        .containsEntry("ko", "월세")
+        .containsEntry("en", "Monthly Rent");
   }
 
   /** 도메인 매물을 저장한 뒤 중첩 roomOffers와 GeoJSON 좌표가 보존되는지 확인한다. */
@@ -153,7 +180,7 @@ class ListingMongoIntegrationTest {
     assertThat(found.getBuilding().type()).isEqualTo(Listing.BuildingType.GOSHIWON);
   }
 
-  /** v1 문서는 Mongock 이행 후 v2 저장 구조로 바뀌고, 새 도메인 매퍼로 문제없이 읽힌다. */
+  /** v1 문서는 v2 정규화를 거쳐 최종 v3 다국어 저장 구조로 바뀌고 새 도메인 매퍼로 읽힌다. */
   @Test
   void migration_v1_문서를_v2_저장구조로_이행한다() {
     ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a01");
@@ -163,8 +190,11 @@ class ListingMongoIntegrationTest {
             legacyV1ListingDocument(legacyRoomOfferId),
             new InsertOneOptions().bypassDocumentValidation(true));
 
+    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
     new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
     new ListingGoshiwonRenameChangeUnit().execution(mongoTemplate);
+    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
+    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
 
     Document migrated =
         mongoTemplate
@@ -173,7 +203,7 @@ class ListingMongoIntegrationTest {
             .first();
     assertThat(migrated).isNotNull();
     assertThat(migrated.getString("type")).isEqualTo("GOSHIWON");
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
     assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
     assertThat(migrated.getString("genderPolicy")).isEqualTo("FEMALE_ONLY");
     assertThat(migrated.get("featureSummary")).isNull();
@@ -181,7 +211,8 @@ class ListingMongoIntegrationTest {
     assertThat(migrated.get("extraNotes")).isNull();
 
     Document nearestTransit = migrated.get("nearestTransit", Document.class);
-    assertThat(nearestTransit.getString("nearbyPlacesDescription")).isEqualTo("편의점");
+    assertThat(nearestTransit.get("nearbyPlacesDescription", Document.class).getString("ko"))
+        .isEqualTo("편의점");
     Document building = migrated.get("building", Document.class);
     assertThat(building.get("heatingSystem")).isNull();
     Document facilities = migrated.get("facilities", Document.class);
@@ -198,7 +229,7 @@ class ListingMongoIntegrationTest {
     assertThat(roomOffer.get("features")).isNull();
 
     Listing found = listingRepository.findById(LISTING_ID).orElseThrow();
-    assertThat(found.getSchemaVersion()).isEqualTo(2);
+    assertThat(found.getSchemaVersion()).isEqualTo(3);
     assertThat(found.getContract().minStayMonths()).isEqualTo(1);
     assertThat(found.getContract().maxStayMonths()).isEqualTo(12);
     assertThat(found.getRefundPolicy().code()).isEqualTo(Listing.RefundPolicyCode.PARTIAL_REFUND);
@@ -216,7 +247,10 @@ class ListingMongoIntegrationTest {
         .getCollection(ListingDocument.COLLECTION_NAME)
         .insertOne(legacy, new InsertOneOptions().bypassDocumentValidation(true));
 
+    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
     new ListingSchemaV2RepairChangeUnit().execution(mongoTemplate);
+    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
+    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
 
     Document migrated =
         mongoTemplate
@@ -224,7 +258,7 @@ class ListingMongoIntegrationTest {
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
     assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
     assertThat(migrated.get("featureSummary")).isNull();
     assertThat(migrated.get("nearbyPlacesDescription")).isNull();
@@ -237,7 +271,7 @@ class ListingMongoIntegrationTest {
     assertThat(migrated.getList("roomOffers", Document.class).getFirst().get("contract")).isNull();
   }
 
-  /** 기존 v2 validator가 먼저 걸린 DB도 validator를 풀고 이행한 뒤 다시 strict validator를 적용한다. */
+  /** 기존 v2 validator가 걸린 DB도 validator를 풀고 v3 이행한 뒤 새 strict validator를 적용한다. */
   @Test
   void migration_기존_validator를_풀고_v2_이행후_다시_적용한다() {
     ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a03");
@@ -248,9 +282,10 @@ class ListingMongoIntegrationTest {
             new InsertOneOptions().bypassDocumentValidation(true));
 
     new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
-    new ListingValidatorRelaxBeforeSchemaV2ChangeUnit().execution(mongoTemplate);
+    new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
     new ListingSchemaV2ChangeUnit().execution(mongoTemplate);
-    new ListingValidatorV2ChangeUnit().execution(mongoTemplate);
+    new ListingSchemaV3LocalizationChangeUnit().execution(mongoTemplate);
+    new ListingValidatorV3ChangeUnit().execution(mongoTemplate);
 
     Document migrated =
         mongoTemplate
@@ -258,7 +293,7 @@ class ListingMongoIntegrationTest {
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
-    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(2);
+    assertThat(migrated.getInteger("schemaVersion")).isEqualTo(3);
     assertThat(migrated.getString("rentalType")).isEqualTo("MONTHLY_RENT");
 
     Document invalidLegacy = legacyV1ListingDocument(new ObjectId("6858e2000000000000000a04"));
@@ -337,7 +372,7 @@ class ListingMongoIntegrationTest {
     assertThat(
             mongoTemplate
                 .getCollection(ListingDocument.COLLECTION_NAME)
-                .countDocuments(new Document("title", "고시원001")))
+                .countDocuments(new Document("title.ko", "고시원001")))
         .isEqualTo(1);
   }
 
@@ -370,7 +405,7 @@ class ListingMongoIntegrationTest {
     Document found =
         mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).find(query).first();
     assertThat(found).isNotNull();
-    assertThat(found.getString("title")).isEqualTo("고시원001");
+    assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("고시원001");
   }
 
   /** 키워드 검색은 POI를 찾은 뒤 해당 좌표 3km 안의 매물 카드를 반환한다. */
@@ -530,7 +565,7 @@ class ListingMongoIntegrationTest {
     assertThat(result.page().totalElements()).isEqualTo(1);
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().roomOffers())
-        .extracting(Listing.RoomOffer::name)
+        .extracting(roomOffer -> roomOffer.name().en())
         .containsExactly("Green Zone 1", "Green Zone 2", "Green Zone 3");
   }
 
@@ -584,7 +619,7 @@ class ListingMongoIntegrationTest {
     assertThat(result.page().totalElements()).isEqualTo(1);
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().roomOffers())
-        .extracting(Listing.RoomOffer::name)
+        .extracting(roomOffer -> roomOffer.name().en())
         .containsExactly("Green Zone 1", "Green Zone 2");
     assertThat(result.content().getFirst().roomOffers())
         .extracting(roomOffer -> roomOffer.pricing().monthlyRent())
@@ -728,7 +763,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().roomOffers())
-        .extracting(Listing.RoomOffer::name)
+        .extracting(roomOffer -> roomOffer.name().en())
         .containsExactly("Move In Now Zone");
     assertThat(result.content().getFirst().roomOffers().getFirst().inventory().availableCount())
         .isEqualTo(2);
@@ -776,7 +811,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(result.content()).hasSize(1);
     assertThat(result.content().getFirst().roomOffers())
-        .extracting(Listing.RoomOffer::name)
+        .extracting(roomOffer -> roomOffer.name().en())
         .containsExactly("Registration Zone");
   }
 
@@ -897,16 +932,20 @@ class ListingMongoIntegrationTest {
     ListingSummaryResponse card = result.content().getFirst();
     assertThat(card.listingId()).isEqualTo(LISTING_ID);
     assertThat(card.status()).isEqualTo(Listing.ListingStatus.PUBLISHED);
-    assertThat(card.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+    assertThat(card.rentalType().code()).isEqualTo("MONTHLY_RENT");
     assertThat(card.contract().minStayMonths()).isEqualTo(1);
     assertThat(card.contract().maxStayMonths()).isEqualTo(12);
     assertThat(card.location())
         .isEqualTo(new ListingDetailResponse.GeoPoint(37.459471, 126.951422));
     assertThat(card.address().fullAddress()).isEqualTo("서울특별시 관악구 테스트로 1");
-    assertThat(card.nearestTransit())
-        .isEqualTo(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"));
-    assertThat(card.building().type()).isEqualTo(Listing.BuildingType.VILLA);
-    assertThat(card.facilities().heatingSystem()).containsExactly(Listing.HeatingSystem.CENTRAL);
+    assertThat(card.nearestTransit().type().code()).isEqualTo("SUBWAY");
+    assertThat(card.nearestTransit().name()).isEqualTo("서울대입구역");
+    assertThat(card.nearestTransit().walkMinutes()).isEqualTo(5);
+    assertThat(card.nearestTransit().nearbyPlacesDescription()).isEqualTo("편의점");
+    assertThat(card.building().type().code()).isEqualTo("VILLA");
+    assertThat(card.facilities().heatingSystem())
+        .extracting(heating -> heating.code())
+        .containsExactly("CENTRAL");
     assertThat(card.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::name)
         .containsExactly("Green Zone 1", "Green Zone 2");
@@ -923,7 +962,8 @@ class ListingMongoIntegrationTest {
         .extracting(roomOffer -> roomOffer.inventory().availableCount())
         .containsExactly(3, 2);
     assertThat(card.roomOffers().getFirst().filterTags())
-        .containsExactlyInAnyOrder(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH);
+        .extracting(tag -> tag.code())
+        .containsExactlyInAnyOrder("FEMALE_ONLY", "PRIVATE_BATH");
   }
 
   /** DISTANCE 정렬은 프론트가 보낸 중심 좌표가 아니라 bbox의 원본 중심점을 기준으로 계산한다. */
@@ -1094,11 +1134,12 @@ class ListingMongoIntegrationTest {
     String newerListingId = "6858e2000000000000000003";
     String pausedListingId = "6858e2000000000000000004";
     listingRepository.save(sampleListing());
-    listingRepository.save(sampleListingBuilder().id(newerListingId).title("두 번째 고시원").build());
+    listingRepository.save(
+        sampleListingBuilder().id(newerListingId).title(localized("두 번째 고시원")).build());
     listingRepository.save(
         sampleListingBuilder()
             .id(pausedListingId)
-            .title("노출 중지 고시원")
+            .title(localized("노출 중지 고시원"))
             .status(Listing.ListingStatus.PAUSED)
             .build());
     favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
@@ -1122,8 +1163,10 @@ class ListingMongoIntegrationTest {
     String secondListingId = "6858e2000000000000000005";
     String thirdListingId = "6858e2000000000000000006";
     listingRepository.save(sampleListing());
-    listingRepository.save(sampleListingBuilder().id(secondListingId).title("두 번째 고시원").build());
-    listingRepository.save(sampleListingBuilder().id(thirdListingId).title("세 번째 고시원").build());
+    listingRepository.save(
+        sampleListingBuilder().id(secondListingId).title(localized("두 번째 고시원")).build());
+    listingRepository.save(
+        sampleListingBuilder().id(thirdListingId).title(localized("세 번째 고시원")).build());
     favoriteRepository.saveIfAbsent(favorite(1L, LISTING_ID, "2026-06-24T01:00:00Z"));
     favoriteRepository.saveIfAbsent(favorite(1L, secondListingId, "2026-06-24T02:00:00Z"));
     favoriteRepository.saveIfAbsent(favorite(1L, thirdListingId, "2026-06-24T03:00:00Z"));
@@ -1242,10 +1285,10 @@ class ListingMongoIntegrationTest {
 
     ListingDetailResponse response = listingService.getListing(1L, LISTING_ID);
 
-    assertThat(response.rentalType()).isEqualTo(Listing.RentalType.MONTHLY_RENT);
+    assertThat(response.rentalType().code()).isEqualTo("MONTHLY_RENT");
     assertThat(response.contract().minStayMonths()).isEqualTo(1);
     assertThat(response.contract().maxStayMonths()).isEqualTo(12);
-    assertThat(response.genderPolicy()).isEqualTo(Listing.GenderPolicy.FEMALE_ONLY);
+    assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.imageUrls()).hasSize(3);
     assertThat(response.roomOffers())
@@ -1320,7 +1363,8 @@ class ListingMongoIntegrationTest {
               assertThat(response.favorited()).isTrue();
               assertThat(response.nearestTransit())
                   .isEqualTo(
-                      new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"));
+                      new ListingDetailResponse.NearestTransitResponse(
+                          response.nearestTransit().type(), "서울대입구역", 5, "편의점"));
               assertThat(response.roomOffers().getFirst().pricing().monthlyRent())
                   .isEqualTo(310000);
             });
@@ -1429,13 +1473,41 @@ class ListingMongoIntegrationTest {
     assertThat(result.content()).hasSize(1);
     RecommendedListingView listing = result.content().getFirst();
     assertThat(listing.listingId()).isEqualTo(ListingSeedFixtures.GOSHIWON_001_ID);
+    assertThat(listing.title()).isEqualTo("Goshiwon 001");
+    assertThat(listing.type().code()).isEqualTo("GOSHIWON");
+    assertThat(listing.type().label()).isEqualTo("Goshiwon");
     assertThat(listing.monthlyRentMin()).isEqualTo(300000);
     assertThat(listing.monthlyRentMax()).isEqualTo(300000);
     assertThat(listing.minDeposit()).isEqualTo(300000);
     assertThat(listing.maxDeposit()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
-    assertThat(listing.conditions()).contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
+    assertThat(listing.conditions())
+        .extracting(condition -> condition.code())
+        .contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
+    assertThat(listing.conditions())
+        .filteredOn(condition -> condition.code().equals("FEMALE_ONLY"))
+        .singleElement()
+        .extracting(condition -> condition.label())
+        .isEqualTo("Female Only");
+
+    PageResponse<RecommendedListingView> koreanResult =
+        listingRecommendationService.recommendByCriteria(
+            new RecommendationCriteria(
+                "SEOUL",
+                0,
+                500000,
+                Set.of("FEMALE_ONLY", "ADDRESS_REGISTRATION"),
+                Set.of("SNU"),
+                null,
+                0,
+                20,
+                "recommended,desc"),
+            "ko");
+    RecommendedListingView koreanListing = koreanResult.content().getFirst();
+    assertThat(koreanListing.title()).isEqualTo("고시원001");
+    assertThat(koreanListing.type().code()).isEqualTo("GOSHIWON");
+    assertThat(koreanListing.type().label()).isEqualTo("고시원");
   }
 
   /** 진단 대학 그룹에서 펼친 개별 대학 코드 집합은 nearbyUniversityCodes와 ANY 매칭되고, 빈 집합은 대학 필터를 생략한다. */
@@ -1552,7 +1624,7 @@ class ListingMongoIntegrationTest {
   private static Listing listingWithIndex(int index, Listing.ListingStatus status) {
     return sampleListingBuilder()
         .id(listingId(index))
-        .title("최근 본 테스트 매물 " + index)
+        .title(localized("최근 본 테스트 매물 " + index))
         .status(status)
         .roomOffers(
             List.of(
@@ -1663,20 +1735,23 @@ class ListingMongoIntegrationTest {
   private static Listing.ListingBuilder sampleListingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(2)
+        .schemaVersion(3)
         .landlordId(1L)
-        .title("테스트 고시원")
+        .title(localized("테스트 고시원"))
         .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(
             new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불"))
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
+                localized("입주 7일 전 취소 시 전액 환불")))
         .contract(new Listing.Contract(2, 6))
         .genderPolicy(Listing.GenderPolicy.FEMALE_ONLY)
         .location(new Listing.GeoPoint(126.951422, 37.459471))
-        .address(new Listing.Address("SEOUL", "GWANAK_GU", "서울특별시 관악구 테스트로 1", null))
-        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"))
+        .address(new Listing.Address("SEOUL", "GWANAK_GU", localized("서울특별시 관악구 테스트로 1"), null))
+        .nearestTransit(
+            new Listing.NearestTransit(
+                Listing.TransitType.SUBWAY, localized("서울대입구역"), 5, localized("편의점")))
         .nearbyUniversityCodes(Set.of("SNU"))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
@@ -1783,11 +1858,16 @@ class ListingMongoIntegrationTest {
       Set<ConditionTag> filterTags) {
     return new Listing.RoomOffer(
         roomOfferId,
-        name,
+        localized(name),
         status,
         new Listing.Pricing(monthlyRent, deposit, maintenanceFee, Listing.Currency.KRW),
         new Listing.Inventory(10, availableCount, null),
         filterTags,
         List.of());
+  }
+
+  /** 저장소 동작 자체에 집중하는 테스트에서 두 언어에 같은 문자열을 넣는 다국어 값 헬퍼다. */
+  private static LocalizedText localized(String value) {
+    return LocalizedText.same(value);
   }
 }

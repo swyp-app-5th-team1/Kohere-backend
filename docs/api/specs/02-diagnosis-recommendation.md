@@ -438,14 +438,18 @@
       {
         "listingId": "6858e2000000000000000001",
         "title": "Sinchon Co-living House A",
-        "housingType": "CO_LIVING",
+        "type": { "code": "CO_LIVING", "label": "Co-living" },
         "monthlyRentMin": 550000,
         "monthlyRentMax": 700000,
         "minDeposit": 1000000,
         "maxDeposit": 1500000,
         "lat": 37.555134,
         "lng": 126.936893,
-        "conditions": ["FEMALE_ONLY", "PRIVATE_BATH", "NO_ARC"],
+        "conditions": [
+          { "code": "FEMALE_ONLY", "label": "Female Only" },
+          { "code": "PRIVATE_BATH", "label": "Private Bath" },
+          { "code": "NO_ARC", "label": "No ARC Required" }
+        ],
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
       }
     ],
@@ -465,7 +469,7 @@
 }
 ```
 
-> `content[]` 항목 스키마(`ListingSummaryResponse`)는 매물 탐색(01) 스펙을 정본으로 한다(확인 필요 — 위 필드는 예시).
+> 추천 카드의 매물명·type/conditions label은 진단 사용자가 계정에서 선택한 표시 언어가 적용된다. 프론트는 label을 표시하고 code를 필터 요청·비교에 사용한다([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md)).
 
 #### 성공 Response — 200 OK — 결과 0건 (조정 제안 포함)
 
@@ -683,7 +687,7 @@ v1 §7(`GET /api/v1/diagnoses/{id}/recommendations`)과 필터·매핑·페이�
   "success": true,
   "data": {
     "resultCode": "MATCHED",
-    "content": [ /* ListingSummaryResponse[] — §7과 동일 */ ],
+    "content": [ /* §7과 동일: type·conditions는 {code,label}, title·label은 사용자 언어 */ ],
     "markers": [ { "listingId": "6858e2000000000000000001", "lat": 37.555134, "lng": 126.936893 } ],
     "page": { "number": 0, "size": 20, "totalElements": 12, "totalPages": 1, "hasNext": false }
   },

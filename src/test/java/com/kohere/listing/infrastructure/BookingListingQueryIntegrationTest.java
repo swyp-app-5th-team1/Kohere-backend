@@ -9,6 +9,7 @@ import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LocalizedText;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -137,20 +138,27 @@ class BookingListingQueryIntegrationTest {
   private static Listing.ListingBuilder listingBuilder() {
     return Listing.builder()
         .id(LISTING_ID)
-        .schemaVersion(2)
+        .schemaVersion(3)
         .landlordId(1L)
-        .title("테스트 고시원")
+        .title(LocalizedText.same("테스트 고시원"))
         .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(
             new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불"))
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
+                LocalizedText.same("입주 7일 전 취소 시 전액 환불")))
         .contract(new Listing.Contract(2, 6))
         .genderPolicy(Listing.GenderPolicy.ANY)
         .location(new Listing.GeoPoint(126.951422, 37.459471))
-        .address(new Listing.Address("SEOUL", "GWANAK_GU", "서울특별시 관악구 테스트로 1", null))
-        .nearestTransit(new Listing.NearestTransit(Listing.TransitType.SUBWAY, "서울대입구역", 5, "편의점"))
+        .address(
+            new Listing.Address("SEOUL", "GWANAK_GU", LocalizedText.same("서울특별시 관악구 테스트로 1"), null))
+        .nearestTransit(
+            new Listing.NearestTransit(
+                Listing.TransitType.SUBWAY,
+                LocalizedText.same("서울대입구역"),
+                5,
+                LocalizedText.same("편의점")))
         .nearbyUniversityCodes(Set.of("SNU"))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
@@ -188,7 +196,7 @@ class BookingListingQueryIntegrationTest {
       LocalDate nextAvailableFrom) {
     return new Listing.RoomOffer(
         roomOfferId,
-        name,
+        LocalizedText.same(name),
         status,
         new Listing.Pricing(monthlyRent, deposit, 0, Listing.Currency.KRW),
         new Listing.Inventory(10, 3, nextAvailableFrom),

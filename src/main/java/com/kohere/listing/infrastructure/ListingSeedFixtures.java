@@ -3,6 +3,7 @@ package com.kohere.listing.infrastructure;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingType;
+import com.kohere.listing.domain.LocalizedText;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -25,7 +26,7 @@ final class ListingSeedFixtures {
     Listing.RoomOffer roomOffer =
         new Listing.RoomOffer(
             GOSHIWON_001_ROOM_OFFER_ID,
-            "스탠다드 1인실",
+            new LocalizedText("스탠다드 1인실", "Standard Single Room"),
             Listing.RoomOfferStatus.ACTIVE,
             new Listing.Pricing(300000, 300000, 0, Listing.Currency.KRW),
             new Listing.Inventory(10, 0, null),
@@ -38,42 +39,54 @@ final class ListingSeedFixtures {
 
     return Listing.builder()
         .id(GOSHIWON_001_ID)
-        .schemaVersion(2)
+        .schemaVersion(3)
         .landlordId(1L)
-        .title("고시원001")
+        .title(new LocalizedText("고시원001", "Goshiwon 001"))
         .type(ListingType.GOSHIWON)
         .status(Listing.ListingStatus.PUBLISHED)
         .rentalType(Listing.RentalType.MONTHLY_RENT)
         .refundPolicy(
             new Listing.RefundPolicy(
-                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS, "입주 7일 전 취소 시 전액 환불"))
+                Listing.RefundPolicyCode.FULL_REFUND_BEFORE_7_DAYS,
+                new LocalizedText(
+                    "입주 7일 전 취소 시 전액 환불",
+                    "Full refund for cancellations made at least 7 days before move-in.")))
         .contract(new Listing.Contract(2, 6))
         .genderPolicy(Listing.GenderPolicy.FEMALE_ONLY)
         .location(new Listing.GeoPoint(126.951422, 37.459471))
         .address(
-            new Listing.Address("SEOUL", "GWANAK_GU", "서울특별시 Gwanak-gu Sillim-dong 나로 56-15", null))
+            new Listing.Address(
+                "SEOUL",
+                "GWANAK_GU",
+                new LocalizedText(
+                    "서울특별시 관악구 신림동 나로 56-15", "56-15 Naro, Sillim-dong, Gwanak-gu, Seoul"),
+                null))
         .nearestTransit(
             new Listing.NearestTransit(
-                Listing.TransitType.SUBWAY, "Seoul Nat'l Univ.", 5, "CU, 스타벅스, 약국, 헬스장"))
+                Listing.TransitType.SUBWAY,
+                new LocalizedText("서울대입구역", "Seoul Nat'l Univ. Station"),
+                5,
+                new LocalizedText("CU, 스타벅스, 약국, 헬스장", "CU, Starbucks, pharmacy, gym")))
         .nearbyUniversityCodes(Set.of("SNU", "CAU", "SOONGSIL"))
         .building(new Listing.Building(Listing.BuildingType.VILLA, 1, 2, 4, true, true))
         .propertyPolicies(new Listing.PropertyPolicies(false, true, true, true, false))
         .facilities(
             new Listing.Facilities(
                 Set.of(Listing.HeatingSystem.CENTRAL),
-                Set.of("Shared Refrigerator", "Microwave"),
+                Set.of("SHARED_REFRIGERATOR", "MICROWAVE"),
                 Set.of("COIN_LAUNDRY"),
                 Set.of("MICROWAVE", "SOFA", "TV", "WIFI"),
                 Set.of("CCTV", "ENTRANCE_DOOR_LOCK", "FIRE_EXTINGUISHER"),
                 List.of(
                     new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 6),
+                    new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_BATH, null),
                     new Listing.CommonSpace(Listing.CommonSpaceType.STUDY_ROOM, null)),
-                Set.of("Shower Room", "Laundry Detergent", "Toilet Paper", "Slippers")))
+                Set.of("LAUNDRY_DETERGENT", "TISSUE", "SLIPPERS")))
         .roomOffers(List.of(roomOffer))
         .descriptions(
             new Listing.Descriptions(
                 "지하철역 도보 5분 이내, 교통이 편리한 위치의 코리빙 하우스입니다.",
-                "A well-maintained gosiwon welcoming foreign residents. English support available.",
+                "A co-living house in a convenient location within a five-minute walk of a subway station.",
                 "외국인 환영, 영어 안내 가능합니다."))
         .imageUrls(List.of())
         .favoriteCount(0)

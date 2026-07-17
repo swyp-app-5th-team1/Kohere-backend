@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,7 @@ import com.kohere.diagnosis.domain.Region;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
+import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
@@ -94,6 +96,10 @@ class DiagnosisFlowServiceIntegrationTest {
     ensureUserIdUniqueIndex();
     seedCatalog();
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
+    given(listingRecommendationService.recommendByCriteria(any(), anyString()))
+        .willAnswer(
+            invocation ->
+                listingRecommendationService.recommendByCriteria(invocation.getArgument(0)));
   }
 
   /**
@@ -495,7 +501,7 @@ class DiagnosisFlowServiceIntegrationTest {
     return new RecommendedListingView(
         "6858e2000000000000000001",
         "Cozy",
-        "GOSHIWON",
+        new ListingCodeLabelView("GOSHIWON", "Goshiwon"),
         300000,
         450000,
         500000,
@@ -503,7 +509,7 @@ class DiagnosisFlowServiceIntegrationTest {
         "http://img",
         37.5,
         126.9,
-        List.of("FEMALE_ONLY"));
+        List.of(new ListingCodeLabelView("FEMALE_ONLY", "Female Only")));
   }
 
   private static PageResponse<RecommendedListingView> emptyPage() {

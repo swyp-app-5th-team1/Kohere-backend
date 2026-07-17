@@ -288,22 +288,23 @@
 | `_id` | ObjectId | PK |
 | `schemaVersion` | int | NOT NULL · 문서 구조 버전 |
 | `landlordId` | long | NOT NULL · → user `users.id` 값 참조(FK 없음) |
-| `title` | string | NOT NULL |
+| `title` | object | NOT NULL · 매물 고유 표시명 `{ko,en}` |
 | `type` | string (enum `ListingType`) | NOT NULL |
 | `status` | string (enum `ListingStatus`) | NOT NULL · `DRAFT`/`PUBLISHED`/`PAUSED`/`DELETED` |
 | `rentalType` | string (enum `RentalType`) | 매물 공통 임대 방식 |
-| `refundPolicy` | object | 매물 공통 환불 정책(`code`·`description`) |
+| `refundPolicy` | object | 매물 공통 환불 정책(`code`·`description:{ko,en}`) |
 | `contract` | object | 매물 공통 계약기간(`minStayMonths`·`maxStayMonths`) |
 | `genderPolicy` | string (enum `GenderPolicy`) | 매물 공통 성별 정책 |
 | `location` | GeoJSON `Point` | NOT NULL · `[lng,lat]`, `2dsphere` |
-| `address` | object | `city`·`district`·`fullAddress`·`detail` |
-| `nearestTransit` | object | `type`·`name`·`walkMinutes`·`nearbyPlacesDescription` |
+| `address` | object | `city`·`district` 코드 + 표시 주소 `fullAddress/detail:{ko,en}` |
+| `nearestTransit` | object | `type` 코드·`name:{ko,en}`·`walkMinutes`·`nearbyPlacesDescription:{ko,en}` |
 | `nearbyUniversityCodes` | string[] | 학교 검색·진단 추천용 코드 |
 | `building` | object | 건물 유형·층수·주차·엘리베이터 |
 | `propertyPolicies` | object | 건물/전체 방 공통 정책(`arcRequired`·전입신고·식사·영어 안내 등) |
 | `facilities` | object | 난방·주방·세탁·생활 편의·보안·공간·제공 물품 |
 | `roomOffers` | object[] | 동일 가격·재고·검색 태그를 가진 실제 방 묶음. 최소 1개 |
 | `roomOffers[].roomOfferId` | string | 문서 내부 방 상품 식별자(ObjectId hex 문자열) |
+| `roomOffers[].name` | object | 방 상품 고유 표시명 `{ko,en}` |
 | `roomOffers[].status` | string (enum `RoomOfferStatus`) | `ACTIVE`/`INACTIVE` |
 | `roomOffers[].pricing` | object | `monthlyRent`·`deposit`·`maintenanceFee`·`currency`(KRW 정수, 단일값) |
 | `roomOffers[].inventory` | object | `totalCount`·`availableCount`·`nextAvailableFrom` |
@@ -317,9 +318,26 @@
 
 > `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 DB에 저장하지 않고, 상세 응답을 만들 때 활성 `roomOffers[].filterTags`의 합집합으로 계산한다. 필터는 반드시 같은 `roomOffers[]` 원소가 가격·재고·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다.
 
+`listingCatalog`
+
+사용자 UI에 표시하는 Listing 공통 코드의 번역 사전이다. 특정 매물 한 건의 코드만이 아니라 현재 Listing UI가 사용할 수 있는 전체 허용 코드를 담는다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)).
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `_id` | string | PK · `CATEGORY:CODE` |
+| `category` | string | 코드가 쓰이는 문맥. 예: `CONDITION_TAG`, `TRANSIT_TYPE`, `KITCHEN` |
+| `code` | string | 언어 무관 UPPER_SNAKE 코드. 필터 요청·검증에 사용 |
+| `label` | object | 코드 하나의 표시 번역 `{ko,en}`. 팀의 진단 카탈로그와 같은 필드명이며 MVP 기본은 영어 |
+
+**인덱스**: UNIQUE `(category, code)`. `displayOrder`·`active`는 현재 MVP 요구가 없어 저장하지 않는다.
+
+저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 이 예시 세 건이 아니라 Listing UI가 사용하는 전체 공통 코드를 포함한다.
+
 **MVP 구현 메모**
 
 - `nearestTransit.nearbyPlacesDescription`은 집주인이 입력한 주변 시설 자유 텍스트다. API 응답에서는 기존 프론트 계약을 유지하기 위해 `locationInfo.nearbyPlacesDescription`으로 내려준다.
+- 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
+- 초기 카탈로그의 레거시 `labels` 필드는 Mongock `0111`에서 `label`로 자동 이행한다. 각 환경은 자기 changelog를 기준으로 한 번만 적용한다.
 - 동일 가격·재고·검색 태그를 가진 실제 방이 여러 개면 `roomOffers[]` 원소 1개로 묶고 `inventory.totalCount`·`availableCount`로 수량을 관리한다.
 - `availableCount=0`이어도 매물/방 상품은 유지하며, 다음 입주 가능일을 알 수 있으면 `nextAvailableFrom`에 저장한다.
 - 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 참고용으로 둔다.

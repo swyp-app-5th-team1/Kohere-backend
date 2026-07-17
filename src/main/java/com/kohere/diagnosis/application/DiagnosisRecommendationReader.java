@@ -9,6 +9,7 @@ import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendedListingView;
+import com.kohere.user.api.UserAccountService;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -31,6 +32,7 @@ public class DiagnosisRecommendationReader {
   private final DiagnosisRepository diagnosisRepository;
   private final ListingRecommendationService listingRecommendationService;
   private final DiagnosisCriteriaMapper criteriaMapper;
+  private final UserAccountService userAccountService;
 
   /** 본인 소유 확정 진단의 추천 매물 페이지를 조회한다(0건이면 빈 {@code content} — 에러 아님). */
   PageResponse<RecommendedListingView> read(
@@ -42,7 +44,8 @@ public class DiagnosisRecommendationReader {
     requireNotDiscarded(diagnosis);
     requireOwner(diagnosis, userId);
     return listingRecommendationService.recommendByCriteria(
-        criteriaMapper.toCriteria(diagnosis, page, size, sort));
+        criteriaMapper.toCriteria(diagnosis, page, size, sort),
+        userAccountService.getLanguage(userId));
   }
 
   /**
