@@ -2,6 +2,8 @@ package com.kohere.listing.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -106,6 +108,27 @@ class ListingServiceTest {
     assertThat(response.listingId()).isEqualTo(LISTING_ID);
     assertThat(response.favoriteCount()).isEqualTo(3);
     verify(recentListingRepository).upsertViewedAt(eq(1L), eq(LISTING_ID), any(Instant.class));
+  }
+
+  /**
+   * 비로그인·온보딩 미완료 사용자는 컨트롤러에서 {@code userId=null}로 전달된다. 공개 상세는 그대로 반환하되, 사용자 식별자가 필요한 찜 조회와 최근 본
+   * 저장은 호출하지 않아야 한다.
+   */
+  @Test
+  void getListing_공개조회는_사용자전용_조회와_최근본기록을_건너뛴다() {
+    Listing listing = sampleListing();
+    when(listingRepository.findById(LISTING_ID)).thenReturn(Optional.of(listing));
+
+    ListingDetailResponse response = listingService.getListing(null, LISTING_ID);
+
+    assertThat(response.listingId()).isEqualTo(LISTING_ID);
+    assertThat(response.title()).isEqualTo("Test Goshiwon");
+    assertThat(response.favorited()).isFalse();
+    assertThat(response.favoriteCount()).isEqualTo(3);
+    verify(favoriteRepository, never()).findByUserIdAndListingId(any(), any());
+    verify(recentListingRepository, never()).upsertViewedAt(any(), any(), any());
+    verify(recentListingRepository, never()).deleteOldByUserIdKeepingLatest(any(), anyInt());
+    verify(userAccountService, never()).getLanguage(anyLong());
   }
 
   /** 상세 응답은 매물 공통 필드를 루트에 두고, UI에 노출 가능한 ACTIVE 방만 내려준다. */

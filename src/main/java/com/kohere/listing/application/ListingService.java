@@ -142,19 +142,25 @@ public class ListingService {
   }
 
   /**
-   * 단일 매물 상세 정보를 조회하고 최근 본 매물 기록을 남긴다.
+   * 단일 매물 상세 정보를 조회하고, 정식 로그인 사용자라면 찜 상태와 최근 본 기록을 함께 처리한다.
    *
-   * <p>상세 응답은 사용자가 명시적으로 요청한 핵심 기능이고, 최근 본 저장은 그 뒤에 따라오는 부가 기능이다. 그래서 매물 조회가 성공하면 먼저 상세 DTO를 구성하고,
-   * 최근 본 저장이나 오래된 기록 정리가 실패하더라도 상세 조회 자체는 실패시키지 않는다. 실패 내용은 운영자가 확인할 수 있도록 warn 로그로 남긴다.
+   * <p>{@code userId=null}은 비로그인 또는 온보딩 미완료 공개 조회를 뜻한다. 이 경우 사용자별 저장소를 조회하지 않고 {@code
+   * favorited=false}로 응답하며 최근 본 기록도 남기지 않는다. 정식 사용자의 최근 본 저장은 상세 조회 뒤에 따라오는 부가 기능이므로, 저장이나 오래된 기록
+   * 정리가 실패하더라도 상세 조회 자체는 실패시키지 않고 warn 로그만 남긴다.
+   *
+   * @param userId 온보딩을 완료한 사용자 ID. 공개 조회이면 {@code null}
    */
   public ListingDetailResponse getListing(Long userId, String listingId) {
     Listing listing = requirePublishedListing(listingId);
     boolean favorited =
-        favoriteRepository.findByUserIdAndListingId(userId, listing.getId()).isPresent();
+        userId != null
+            && favoriteRepository.findByUserIdAndListingId(userId, listing.getId()).isPresent();
     ListingDetailResponse response =
         ListingResponseMapper.toDetail(listing, favorited, localizationFor(userId));
 
-    recordRecentListing(userId, listing.getId());
+    if (userId != null) {
+      recordRecentListing(userId, listing.getId());
+    }
 
     return response;
   }

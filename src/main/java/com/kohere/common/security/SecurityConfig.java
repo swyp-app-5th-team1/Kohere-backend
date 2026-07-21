@@ -14,10 +14,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * 보안 필터 체인 구성(ADR-0010). 무상태 Bearer 인증 — 세션·CSRF·폼로그인 비활성, {@link JwtAuthenticationFilter}를 인증 필터
  * 앞에 등록한다.
  *
- * <p>보호 경로 3티어: (1) 공개(permitAll) — social-login·reissue·actuator health, (2) 온보딩 스코프 이상 —
- * onboarding·DELETE /users/me(PENDING 탈퇴 허용), (3) 정식 인증(ROLE_USER) — GET/PATCH /users/me·logout 등.
- * PENDING(ROLE_ONBOARDING) 토큰으로 ROLE_USER 자원 접근 시 {@link RestAccessDeniedHandler}가 403
- * AUTH_ONBOARDING_REQUIRED로 응답한다.
+ * <p>보호 경로 3티어: (1) 공개(permitAll) — social-login·reissue·actuator health·매물 탐색, (2) 온보딩 스코프 이상 —
+ * onboarding·DELETE /users/me(PENDING 탈퇴 허용), (3) 정식 인증(ROLE_USER) — GET/PATCH
+ * /users/me·logout·찜·최근 본 매물 등. PENDING(ROLE_ONBOARDING) 토큰으로 ROLE_USER 자원 접근 시 {@link
+ * RestAccessDeniedHandler}가 403 AUTH_ONBOARDING_REQUIRED로 응답한다.
  */
 @Configuration
 @EnableWebSecurity
@@ -44,6 +44,11 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers("/actuator/health", "/docs/**", "/swagger-ui/**")
                     .permitAll()
+                    // 매물 탐색은 가입 전에도 사용할 수 있는 공개 기능이다. HTTP method를 GET으로 한정하고 한 단계
+                    // 하위 경로만 열어 /{listingId}/favorite·/{listingId}/bookings 같은 사용자 액션은 공개하지 않는다.
+                    // /listings/*는 현재 map·search·places·{listingId} 상세 조회를 포함한다.
+                    .requestMatchers(HttpMethod.GET, "/api/v1/listings", "/api/v1/listings/*")
+                    .permitAll()
                     // (2) 온보딩 스코프 이상 허용 — 약관 동의·이메일/연락처 인증·온보딩 흐름(PENDING/TERMS_AGREED 토큰 허용)
                     .requestMatchers(
                         HttpMethod.POST,
@@ -62,6 +67,17 @@ public class SecurityConfig {
                     .hasRole("USER")
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/auth/business/verify", "/api/v1/auth/logout")
+                    .hasRole("USER")
+                    // 찜과 최근 본 매물은 사용자별 데이터를 읽고 변경하므로 ACTIVE(ROLE_USER) 사용자만 허용한다.
+                    // 명시하지 않고 anyRequest().authenticated()에 맡기면 ROLE_ONBOARDING 토큰도 통과할 수 있다.
+                    .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/favorite")
+                    .hasRole("USER")
+                    .requestMatchers(HttpMethod.DELETE, "/api/v1/listings/*/favorite")
+                    .hasRole("USER")
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/v1/users/me/favorites",
+                        "/api/v1/users/me/recent-listings")
                     .hasRole("USER")
                     // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")

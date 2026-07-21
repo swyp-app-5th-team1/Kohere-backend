@@ -22,16 +22,19 @@
 | Method | Path | 설명 | 인증 | 성공 status |
 | --- | --- | --- | --- | --- |
 | GET | `/api/v1/listings` | 매물 리스트(필터·정렬·오프셋 페이지) | 선택 | 200 |
-| GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) | 필수 | 200 |
+| GET | `/api/v1/listings/places` | 네이버 지역 검색 장소 후보(최대 5개) | 불필요 | 200 |
 | GET | `/api/v1/listings/map` | 지도 마커 조회(bbox 내 개별 매물 좌표) | 선택 | 200 |
 | GET | `/api/v1/listings/search` | 키워드 검색(학교명·지역명·지하철역명) | 선택 | 200 |
-| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 + 최근 본 매물 기록 | 필수 | 200 |
+| GET | `/api/v1/listings/{listingId}` | 매물 상세 조회(정식 로그인 시 최근 본 기록) | 선택 | 200 |
 | POST | `/api/v1/listings/{listingId}/favorite` | 찜 등록(토글) | 필수 | 201 (신규) / 200 (이미 찜) |
 | DELETE | `/api/v1/listings/{listingId}/favorite` | 찜 해제(토글) | 필수 | 200 |
 | GET | `/api/v1/users/me/favorites` | 내 찜한 매물 목록 | 필수 | 200 |
 | GET | `/api/v1/users/me/recent-listings` | 최근 본 매물(최신순 최대 10건) | 필수 | 200 |
 
-> 인증 "선택"인 탐색 API는 토큰이 있으면 `favorited` 등 사용자 맞춤 필드를 채우고, 없으면 공개 데이터만 반환한다는 의미다. 상세·장소 후보 검색·찜·찜 목록·최근 본 매물은 인증 필수이며, `me` 스코프 API는 타인 리소스 접근 경로가 없어 `403`이 발생하지 않는다(장소 후보 검색은 무상태로 어떤 리소스도 조회하지 않아 마찬가지, 인증 실패는 `401`).
+> 목록·지도·검색·장소 후보·상세는 가입 전부터 사용할 수 있는 공개 API다. 온보딩을 완료한 정식 사용자 토큰이 있으면 계정 언어와 상세 찜 상태를 적용하고 상세
+> 조회를 최근 본 매물로 기록한다. 비로그인·온보딩 미완료·검증 실패 토큰은 공개 조회에서 익명으로 처리해 영어와 `favorited=false`를 사용하며 최근 본 기록을 남기지
+> 않는다. 찜·찜 목록·최근 본 목록은 온보딩 완료 사용자(`ROLE_USER`) 전용이다. 토큰이 없거나 만료·위조되면 `401`, 온보딩 미완료 토큰이면 `403
+> AUTH_ONBOARDING_REQUIRED`다.
 
 ## 상세
 
@@ -189,7 +192,7 @@ Request Body: 없음
 ### GET /api/v1/listings/places — 네이버 장소 후보 검색
 
 - 설명: 지도 검색창의 키워드를 네이버 지역 검색 API로 조회하고, 사용자가 선택할 장소 후보를 정확도순 최대 5개 반환한다.
-- 인증: 필수
+- 인증: 불필요
 - 책임 범위: 장소 후보만 반환하며 MongoDB 매물은 조회하지 않는다. 프론트가 후보 좌표로 지도를 이동한 뒤 계산한 bounds를 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 전달한다.
 - 외부 연동: 장소 검색은 아웃바운드 포트 `PlaceSearchClient`(인프라 어댑터 `NaverPlaceSearchClient` — 네이버 지역 검색 API)로 **동기 호출**한다. 네이버 API 장애·타임아웃·인증정보 누락·응답/좌표 형식 이상 등 연동 실패는 `502 UPSTREAM_ERROR`로 응답해 클라이언트가 재시도하도록 한다(공통 코드 — [error-response-guide](../error-response-guide.md)). 인증정보는 환경변수 `NAVER_SEARCH_CLIENT_ID`/`NAVER_SEARCH_CLIENT_SECRET`(SSM SecureString)로 주입한다.
 
@@ -239,7 +242,6 @@ Request Body: 없음
 | status | code | 시점 |
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | 키워드 누락·공백·길이(1~50자) 위반 |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 인증 토큰 누락·위조·만료 |
 | 502 | `UPSTREAM_ERROR` | 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 또는 좌표 형식 이상 |
 
 ### GET /api/v1/listings/map — 지도 마커 조회
@@ -345,7 +347,7 @@ Request Body: 없음
 ### GET /api/v1/listings/{listingId} — 매물 상세
 
 - 설명: 목록 카드나 지도 마커를 눌렀을 때 상세 화면을 그리기 위한 매물 정보를 반환한다.
-- 인증: 필수
+- 인증: 선택. 비로그인·온보딩 미완료 사용자는 공개 상세만 받고, 온보딩 완료 사용자는 찜 상태·계정 언어·최근 본 기록이 적용된다.
 
 Path 파라미터:
 
@@ -469,19 +471,20 @@ Request Body: 없음
 - Property Details의 features/조건 배지는 상위 `conditions`를 사용한다. 방 타입별 조건은 `roomOffers[].filterTags`를 사용한다.
 - 시설/정책 섹션은 `building`, `propertyPolicies`, `facilities`를 사용한다. 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
 - `roomOffers[]`는 상세 화면의 Room Types 목록에 그대로 렌더링할 수 있는 ACTIVE 방 타입이다.
-- 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
+- 온보딩 완료 사용자의 상세 조회가 성공하면 최근 본 목록이 자동 갱신된다. 프론트에서 최근 본 저장 API를 따로 호출할 필요는 없다.
+- 비로그인·온보딩 미완료 사용자는 `favorited=false`와 영어 기본 문구를 받으며 최근 본 기록을 남기지 않는다.
+- 로그인 전에 본 매물은 온보딩 완료 후 최근 본 목록으로 소급 이전하지 않는다. 정식 로그인 시점 이후의 상세 조회부터 기록한다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 404 | `LISTING_NOT_FOUND` | 없음/비공개/삭제된 매물 |
 
 ### POST /api/v1/listings/{listingId}/favorite — 찜 등록(토글)
 
 - 설명: 사용자가 하트를 눌러 매물을 찜 상태로 만든다.
-- 인증: 필수
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
 
 Path 파라미터:
 
@@ -512,12 +515,13 @@ Request Body: 없음
 | status | code | 시점 |
 | --- | --- | --- |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제된 매물 |
 
 ### DELETE /api/v1/listings/{listingId}/favorite — 찜 해제(토글)
 
 - 설명: 사용자가 하트를 다시 눌러 찜을 해제한다.
-- 인증: 필수
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
 
 Path 파라미터: `listingId` (위와 동일)
 
@@ -543,12 +547,13 @@ Request Body: 없음
 | status | code | 시점 |
 | --- | --- | --- |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 | 404 | `LISTING_NOT_FOUND` | 없거나 비공개/삭제된 매물 |
 
 ### GET /api/v1/users/me/favorites — 내 찜한 매물 목록
 
 - 설명: 마이페이지의 찜한 매물 목록을 반환한다.
-- 인증: 필수
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
 
 Query 파라미터:
 
@@ -670,13 +675,14 @@ Request Body: 없음
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `size` 범위 초과, `sort` 형식 오류 |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 
 ### GET /api/v1/users/me/recent-listings — 최근 본 매물
 
 - 설명: 마이페이지나 홈의 최근 본 매물 영역에 표시할 매물을 최신 조회순으로 최대 10건 반환한다.
-- 인증: 필수
+- 인증: 필수 — 온보딩 완료 사용자(`ROLE_USER`)
 
-Query 파라미터: 없음. 상세 조회를 호출하면 최근 본 기록이 자동으로 갱신된다.
+Query 파라미터: 없음. 온보딩 완료 사용자가 상세 조회를 호출하면 최근 본 기록이 자동으로 갱신된다. 로그인 전 조회 기록은 저장하거나 소급 이전하지 않는다.
 
 Request Body: 없음
 
@@ -792,6 +798,7 @@ Request Body: 없음
 | status | code | 시점 |
 | --- | --- | --- |
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
+| 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
 
 ## 도메인 에러 코드
 

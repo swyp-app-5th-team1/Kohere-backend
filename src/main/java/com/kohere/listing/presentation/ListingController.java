@@ -68,7 +68,7 @@ public class ListingController {
   @GetMapping("/{listingId}")
   public ListingDetailResponse getListing(
       @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String listingId) {
-    return listingService.getListing(principal.userId(), listingId);
+    return listingService.getListing(userIdOrNull(principal), listingId);
   }
 
   /**
@@ -97,8 +97,13 @@ public class ListingController {
     return listingService.removeFavorite(principal.userId(), listingId);
   }
 
-  /** 공개 API에서 인증 정보가 없으면 null을 반환해 서비스가 기본 영어를 선택하도록 한다. */
+  /**
+   * 공개 API에서 개인화에 사용할 수 있는 정식 사용자 ID만 반환한다.
+   *
+   * <p>비로그인 요청은 principal이 없고, 온보딩 토큰은 principal이 있어도 아직 ROLE_USER가 아니다. 두 경우 모두 {@code null}을 전달하면
+   * 서비스가 영어 기본값을 사용하고 찜 조회·최근 본 기록 같은 사용자 전용 처리를 건너뛴다. 온보딩 완료 토큰만 실제 userId를 전달한다.
+   */
   private static Long userIdOrNull(AuthPrincipal principal) {
-    return principal == null ? null : principal.userId();
+    return principal == null || !principal.onboardingCompleted() ? null : principal.userId();
   }
 }
