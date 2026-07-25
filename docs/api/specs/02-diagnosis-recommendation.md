@@ -544,7 +544,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
         "conditions": [
           { "code": "FEMALE_ONLY", "label": "Female Only" },
           { "code": "PRIVATE_BATH", "label": "Private Bath" },
-          { "code": "NO_ARC", "label": "No ARC Required" }
+          { "code": "NO_ARC", "label": "No ARC" }
         ],
         "thumbnailUrl": "https://cdn.kohere.app/listings/6858e2000000000000000001/thumb.jpg"
       }

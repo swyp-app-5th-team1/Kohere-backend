@@ -433,6 +433,8 @@
 | | `SHARED_BATH` | 공용 욕실 |
 | | `LOUNGE` | 라운지 |
 | | `STUDY_ROOM` | 스터디룸 |
+| | `MEETING_ROOM` | 회의실 |
+| | `ROOFTOP` | 옥상 |
 | `RefundPolicyCode` | `FULL_REFUND_BEFORE_7_DAYS` | 입주 7일 전 전액 환불 |
 | | `PARTIAL_REFUND` | 부분 환불 |
 | | `NON_REFUNDABLE` | 환불 불가 |

@@ -222,7 +222,13 @@ public class Listing {
     LOUNGE,
 
     /** 공부방 또는 스터디룸이다. */
-    STUDY_ROOM
+    STUDY_ROOM,
+
+    /** 입주자가 함께 사용할 수 있는 회의실이다. */
+    MEETING_ROOM,
+
+    /** 입주자가 함께 사용할 수 있는 옥상 공간이다. */
+    ROOFTOP
   }
 
   /** 환불 정책을 API와 저장소에서 구분하기 위한 코드다. */

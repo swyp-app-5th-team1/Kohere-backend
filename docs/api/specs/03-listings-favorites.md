@@ -123,7 +123,7 @@ Request Body: 없음
         "conditions": [
           { "code": "ENGLISH_OK", "label": "English OK" },
           { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-          { "code": "NO_ARC", "label": "No ARC Required" }
+          { "code": "NO_ARC", "label": "No ARC" }
         ],
         "roomOffers": [
           {
@@ -418,8 +418,8 @@ Request Body: 없음
     "conditions": [
       { "code": "FEMALE_ONLY", "label": "Female Only" },
       { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-      { "code": "NO_MAINT_FEE", "label": "No Maintenance Fee" },
-      { "code": "NO_ARC", "label": "No ARC Required" }
+      { "code": "NO_MAINT_FEE", "label": "No Maint. Fee" },
+      { "code": "NO_ARC", "label": "No ARC" }
     ],
     "roomOffers": [
       {
@@ -440,7 +440,7 @@ Request Body: 없음
         "filterTags": [
           { "code": "FEMALE_ONLY", "label": "Female Only" },
           { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-          { "code": "NO_MAINT_FEE", "label": "No Maintenance Fee" }
+          { "code": "NO_MAINT_FEE", "label": "No Maint. Fee" }
         ],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/6858e2000000000000000001/rooms/101.jpg"
@@ -624,7 +624,7 @@ Request Body: 없음
         },
         "conditions": [
           { "code": "ENGLISH_OK", "label": "English OK" },
-          { "code": "NO_ARC", "label": "No ARC Required" }
+          { "code": "NO_ARC", "label": "No ARC" }
         ],
         "roomOffers": [
           {
@@ -741,12 +741,12 @@ Request Body: 없음
           "livingAmenities": [{ "code": "WIFI", "label": "Wi-Fi" }],
           "securityFeatures": [{ "code": "CCTV", "label": "CCTV" }],
           "commonSpaces": [{ "type": { "code": "LOUNGE", "label": "Lounge" }, "count": 1 }],
-          "providedSupplies": [{ "code": "TISSUE", "label": "Tissue" }]
+          "providedSupplies": [{ "code": "TISSUE", "label": "Toilet Paper" }]
         },
         "conditions": [
           { "code": "ENGLISH_OK", "label": "English OK" },
           { "code": "ADDRESS_REGISTRATION", "label": "Address Registration" },
-          { "code": "NO_ARC", "label": "No ARC Required" }
+          { "code": "NO_ARC", "label": "No ARC" }
         ],
         "roomOffers": [
           {

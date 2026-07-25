@@ -31,8 +31,9 @@ final class ListingCatalogSeedFixtures {
             "ADDRESS_REGISTRATION",
             "전입신고 가능",
             "Address Registration"),
-        entry(ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maintenance Fee"),
-        entry(ListingCatalogCategory.CONDITION_TAG, "NO_ARC", "외국인등록증 없이 가능", "No ARC Required"),
+        // 앱의 좁은 feature chip에 그대로 표시되는 Figma 확정 문구이므로 축약형을 정본으로 사용한다.
+        entry(ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maint. Fee"),
+        entry(ListingCatalogCategory.CONDITION_TAG, "NO_ARC", "외국인등록증 없이 가능", "No ARC"),
 
         // 필터와 상세 정보 표에 표시하는 Listing 루트 enum 코드다.
         entry(ListingCatalogCategory.LISTING_TYPE, ListingType.GOSHIWON.name(), "고시원", "Goshiwon"),
@@ -119,6 +120,8 @@ final class ListingCatalogSeedFixtures {
             "Other Heating"),
         entry(ListingCatalogCategory.KITCHEN, "GAS_STOVE", "가스레인지", "Gas Stove"),
         entry(ListingCatalogCategory.KITCHEN, "MICROWAVE", "전자레인지", "Microwave"),
+        // 향후 임대인 매물 등록에서 선택할 수 있도록 Figma의 주방시설 코드를 미리 제공한다.
+        entry(ListingCatalogCategory.KITCHEN, "ELECTRIC_KETTLE", "전기포트", "Electric Kettle"),
         entry(
             ListingCatalogCategory.KITCHEN,
             "SHARED_KITCHEN_FULL_OPTION",
@@ -127,7 +130,9 @@ final class ListingCatalogSeedFixtures {
         entry(
             ListingCatalogCategory.KITCHEN, "SHARED_REFRIGERATOR", "공용 냉장고", "Shared Refrigerator"),
         entry(ListingCatalogCategory.LAUNDRY, "COIN_LAUNDRY", "코인 세탁기", "Coin Laundry"),
-        entry(ListingCatalogCategory.LAUNDRY, "DRYER", "건조기", "Dryer"),
+        // DRYER는 기존 코드와 한국어 의미를 유지하고 영어 표시명만 Figma의 구체적인 표현에 맞춘다.
+        entry(ListingCatalogCategory.LAUNDRY, "DRYER", "건조기", "Clothes Dryer"),
+        entry(ListingCatalogCategory.LAUNDRY, "IRON", "다리미", "Iron"),
         entry(ListingCatalogCategory.LAUNDRY, "PRIVATE_WASHER", "개인 세탁기", "Private Washer"),
         entry(ListingCatalogCategory.LAUNDRY, "SHARED_WASHER", "공용 세탁기", "Shared Washer"),
         entry(ListingCatalogCategory.LIVING_AMENITY, "AIR_CONDITIONER", "에어컨", "Air Conditioner"),
@@ -188,6 +193,17 @@ final class ListingCatalogSeedFixtures {
             Listing.CommonSpaceType.STUDY_ROOM.name(),
             "스터디룸",
             "Study Room"),
+        // 공용공간은 Listing.CommonSpaceType과 같은 코드를 사용해야 MongoDB 저장·조회 시 안전하다.
+        entry(
+            ListingCatalogCategory.COMMON_SPACE,
+            Listing.CommonSpaceType.MEETING_ROOM.name(),
+            "회의실",
+            "Meeting Room"),
+        entry(
+            ListingCatalogCategory.COMMON_SPACE,
+            Listing.CommonSpaceType.ROOFTOP.name(),
+            "옥상",
+            "Rooftop"),
         entry(ListingCatalogCategory.PROVIDED_SUPPLY, "BEDDING", "침구류", "Bedding"),
         entry(
             ListingCatalogCategory.PROVIDED_SUPPLY,
@@ -196,7 +212,8 @@ final class ListingCatalogSeedFixtures {
             "Laundry Detergent"),
         entry(ListingCatalogCategory.PROVIDED_SUPPLY, "SEASONING", "조미료", "Seasoning"),
         entry(ListingCatalogCategory.PROVIDED_SUPPLY, "SLIPPERS", "실내화", "Slippers"),
-        entry(ListingCatalogCategory.PROVIDED_SUPPLY, "TISSUE", "휴지", "Tissue"),
+        // TISSUE 코드는 유지하되 숙소 제공비품의 의미가 명확한 Figma 문구를 영어 정본으로 사용한다.
+        entry(ListingCatalogCategory.PROVIDED_SUPPLY, "TISSUE", "휴지", "Toilet Paper"),
         entry(ListingCatalogCategory.PROVIDED_SUPPLY, "TOWEL", "수건", "Towel"));
   }
 

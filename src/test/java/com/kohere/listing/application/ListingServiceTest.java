@@ -153,11 +153,31 @@ class ListingServiceTest {
         .containsExactlyInAnyOrder(
             "FEMALE_ONLY", "ADDRESS_REGISTRATION", "PRIVATE_BATH", "NO_MAINT_FEE", "NO_ARC");
     assertThat(response.conditions())
+        .filteredOn(condition -> condition.code().equals("NO_MAINT_FEE"))
+        .singleElement()
+        .satisfies(condition -> assertThat(condition.label()).isEqualTo("No Maint. Fee"));
+    assertThat(response.conditions())
+        .filteredOn(condition -> condition.code().equals("NO_ARC"))
+        .singleElement()
+        .satisfies(condition -> assertThat(condition.label()).isEqualTo("No ARC"));
+    assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
         .doesNotContain("MOVE_IN_NOW");
     assertThat(response.facilities().heatingSystem())
         .extracting(heating -> heating.code())
         .containsExactly("CENTRAL");
+    assertThat(response.facilities().kitchen())
+        .extracting(kitchen -> kitchen.label())
+        .contains("Electric Kettle");
+    assertThat(response.facilities().laundry())
+        .extracting(laundry -> laundry.label())
+        .contains("Clothes Dryer", "Iron");
+    assertThat(response.facilities().commonSpaces())
+        .extracting(commonSpace -> commonSpace.type().label())
+        .contains("Meeting Room", "Rooftop");
+    assertThat(response.facilities().providedSupplies())
+        .extracting(supply -> supply.label())
+        .contains("Toilet Paper");
     assertThat(response.imageUrls()).hasSize(2);
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::roomOfferId)
@@ -263,12 +283,15 @@ class ListingServiceTest {
         .facilities(
             new Listing.Facilities(
                 Set.of(Listing.HeatingSystem.CENTRAL),
-                Set.of("SHARED_REFRIGERATOR"),
-                Set.of("COIN_LAUNDRY"),
+                Set.of("SHARED_REFRIGERATOR", "ELECTRIC_KETTLE"),
+                Set.of("COIN_LAUNDRY", "DRYER", "IRON"),
                 Set.of("WIFI"),
                 Set.of("CCTV"),
-                List.of(new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2)),
-                Set.of("BEDDING")))
+                List.of(
+                    new Listing.CommonSpace(Listing.CommonSpaceType.SHARED_TOILET, 2),
+                    new Listing.CommonSpace(Listing.CommonSpaceType.MEETING_ROOM, null),
+                    new Listing.CommonSpace(Listing.CommonSpaceType.ROOFTOP, null)),
+                Set.of("BEDDING", "TISSUE")))
         .roomOffers(List.of(sampleRoomOffer(), secondActiveRoomOffer(), inactiveRoomOffer()))
         .descriptions(new Listing.Descriptions("테스트 설명", "Test description", "테스트"))
         .imageUrls(
@@ -324,6 +347,12 @@ class ListingServiceTest {
         catalog(ListingCatalogCategory.RENTAL_TYPE, "MONTHLY_RENT", "월세", "Monthly Rent"),
         catalog(ListingCatalogCategory.GENDER_POLICY, "FEMALE_ONLY", "여성 전용", "Female Only"),
         catalog(ListingCatalogCategory.HEATING_SYSTEM, "CENTRAL", "중앙난방", "Central Heating"),
+        catalog(ListingCatalogCategory.KITCHEN, "ELECTRIC_KETTLE", "전기포트", "Electric Kettle"),
+        catalog(ListingCatalogCategory.LAUNDRY, "DRYER", "건조기", "Clothes Dryer"),
+        catalog(ListingCatalogCategory.LAUNDRY, "IRON", "다리미", "Iron"),
+        catalog(ListingCatalogCategory.COMMON_SPACE, "MEETING_ROOM", "회의실", "Meeting Room"),
+        catalog(ListingCatalogCategory.COMMON_SPACE, "ROOFTOP", "옥상", "Rooftop"),
+        catalog(ListingCatalogCategory.PROVIDED_SUPPLY, "TISSUE", "휴지", "Toilet Paper"),
         catalog(ListingCatalogCategory.CONDITION_TAG, "FEMALE_ONLY", "여성 전용", "Female Only"),
         catalog(
             ListingCatalogCategory.CONDITION_TAG,
@@ -331,9 +360,8 @@ class ListingServiceTest {
             "전입신고 가능",
             "Address Registration"),
         catalog(ListingCatalogCategory.CONDITION_TAG, "PRIVATE_BATH", "개인 욕실", "Private Bath"),
-        catalog(
-            ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maintenance Fee"),
-        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_ARC", "외국인등록증 없이 가능", "No ARC Required"));
+        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_MAINT_FEE", "관리비 없음", "No Maint. Fee"),
+        catalog(ListingCatalogCategory.CONDITION_TAG, "NO_ARC", "외국인등록증 없이 가능", "No ARC"));
   }
 
   /** 간결한 테스트 카탈로그 항목 생성 헬퍼다. */
