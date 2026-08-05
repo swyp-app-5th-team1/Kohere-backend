@@ -24,7 +24,7 @@ Accepted
 2. **언어와 무관한 코드는 번역하지 않고 그대로 저장한다.** `type`, `rentalType`, `genderPolicy`, `nearestTransit.type`, 건물·시설 코드, `roomOffers[].filterTags` 등이 해당한다. 가격·재고·좌표·ID·상태·통화도 번역 대상이 아니다.
 3. **UI에 표시하는 공통 코드 번역은 `listingCatalog` 컬렉션에 코드당 한 번 저장한다.** 문서 정본은 `{category, code, label:{ko,en}}`이며 `(category,code)`를 UNIQUE로 강제한다. `label`은 팀의 기존 진단 카탈로그와 같은 이름으로, 코드 하나의 표시명에 대한 언어별 값을 뜻한다. 특정 매물에 포함된 코드만이 아니라 현재 Listing UI가 사용할 수 있는 전체 허용 코드를 시드한다. MVP에 필요하지 않은 `displayOrder`, `active`는 두지 않는다.
 4. **API는 공통 표시 코드를 `{code,label}`로 반환한다.** 프론트는 `label`을 화면에 표시하고 `code`를 필터 요청·비즈니스 비교에 사용한다. 필터 요청 파라미터는 기존 UPPER_SNAKE code를 그대로 받으므로 요청 계약은 바뀌지 않는다.
-5. **응답 조립 시 사용자 언어를 선택한다.** 로그인 사용자는 `UserAccountService.getLanguage(userId)`, 비로그인 공개 목록·검색은 영어를 사용한다. Listing MVP는 `ko`만 한국어로 선택하고 `en` 및 그 밖의 언어는 영어로 폴백한다.
+5. **응답 조립 시 사용자 언어를 선택한다.** 온보딩 완료 로그인 사용자는 `UserAccountService.getLanguage(userId)`, 그 외 공개 목록·검색·상세 조회는 영어를 사용한다. Listing MVP는 `ko`만 한국어로 선택하고 `en` 및 그 밖의 언어는 영어로 폴백한다.
 6. **v2→v3 변환은 Mongock forward-only ChangeUnit으로 수행한다.** 기존 validator를 잠시 해제하고 고유 문구를 다국어 문서로 변환한 뒤 v3 strict validator를 적용한다. 기존 ID·가격·재고·필터 code는 보존한다. 레거시 시설 표시 문자열은 표준 code로 정규화한다.
 7. **초기 `listingCatalog.labels` 필드는 후속 Mongock ChangeUnit에서 `label`로 이행한다.** 기존 환경과 신규 환경 모두 같은 마이그레이션 체인을 거치며, API는 이 전후 모두 선택한 언어의 문자열을 `{code,label}`로 반환한다.
 

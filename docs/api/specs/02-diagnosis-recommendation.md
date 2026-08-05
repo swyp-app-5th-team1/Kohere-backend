@@ -5,7 +5,7 @@
 
 ## 개요
 
-6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소~최대) / ⑥ ARC 발급 여부)의 진행 중 답을 **서버가 DB에 저장**하고, 모든 단계 답이 채워진 뒤 별도 제출로 진단을 확정한다. 확정된 진단 조건으로 매칭한 매물 리스트(매물 탐색 도메인의 요약 DTO 재사용)와 지도용 좌표를 반환한다. 진단 이력·재진단·최근 진단 다시 보기를 제공한다.
+6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소~최대) / ⑥ ARC 발급 여부)의 진행 중 답을 **서버가 DB에 저장**하고, 모든 단계 답이 채워진 뒤 별도 제출로 진단을 확정한다. 확정된 진단 조건으로 매칭한 추천 전용 매물 요약과 지도용 좌표를 반환한다. 진단 이력·재진단·최근 진단 다시 보기를 제공한다.
 
 ② 입국 목적은 유학 여부(`STUDY`/`NON_STUDY`) 분기이며, 이에 따라 ③ 단계가 대학 선택(유학) 또는 지역(구) 선택(비유학)으로 갈린다. 진단 문항·선택지는 앱이 하드코딩하지 않고 백엔드가 제공한다. 클라이언트가 받을 단계(`step` 1~6)를 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`로 그 단계 질문 1개를 조회하고, 그 단계 답 1개(`field`+`code`)를 `POST /api/v1/diagnoses/answers`로 보내면 서버가 그 답을 **진행 중(IN_PROGRESS) 진단에 저장**한다. 다음 step 번호는 클라이언트가 정한다(서버가 다음 질문을 함께 끼워 주지 않는다 — 질문 조회와 답 저장이 분리된 두 엔드포인트다). ③ 단계의 대학/지역 분기는 클라이언트 분기가 아니라 **서버 비즈니스 로직이 진행 중 진단에 저장된 `purpose`로 결정**해 한쪽 질문만 내려준다. 요청에 누적 답을 묶어 다시 보내지 않는다 — 진행 상태는 서버가 DB에 들고 있다. 표시 라벨은 사용자 표시 언어로 번역되어 내려간다(US-2-5·US-2-6).
 
@@ -18,7 +18,7 @@
 - 목록은 **오프셋 기반 페이지네이션**(api-design-guide §4-1: `page` 0-base, `size` 기본 20·최대 100, `sort=field,(asc|desc)`).
 - 모든 엔드포인트는 본인 진단만 접근(소유권 검증). 인증은 `Authorization: Bearer <accessToken>`이며, **v1(§1~§7)은 회원 전용으로 토큰이 필수**다. **비회원(게스트) 진단의 정본 경로는 v2 3개 엔드포인트(v2-1~v2-3)뿐**이며 거기서만 토큰이 선택이다 — 게스트 신원·세션 키·소유권 규칙은 아래 **[게스트 접근](#게스트-접근--비회원-진단-issue-181)** 절이 정본이다.
 - 입력 검증 실패(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 위반(`monthlyRentMin`/`monthlyRentMax` 음수 또는 `monthlyRentMin > monthlyRentMax`)·페이지 파라미터 범위·잘못된 `sort` 키)는 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인은 별도 검증 코드를 만들지 않는다.
-- 매물 요약(`ListingSummaryResponse`)·지도 마커 DTO는 매물 탐색 스펙과 동일 구조를 재사용한다. 추천 응답의 `listingId`는 MongoDB ObjectId hex 문자열이다.
+- 추천 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며 일반 탐색의 `ListingSummaryResponse`와 구조가 다르다. 지도 마커는 추천 요약의 `listingId`·`lat`·`lng`에서 조립하고, `listingId`는 MongoDB ObjectId hex 문자열이다.
 
 ## 게스트 접근 — 비회원 진단 (issue #181)
 
@@ -504,11 +504,11 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 ### 7. GET `/api/v1/diagnoses/{diagnosisId}/recommendations` — 진단 결과(추천 매물 + 지도 좌표)
 
-진단 조건으로 매칭한 매물 요약 리스트와 지도 마커 좌표를 반환한다. 매물 요약은 매물 탐색 도메인의 `ListingSummaryResponse`를 재사용한다. 매칭이 0건이면 빈 목록 + 조건/월세 범위/키워드 조정 제안(`suggestions`)을 함께 반환한다(에러 아님).
+진단 조건으로 매칭한 매물 요약 리스트와 지도 마커 좌표를 반환한다. 매물 요약은 모듈 간 공개 DTO `RecommendedListingView`를 사용하며 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다. 매칭이 0건이면 빈 목록 + 조건/월세 범위/키워드 조정 제안(`suggestions`)을 함께 반환한다(에러 아님).
 
 - **인증**: 필수(회원 전용). **본인 소유가 아니면 `403 FORBIDDEN`.** 소유권 규칙은 §6과 같다(신원 종류·값이 모두 일치할 때만 통과 — 회원 토큰으로 게스트 진단을 조회하면 403). 게스트의 추천 조회는 v2-3(`GET /api/v2/diagnoses/{id}/recommendations`)이 담당한다([게스트 접근](#게스트-접근--비회원-진단-issue-181)).
 - **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria` 류)를 동기 호출하고, `ListingSummaryResponse` 목록 + 좌표를 수신해 위 응답으로 조립한다(엔티티 비공유, DTO/포트로만). 두 변경의 cross-module 계약 영향: (1) **대학** — `RecommendationCriteria.university`는 단일 `String`이 아니라 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 `pricing.monthlyRent >= monthlyRentMin` AND `<= monthlyRentMax`를 **별개 조건**으로 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — ⑥ `arcStatus`가 `NO_ARC`(미발급)이면 `diagnosis`가 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions` 집합에 넣어 전달하고, `listing`은 이를 `propertyPolicies.arcRequired=false` 필터로 해석한다(ARC 불요 매물만 매칭). `ARC_ISSUED`이면 `NO_ARC`를 넣지 않아 ARC 조건 없이 매칭한다. 추천 결과의 `conditions`는 listing이 응답용으로 계산한 매물 단위 조건 배지 목록이다. ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합에 `propertyPolicies.arcRequired=false`에서 파생한 `NO_ARC` 같은 매물 정책 조건을 더해 내려준다. **`listing` 내부 스키마·매칭 로직은 본 스펙 범위 밖**이며 여기서는 진단이 호출할 인터페이스 수준만 기술한다 — 매물 요약 DTO(`ListingSummaryResponse`)의 정본은 매물 탐색 스펙이다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.universityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 빈 집합 → 대학 필터 생략·지역 기반 폴백)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — ⑥ `arcStatus=NO_ARC`면 `diagnosis`가 파생 조건 `NO_ARC`를 전달하고, `listing`은 `propertyPolicies.arcRequired=false`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합과 `NO_ARC` 같은 매물 정책 파생 조건이 포함된다.
 
 #### Path 파라미터
 
@@ -523,6 +523,8 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 | `page` | integer | 선택 | `0` | 0-base 페이지 번호 |
 | `size` | integer | 선택 | `20` | 페이지 크기(최대 100) |
 | `sort` | string | 선택 | `recommended,desc` | `field,(asc\|desc)`. 허용 키: `recommended`(추천순) / `price`(가격순) / `distance`(거리순) |
+
+> **현재 정렬 구현 제약:** 요청 검증은 위 세 키와 `asc`/`desc`를 허용하지만, 저장소는 `price*`를 월세 오름차순으로만 처리하고 나머지(`recommended`, `distance`)는 `favoriteCount desc, updatedAt desc` 기본 정렬로 처리한다. 따라서 `price,desc` 방향은 반영되지 않고 `distance` 거리 계산도 아직 구현되지 않았다.
 
 #### 성공 Response — 200 OK (공통 래퍼) — 결과 있음
 

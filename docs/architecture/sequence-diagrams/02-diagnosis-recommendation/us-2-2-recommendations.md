@@ -23,12 +23,12 @@ sequenceDiagram
     DIAG->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>(표시 언어 — 매물 라벨 번역용으로 listing에 함께 넘긴다, ADR-0037)
     USER-->>DIAG: 표시 언어 lang
     DIAG->>LIST: listing 공개 query 인터페이스 동기 호출<br/>recommendByCriteria(RecommendationCriteria, lang)<br/>(ADR-0002 Decision 5)
-    LIST->>DB: 조건에 맞는 공개 매물 조회<br/>(roomOffers $elemMatch + location)<br/>nearbyUniversityCodes $in 멤버 코드(ANY, ETC면 대학 필터 생략)<br/>pricing.monthlyRent ≥ min AND ≤ max(각 bound 있을 때만)<br/>NO_ARC면 propertyPolicies.arcRequired=false 필터
-    DB-->>LIST: 매칭 건물 매물 + 대표 roomOffer 가격 + 좌표
-    LIST-->>DIAG: 매물 요약(ListingSummaryResponse, listingId string)+좌표
+    LIST->>DB: 조건에 맞는 공개 매물 조회<br/>(roomOffers $elemMatch + 지역/대학 조건)<br/>nearbyUniversityCodes $in 멤버 코드(ANY, ETC면 대학 필터 생략)<br/>pricing.monthlyRent ≥ min AND ≤ max(각 bound 있을 때만)<br/>NO_ARC면 propertyPolicies.arcRequired=false 필터
+    DB-->>LIST: 매칭 Listing 문서
+    LIST-->>DIAG: 추천 매물 요약(RecommendedListingView, listingId string)+좌표
     Note over DIAG: 매칭 결과로 content·markers·page 집계
     alt 매칭 결과 있음
-        DIAG-->>C: 200 OK<br/>data.content[] (ListingSummaryResponse),<br/>data.markers[] (listingId/lat/lng),<br/>data.page, suggestions null
+        DIAG-->>C: 200 OK<br/>data.content[] (RecommendedListingView),<br/>data.markers[] (listingId/lat/lng),<br/>data.page, suggestions null
         C-->>U: 매물 목록 + 지도 마커 표시
     else 매칭 0건(부산/경기·좁은 조건)
         DIAG->>USER: user 공개 query 동기 호출 getLanguage(userId)<br/>표시 언어 조회(user가 users.lang 있으면 그 값, 없으면 en)<br/>(suggestions 번역용 — 위 매물 라벨용과는 별개의 두 번째 호출)
@@ -42,8 +42,8 @@ sequenceDiagram
 ## 흐름 요약
 
 - `GET /api/v1/diagnoses/{diagnosisId}/recommendations`로 본인 진단 조건에 맞는 매물과 지도 좌표를 조회한다(공통 보안 필터(SEC)가 컨트롤러 앞단에서 JWT를 검증한 뒤 diagnosis 모듈로 전달하고, diagnosis 모듈이 소유권을 확인, 기본 정렬 `recommended,desc`).
-- diagnosis 모듈이 MongoDB에서 진단 조건을 조회한 뒤 `RecommendationCriteria`(지역·`conditions`·대학 그룹·월세 min-max 범위) 값객체를 만들어 listing 모듈의 **공개 query 인터페이스를 동기 호출**한다(`recommendByCriteria` 류, ADR-0002 Decision 5 — 모듈 간 동기 query 협력). 이때 선택된 `UniversityGroup`은 diagnosis가 멤버 대학 코드 집합으로 펼쳐 전달하며(`RecommendationCriteria.university`는 단일 `String`이 아니라 멤버 코드 `Set<String>` — `ETC`는 빈 집합), 월세는 `monthlyRentMin`/`monthlyRentMax`(nullable, null/부재=해당 bound 무제한)로 전달한다(결정: [ADR-0028](../../../adr/0028-diagnosis-questions-catalog-store.md)). ④ 주거 조건은 listing `ConditionTag` 이름과 통일하며, ⑥ `arcStatus`가 `NO_ARC`(미발급)이면 diagnosis가 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 더해 전달하고 listing은 이를 `propertyPolicies.arcRequired=false`(ARC 불요 매물만)로 해석한다(`ARC_ISSUED`이면 추가 없음). listing 모듈은 MongoDB에서 공개 건물 매물 중 조건·재고를 만족하는 `roomOffers[]`를 `$elemMatch`로 조회하되 `nearbyUniversityCodes`를 멤버 코드 `$in`(ANY 매칭, `ETC`(빈 집합)면 대학 필터 생략)으로, `pricing.monthlyRent`를 각 bound가 있을 때 `≥ min` AND `≤ max`의 별도 조건으로 적용해 매물 요약(`ListingSummaryResponse`, `listingId`는 ObjectId 문자열)과 좌표를 반환하고 diagnosis 모듈이 결과를 집계한다.
-- 결과가 있으면 `200 OK` + `content[]`(매물 요약 `ListingSummaryResponse`)·`markers[]`(listingId/lat/lng)·`page` 메타를, 0건이면 빈 목록 + `suggestions`(조정 제안)를 동일하게 `200 OK`로 반환한다. `suggestions`의 `reason`/`type`은 언어 무관 enum이고, 사람이 보는 `message`/`detail`은 `user` 공개 query(`getLanguage`)로 취득한 표시 언어(`user`가 `users.lang`이 있으면 그 값, 없으면 `en`)로 **서버가 제공**한다 — **MongoDB `diagnosisSuggestions` 컬렉션**의 `reason`/`type`별 인라인 언어-키 맵에서 사용자 언어 값을 골라 채우며, 해당 언어 키가 없으면 영어(`en`)로 폴백한다(US-2-6 일관). messageKey 평탄 컬렉션(`diagnosisMessages`) 방식은 쓰지 않는다(인라인 언어-키 맵 전용 컬렉션).
+- diagnosis 모듈이 MongoDB에서 진단 조건을 조회한 뒤 `RecommendationCriteria`(지역·`conditions`·대학 멤버 코드·월세 min-max 범위) 값객체를 만들어 listing 모듈의 **공개 query 인터페이스를 동기 호출**한다(`recommendByCriteria`, ADR-0002 Decision 5). 선택된 `UniversityGroup`은 diagnosis가 `universityCodes: Set<String>`으로 펼쳐 전달하고(`ETC`는 빈 집합), 월세는 `monthlyRentMin`/`monthlyRentMax`(nullable)로 전달한다. ⑥ `arcStatus=NO_ARC`면 파생 조건 `NO_ARC`를 더하고 listing은 `propertyPolicies.arcRequired=false`로 해석한다. listing은 공개 건물 매물 중 같은 ACTIVE `roomOffers[]` 원소가 조건과 월세 범위를 만족하도록 `$elemMatch`하고, 추천 전용 요약 `RecommendedListingView`를 반환한다. 응답의 가격 범위·조건 배지는 현재 매칭된 방만이 아니라 해당 매물의 전체 ACTIVE 방 상품을 기준으로 계산한다.
+- 결과가 있으면 `200 OK` + `content[]`(`RecommendedListingView`)·`markers[]`(listingId/lat/lng)·`page` 메타를, 0건이면 빈 목록 + `suggestions`(조정 제안)를 동일하게 `200 OK`로 반환한다. `suggestions`의 `reason`/`type`은 언어 무관 enum이고, 사람이 보는 `message`/`detail`은 `user` 공개 query(`getLanguage`)로 취득한 표시 언어로 서버가 제공한다. 현재 정렬은 `price*`만 월세 오름차순이며 `recommended`·`distance`는 찜 수/수정일 기본 정렬로 폴백하고 방향은 완전히 반영하지 않는다.
 - 타인 진단은 `403 FORBIDDEN`, 없는 진단은 `404 DIAGNOSIS_NOT_FOUND`로 처리된다.
 - **이 v1 추천 엔드포인트는 회원 전용이다**(#181): 신규 `permitAll` 매처의 대상은 `/api/v2/diagnoses/**` 하나이므로 `/api/v1/diagnoses/**`는 계속 인증 필수이고(토큰 없으면 `401 UNAUTHENTICATED`), 위 다이어그램에 게스트 분기가 없다. **비회원의 추천 조회는 v2 전용 엔드포인트** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`가 담당한다([us-2-7](us-2-7-v2-server-driven-flow.md)) — 검증·소유권·조건 매핑·listing 호출은 v1·v2가 공유하는 `DiagnosisRecommendationReader` 한 곳이라, 게스트 분기(신원 종류별 소유권 판정·`getLanguage` 미호출)는 **그 공유 컴포넌트 안에서** 들어가고 v1은 회원 요청만 그 코드를 탄다.
 - 이 경로에는 `getLanguage` 호출이 **두 군데**다 — 공유 `DiagnosisRecommendationReader`가 매물 라벨 번역용 표시 언어를 `recommendByCriteria(criteria, language)`에 넘기느라 **매칭 유무와 무관하게 매 요청** 부르고([ADR-0037](../../../adr/0037-listing-localization-and-code-catalog.md)), v1은 0건일 때 `suggestions` 번역용으로 한 번 더 부른다(둘 다 회원 요청이라 `users.lang` 기준이다).

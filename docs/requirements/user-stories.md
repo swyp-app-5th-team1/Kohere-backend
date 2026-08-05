@@ -462,7 +462,7 @@
 
 - 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(빈 집합, 대학 필터 미적용·지역 기반 매칭으로 폴백). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`가 `NO_ARC`(ARC 미발급)이면 서버가 추천용 동명의 파생 조건 `NO_ARC`(`DiagnosisCondition`)를 `conditions`에 추가해 ARC 불요 매물만 매칭한다(사용자가 ④에서 직접 고르는 값 아님, 최대 3개 제한에서 제외).
 - MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 선택지로 허용하되, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
-- 추천 결과의 매물 요약은 매물 탐색 도메인의 요약 DTO(`ListingSummaryResponse`)를 재사용한다(확인 필요 — 01 매물 탐색 스펙 확정 시 필드 동기화).
+- 추천 결과의 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며, 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다.
 - 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 7개는 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
 
@@ -515,7 +515,7 @@
 
 - **우선순위**: High
 - **관련 NFR**: 성능(추천 쿼리·좌표 집계 응답시간 목표, 확인 필요 — NFR 문서 미확정), 보안(본인 진단만 조회)
-- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 요약 DTO(`ListingSummaryResponse`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100), 정렬은 추천/가격/거리순. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 사용자 표시 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 언어 취득, 미지원=영어 폴백 — US-2-6 일관). 이 엔드포인트는 **회원 전용**이며, 비회원(게스트)의 추천 조회는 v2 전용 엔드포인트 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`가 담당한다(US-2-7) — 검증·소유권·조건 매핑·`listing` 호출은 두 버전이 공유 컴포넌트(`DiagnosisRecommendationReader`) 한 곳을 쓰고, 응답 차이는 `suggestions` 유무뿐이다.
+- **백엔드 관점**: 저장된 진단 조건으로 매물을 매칭 → 추천 전용 DTO(`RecommendedListingView`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84) 반환. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100)이다. 요청은 추천/가격/거리 정렬 키와 방향을 검증하지만 현재 저장소는 `price*`만 월세 오름차순으로 처리하고 `recommended`·`distance`는 찜 수/수정일 기본 정렬을 사용하며 방향도 완전히 반영하지 않는다. 0건이면 빈 `content` + 조정 제안(`suggestions`)을 함께 내려 클라이언트가 키워드/조건 완화를 안내한다. `suggestions`의 `reason`/`type`은 언어 무관 enum, 사람이 보는 `message`/`detail`은 **서버가 사용자 표시 언어로 번역**해 전송한다(enum 보유 라벨, `user` 공개 query로 언어 취득, 미지원=영어 폴백 — US-2-6 일관). 이 엔드포인트는 **회원 전용**이며, 비회원(게스트)의 추천 조회는 v2 전용 엔드포인트 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`가 담당한다(US-2-7) — 검증·소유권·조건 매핑·`listing` 호출은 두 버전이 공유 컴포넌트(`DiagnosisRecommendationReader`) 한 곳을 쓰고, 응답 차이는 `suggestions` 유무뿐이다.
 
 **AC (Given / When / Then)**
 
@@ -828,7 +828,7 @@
 
 > 관련 API 스펙: [03-listings-favorites](../api/specs/03-listings-favorites.md)
 
-외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 상세 조회·찜·최근 본 매물은 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 검증 실패 시 필드 상세는 `error.errors[]`에 담긴다.
+외국인 사용자가 서울 지역 매물을 지도/리스트/검색으로 탐색하고, 상세를 확인하며, 관심 매물을 찜하고 최근 본 매물을 다시 찾는 흐름을 다룬다. 목록·지도·장소 후보·기존 키워드 검색·상세 조회는 가입 전에도 사용할 수 있는 공개 API이고, 찜 등록/해제·찜 목록·최근 본 목록만 인증이 필수다. 응답은 모두 공통 래퍼 `{ success, data, error }`를 따르며, 에러 코드/HTTP status는 [error-response-guide](../api/error-response-guide.md)를 정본으로 한다. 요청 바인딩·필드 검증 실패는 가능한 경우 `error.errors[]`에 필드 상세를 담지만, 최소값>최대값 같은 서비스 계층의 교차 필드 검증은 `errors=[]`일 수 있다.
 
 > **매물 다국어 표시([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md))**: 매물 고유 문구(제목·주소·역명·방 이름·설명)는 `listings` 안 `{ko,en}`에서 사용자 언어 하나를 선택한다. UI에 표시하는 공통 코드(매물/임대/성별/교통/건물/시설/조건)는 `listingCatalog` 번역과 결합한 `{code,label}`로 응답한다. 프론트는 label을 표시하고 code를 기존 필터 요청·비즈니스 비교에 사용한다. 로그인 사용자는 `user::api getLanguage`로 계정에서 선택한 표시 언어(`users.lang`)를 얻고, 비로그인·미지원 언어는 MVP 기본 영어를 사용한다. ID·좌표·가격·재고·상태·통화와 요청 code는 번역하지 않는다.
 
@@ -839,7 +839,7 @@
 **So that** 내 조건(예산·생활 조건)에 맞는 매물을 한눈에 비교하고 더 볼 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 목록 조회 응답시간 목표(NFR 미정), 무상태 조회로 수평 확장 가능
-- 데이터 관점: 필터는 서버에서 MongoDB 질의 조건으로 평탄화(매물은 MongoDB 저장, ADR-0005), `sort=DISTANCE`는 `centerLat/centerLng`가 있어야 의미 있음, `page.totalElements`는 동일 필터 조건으로 산출
+- 데이터 관점: 필터는 서버에서 MongoDB 질의 조건으로 평탄화(매물은 MongoDB 저장, ADR-0005), `sort=DISTANCE`는 bbox 네 좌표가 모두 있어야 하며 기준점은 요청 bbox의 중심, `page.totalElements`는 동일 필터 조건으로 산출
 
 **AC (Given / When / Then)**
 
@@ -850,19 +850,19 @@
 - 시나리오: 입력 검증 실패(필터 값 오류)
   Given 클라이언트가
   When `minBudget=700000&maxBudget=300000`(최소>최대) 또는 정의되지 않은 `conditions=UNKNOWN_TAG`, `sort=CHEAPEST`처럼 허용되지 않은 enum/범위를 보내면
-  Then 서버는 무시하지 않고 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환하며 `error.errors[]`에 위반 필드(`field`/`reason`)를 담는다
+  Then 서버는 무시하지 않고 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다. enum 바인딩처럼 필드를 특정할 수 있는 오류는 `error.errors[]`에 `field`/`reason`을 담고, 최소값>최대값 같은 서비스 계층 교차 필드 검증은 `errors=[]`일 수 있다
 - 시나리오: 거리순 정렬에 기준 좌표 누락
   Given 사용자가
-  When `sort=DISTANCE`를 지정했으나 `centerLat`/`centerLng`를 함께 보내지 않으면
+  When `sort=DISTANCE`를 지정했으나 `swLat`·`swLng`·`neLat`·`neLng`를 모두 보내지 않으면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_SORT_PARAM`을 반환한다
 - 시나리오: 경계(페이지 범위 초과·빈 결과)
   Given 필터 결과가 0건이거나 마지막 페이지를 넘는 `page`가 요청되면
   When 목록을 호출하면
   Then `200 OK`로 `data.content`는 빈 배열, `data.page.hasNext=false`를 반환한다(에러 아님)
-- 시나리오: 인증 선택(비로그인 vs 로그인 맞춤 필드)
+- 시나리오: 인증 선택(현재 목록 개인화 범위)
   Given 동일 매물에 대해
-  When 비로그인 사용자가 호출하면 각 항목 `favorited=false`로, 로그인 사용자가 호출하면 본인의 찜 여부가 `favorited`에 반영되어 반환된다
-  Then 두 경우 모두 `200 OK`이며 공개 데이터는 동일하다
+  When 비로그인 또는 로그인 사용자가 목록을 호출하면
+  Then 두 경우 모두 `200 OK`이며, 로그인 사용자는 계정 표시 언어만 적용되고 목록 항목의 `favorited`는 현재 구현상 모두 `false`다. 실제 찜 상태는 상세·찜 목록·최근 본 목록에서 반영된다
 - 시나리오: 기본 영어 표시와 code 보존
   Given 비로그인 사용자 또는 영어 국가로 등록한 사용자가
   When 매물 목록을 호출하면
@@ -885,7 +885,7 @@
   Then `200 OK`로 `data.markers[]`(각 항목 `listingId/lat/lng`)를 반환한다
 - 시나리오: 입력 검증 실패(좌표 불완전/모순)
   Given 클라이언트가
-  When bbox 4좌표 중 일부만 보내거나 `swLat > neLat`처럼 모순된 좌표를 보내면
+  When bbox 4좌표 중 일부만 보내거나 `swLat >= neLat`처럼 모순된 좌표를 보내면
   Then `400 Bad Request`, `error.code=LISTING_INVALID_BBOX`를 반환한다
 - 시나리오: 인증 선택(비로그인 허용)
   Given 토큰 없는 사용자가
@@ -908,8 +908,8 @@
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 장소 후보 검색
-  Given 유효한 access token을 가진 사용자가 "경희대"를 입력하고
-  When `GET /api/v1/listings/places?keyword=경희대`를 Bearer access token과 함께 호출하면
+  Given 비로그인 사용자가 "경희대"를 입력하고
+  When `GET /api/v1/listings/places?keyword=경희대`를 호출하면
   Then `200 OK`로 `data.items[]`에 `title`·`address`·`roadAddress`·`lat`·`lng`를 포함한 장소 후보를 최대 5개 반환한다
 - 시나리오: 장소 선택 후 주변 매물 조회
   Given 사용자가 장소 후보 하나를 선택해 앱이 해당 `lat/lng`로 지도를 이동하고 현재 bounds를 계산하면
@@ -923,10 +923,10 @@
   Given 네이버 지역 검색 결과가 없는 키워드가 주어지고
   When 장소 검색 API를 호출하면
   Then 에러가 아닌 `200 OK`로 `data.items=[]`를 반환한다
-- 시나리오: 인증 실패
-  Given access token이 누락·위조 또는 만료되었고
+- 시나리오: 공개 조회의 토큰 처리
+  Given access token이 없거나 위조되었거나 만료되었고
   When 장소 검색 API를 호출하면
-  Then 누락·위조는 `401 UNAUTHENTICATED`, 만료는 `401 TOKEN_EXPIRED`를 반환한다
+  Then 토큰 없음·위조는 익명 요청으로 처리되어 정상 조회되고, 만료 토큰만 `401 TOKEN_EXPIRED`를 반환한다
 - 시나리오: 네이버 연동 실패
   Given 네이버 API가 4xx/5xx를 반환하거나 타임아웃·인증정보 누락·응답 형식 이상이 발생하고
   When 장소 검색 API를 호출하면
@@ -937,7 +937,7 @@
 ### US-3-4 — 매물 상세 조회 + 최근 본 매물 기록
 
 **As a** 후보 매물을 자세히 보려는 외국인 사용자
-**I want** 사진 갤러리·유형·가격·보증금·계약기간·위치·편의시설·임대인 정보가 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
+**I want** 사진 갤러리·유형·방 상품별 가격/보증금/재고·계약기간·위치·편의시설이 담긴 상세를 보고, 로그인 상태면 본 매물이 최근 본 목록에 기록되기
 **So that** 매물을 충분히 검토하고 다시 쉽게 찾아올 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 최근 본 매물 DB 보관 사용자별 최대 30개·조회 응답 최대 10개
@@ -948,23 +948,23 @@
 - 시나리오: 정상 상세 조회(로그인) 및 기록
   Given 인증된 사용자가 존재하는 매물을 조회하면
   When `GET /api/v1/listings/{listingId}` (Authorization 포함)
-  Then `200 OK`로 상세(사진 `imageUrls[]`, `type`, `monthlyRent`, `deposit`, `contractTermOptions[]`, `location`, `conditions[]`, `landlord`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다
+  Then `200 OK`로 상세(사진 `imageUrls[]`·`roomOffers[].roomImageUrls`, `type`, `rentalType`, 방 상품별 `roomOffers[].pricing`·`inventory`, 공통 계약기간 `contract`, `location`, `conditions[]`, `favorited`, `favoriteCount`)를 반환하고, 해당 매물이 최근 본 매물에 upsert된다. 임대인 정보·연락처는 상세 응답에 포함하지 않는다
 - 시나리오: 한국어 사용자 표시
   Given 계정의 표시 언어를 한국어(`ko`)로 선택한 사용자가
   When 같은 매물 상세를 조회하면
   Then 영문 사용자와 동일한 `code`를 받되 고유 문구와 `{code,label}`의 label은 한국어로 반환된다. 프론트의 필터 요청 code는 언어에 따라 달라지지 않는다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제된 매물 ID로
+  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
   When 상세를 조회하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
-- 시나리오: 인증 실패
-  Given 토큰 없는 사용자가
+- 시나리오: 공개 상세 조회
+  Given 비로그인·온보딩 미완료 사용자 또는 위조 토큰을 보낸 사용자가
   When 상세를 조회하면
-  Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`를 반환한다
+  Then `200 OK`로 영어 기본 문구와 `favorited=false`를 반환하고 최근 본 기록은 남기지 않는다. 단, 만료 토큰은 `401 TOKEN_EXPIRED`다
 - 시나리오: 경계(최근 본 매물 30개 초과·동일 매물 재조회)
   Given 사용자가 이미 30개의 최근 본 매물을 가졌거나 같은 매물을 다시 보면
   When 상세를 조회하면
-  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v1/users/me/recent-listings` 조회 시 공개 매물만 최신순 최대 10건 반환된다
+  Then 중복은 새 행을 만들지 않고 `viewedAt`만 갱신하며, 30개 초과분은 오래된 기록부터 삭제되고, `GET /api/v1/users/me/recent-listings` 조회 시 `PUBLISHED`이면서 ACTIVE 방 상품이 있는 매물만 최신순 최대 10건 반환된다
 
 ### US-3-5 — 찜 토글·찜 목록(인증 필수)
 
@@ -972,7 +972,7 @@
 **I want** 매물 상세/목록에서 찜을 등록·해제하고 내 찜 목록을 조회
 **So that** 마음에 든 매물을 다시 찾아 비교/연락할 수 있다
 
-- 메타: 우선순위 **High**, 관련 NFR — 동시 토글 시 `favoriteCount` 정합성(중복 찜 방지 유니크 제약)
+- 메타: 우선순위 **High**, 관련 NFR — 동시 토글 시 `favoriteCount` 정합성(중복 찜 방지 유니크 제약). 현재 찜 문서와 `favoriteCount`는 같은 MongoDB 안에서 순차적으로 별도 갱신되며 트랜잭션·재계산 배치는 구현되어 있지 않다
 - 데이터 관점: (userId, listingId) 유니크 제약으로 멱등 보장, `favoriteCount`는 카운터 컬럼 원자적 증감 또는 집계로 산출, 토글 응답에 최종 상태(`favorited`, `favoriteCount`) 반환. 찜·찜 목록·최근 본 매물은 모두 `me` 스코프이므로 타인 리소스 접근 경로가 없어 별도 `403`은 발생하지 않는다(인증 실패는 `401`)
 
 **AC (Given / When / Then)**
@@ -990,7 +990,7 @@
   When 찜 등록/해제 또는 찜 목록을 호출하면
   Then `401 Unauthorized`, `error.code=UNAUTHENTICATED`(또는 만료 시 `TOKEN_EXPIRED`)를 반환한다
 - 시나리오: 리소스 없음
-  Given 존재하지 않거나 비공개/삭제된 매물 ID로
+  Given 존재하지 않거나 비공개/삭제되었거나 ACTIVE 방 상품이 없는 매물 ID로
   When 찜 등록을 호출하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`를 반환한다
 - 시나리오: 경계·동시성(중복 찜·동시 요청 멱등)
@@ -1000,7 +1000,7 @@
 - 시나리오: 정상 찜 목록 조회
   Given 인증된 사용자가 찜한 매물이 있고
   When `GET /api/v1/users/me/favorites?page=0&size=20`을 호출하면
-  Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 반환하며, 찜이 없으면 빈 배열을 반환한다
+  Then `200 OK`로 `data.content[]`(모두 `favorited=true`)와 `data.page`를 최근 찜한 순으로 반환하며, 찜이 없으면 빈 배열을 반환한다. 현재 찜 목록 조회는 `PUBLISHED`만 검사하므로 ACTIVE 방 상품이 없는 공개 매물이 빈 `roomOffers[]`로 포함될 수 있다
 
 ## 4. 매물 예약(신청) · (후속) 문의·인앱 채팅
 

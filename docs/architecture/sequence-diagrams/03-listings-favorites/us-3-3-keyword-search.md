@@ -11,10 +11,10 @@ sequenceDiagram
     participant DB as MongoDB
 
     U->>C: 키워드 입력 (예 경희대)
-    C->>LIST: GET /api/v1/listings/places?keyword=경희대<br/>Authorization: Bearer accessToken
-    alt 인증 실패
-        LIST-->>C: 401 Unauthorized<br/>error.code=UNAUTHENTICATED 또는 TOKEN_EXPIRED
-        C-->>U: 로그인 또는 토큰 재발급 안내
+    C->>LIST: GET /api/v1/listings/places?keyword=경희대<br/>(Authorization 선택)
+    alt 만료 access token
+        LIST-->>C: 401 Unauthorized<br/>error.code=TOKEN_EXPIRED
+        C-->>U: 토큰 재발급 안내
     else 키워드 위반 (누락/공백/50자 초과)
         LIST-->>C: 400 Bad Request<br/>error.code=INVALID_INPUT
         C-->>U: 검색어 입력 오류 안내
@@ -52,7 +52,7 @@ sequenceDiagram
 
 ## 흐름 요약
 
-- `GET /api/v1/listings/places?keyword=...`는 인증 필수이며, 백엔드가 네이버 지역 검색 API를 호출해 장소 후보를 최대 5개 반환한다. 이 단계에서는 MongoDB 매물을 조회하지 않는다.
+- `GET /api/v1/listings/places?keyword=...`는 공개 API이며, 백엔드가 네이버 지역 검색 API를 호출해 장소 후보를 최대 5개 반환한다. 토큰 없음·위조/형식 오류는 익명으로 통과하고 만료 토큰만 `401 TOKEN_EXPIRED`다. 이 단계에서는 MongoDB 매물을 조회하지 않는다.
 - 네이버 원본의 `mapx/mapy`는 백엔드가 WGS84 `lng/lat`으로 변환하고, `title`·`address`·`roadAddress`·`lat`·`lng`만 공개한다. 검색 결과가 없으면 에러가 아닌 `200 OK`와 `data.items=[]`를 반환한다.
 - 사용자가 후보를 선택하면 앱이 해당 좌표로 지도 카메라를 이동하고 bounds를 계산한다. 이후 기존 `/api/v1/listings`와 `/api/v1/listings/map`에 같은 bounds·필터를 전달해 매물 목록과 지도 마커를 조회한다.
 - 키워드 누락·공백·50자 초과는 `400 INVALID_INPUT`, 네이버 HTTP 오류·타임아웃·인증정보 누락·응답 형식 이상은 `502 UPSTREAM_ERROR`로 구분한다.

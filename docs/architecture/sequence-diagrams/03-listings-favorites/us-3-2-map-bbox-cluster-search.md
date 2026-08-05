@@ -30,5 +30,5 @@ sequenceDiagram
 
 - 지도 패닝 시 `GET /api/v1/listings/map`을 호출해 `listing` 모듈이 MongoDB `location`의 `2dsphere` 인덱스로 bbox 영역의 공개 건물 매물을 조회한다. 가격·조건 필터는 `roomOffers[]` 기준으로 적용하고, 성공 시 프론트 지도 SDK가 사용할 `data.markers[]`(`listingId`, `lat`, `lng`)와 `total`을 반환한다.
 - 서버는 클러스터링을 하지 않는다. 프론트 지도 SDK가 화면상 가까운 마커를 자체 기준으로 묶는다.
-- bbox 4좌표 불완전·모순(`swLat>neLat`)은 `listing` 모듈이 `400 LISTING_INVALID_BBOX`로 거부한다(검증 실패 분기는 MongoDB 접근 없음).
+- bbox 4좌표 불완전·범위 위반·모순(`swLat>=neLat` 또는 `swLng>=neLng`)은 `listing` 모듈이 `400 LISTING_INVALID_BBOX`로 거부한다(검증 실패 분기는 MongoDB 접근 없음).
 - 결과가 서버 상한을 초과하면 `400 LISTING_AREA_TOO_LARGE`로 범위 축소 또는 확대 조회를 유도한다.

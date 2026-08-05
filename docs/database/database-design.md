@@ -406,12 +406,12 @@
 
 **MVP 구현 메모**
 
-- `nearestTransit.nearbyPlacesDescription`은 집주인이 입력한 주변 시설 자유 텍스트다. API 응답에서는 기존 프론트 계약을 유지하기 위해 `locationInfo.nearbyPlacesDescription`으로 내려준다.
+- `nearestTransit.nearbyPlacesDescription`은 집주인이 입력한 주변 시설 자유 텍스트다. API 응답에서도 `nearestTransit.nearbyPlacesDescription`으로 내려준다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
-- 초기 카탈로그의 레거시 `labels` 필드는 Mongock `0111`에서 `label`로 자동 이행한다. 각 환경은 자기 changelog를 기준으로 한 번만 적용한다.
+- 초기 카탈로그의 레거시 `labels` 필드는 Mongock `0111`에서 `label`로 자동 이행한다. `0112`는 UI 확정 카탈로그와 맞추고, `0113`은 기존 다국어 콘텐츠를 보정하며, `0114`는 기존 영문 주변시설의 `CU`·`GS25`·`Emart24`·`E-mart24`·`이마트24`·`convenience store`를 중복 없이 `Convenience Store`로 통일한다. 각 환경은 자기 changelog를 기준으로 미적용 changeUnit을 한 번만 실행한다.
 - 동일 가격·재고·검색 태그를 가진 실제 방이 여러 개면 `roomOffers[]` 원소 1개로 묶고 `inventory.totalCount`·`availableCount`로 수량을 관리한다.
 - `availableCount=0`이어도 매물/방 상품은 유지하며, 다음 입주 가능일을 알 수 있으면 `nextAvailableFrom`에 저장한다.
-- 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 참고용으로 둔다.
+- 로컬 개발용 seed는 `ListingSeedRunner`가 `Listing` 도메인 객체를 만들고 `ListingRepository.save()` 흐름으로 적재한다. seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 fixture 값이며 운영 ID 생성 규칙이 아니다. 현재 fixture 입력과 같은 MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다. Mongock은 `InitializingBean`으로 seed보다 먼저 실행되고 seed fixture에는 영문 `CU`가 남아 있어, 새 로컬 DB에서는 `0114` 완료 후 seed가 다시 `CU`를 저장할 수 있다. 반면 `0114` 실행 시점에 이미 존재한 문서는 `Convenience Store`로 보정된다. `0114`는 일회성 기존 데이터 보정일 뿐 신규 저장값의 영구 정규화 규칙은 아니다.
 
 `searchPlaces`
 
@@ -467,8 +467,9 @@
 
 - **교차 스토어/모듈 no-FK**: `landlordId`·`favorites.userId`·`recentListings.userId`는 user(MySQL)를 값으로만 참조한다. `listingId`는 Mongo `_id ObjectId` 값 참조이며 API에서는 문자열로 노출한다.
 - **유니크/멱등**: 찜 토글 멱등(신규 201/기존 200, 해제 항상 200). 최근본 재조회는 upsert.
-- **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시 — 토글 시 동일 store 갱신 + 배치 재계산([§6](#6-결정-필요-open-questions)).
-- **최근 본**: 사용자별 최신 30개까지만 보관하고, 조회 API는 그중 공개 상태 매물만 `viewedAt desc limit 10`으로 반환한다.
+- **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시다. 현재 찜 문서 insert/delete와 카운터 증감은 같은 MongoDB에서 순차적으로 별도 실행하며 트랜잭션·배치 재계산은 구현되어 있지 않다. 두 번째 쓰기 실패 시 차이가 생길 수 있는 현재 운영 제약이다.
+- **찜 목록 노출 조건**: 현재 aggregation은 대상 매물의 `status=PUBLISHED`만 검사하고 ACTIVE `roomOffers` 존재 여부는 검사하지 않는다. 따라서 다른 사용자 조회와 달리 빈 `roomOffers[]` 카드가 포함될 수 있다.
+- **최근 본**: 사용자별 최신 30개까지만 보관하고, 조회 API는 그중 `PUBLISHED`이면서 ACTIVE `roomOffers`가 있는 매물만 `viewedAt desc limit 10`으로 반환한다.
 - **좌표**: 저장 `[lng,lat]` ↔ API `{lat,lng}` 변환.
 - **방 재고**: 예약/계약 확정 시 `roomOffers.inventory.availableCount > 0` 조건에서 해당 방 상품 수량을 원자적으로 감소시킨다. 실제 방 번호별 관리가 필요해지면 별도 `roomUnits` 컬렉션을 추가한다.
 - `favorited`·`distanceMeters`는 조회 시점 산출 표현값으로 영속하지 않는다(domain-model).
@@ -510,7 +511,7 @@
   - **보존 기간 후보**: 설계 검토에서 제안된 후보는 **30일**(`diagnosisFlowSessions` 게스트 세션 후보는 **24시간** — 아래)이나 확정값은 제품 결정이다.
   - **부수 결정 ①(이 컬렉션의 기준 필드)**: TTL 기준 시각 필드 후보는 `submittedAt`인데, 이 값은 **`IN_PROGRESS` 문서엔 없어 그런 문서는 만료되지 않는다**(Mongo TTL은 기준 필드가 없는 문서를 건너뛴다). 게스트 문서는 v2가 종료 상태(`COMPLETED`·`DISCARDED`)로만 써서 항상 값이 있지만, v1 회원 draft가 영구히 남는 셈이므로 기준 필드를 `submittedAt`으로 둘지 별도 생성 시각을 둘지 명시해야 한다.
   - **부수 결정 ②(`diagnosisFlowSessions`의 기준 필드)**: 그 컬렉션엔 **시각 필드가 아예 없어** TTL을 걸려면 기준 필드부터 신설해야 한다(아래 §`diagnosisFlowSessions`).
-- **교차 모듈 no-FK**: `userId` 값만. 추천은 `listing` 공개 쿼리(매물 데이터 비영속·런타임 계산) — diagnosis가 `RecommendationCriteria`(지역·조건·대학 멤버 코드 집합·월세 min-max 범위·지역) 값객체로 `listing` 공개 query를 동기 호출해 `ListingSummaryResponse`+좌표를 수신([ADR-0002](../adr/0002-inter-module-communication-via-events.md) D5). `RecommendationCriteria.university`는 선택 그룹을 전개한 **멤버 대학 코드 집합**(`Set<String>`, `ETC`는 빈 집합)이고, 월세는 **`monthlyRentMin`/`monthlyRentMax` 범위**(nullable, null=해당 경계 무한)다. listing은 `nearbyUniversityCodes`를 멤버 코드 집합 `$in`(멤버 중 하나라도, 빈 집합이면 대학 필터 생략)으로, `pricing.monthlyRent`를 `>= min` AND `<= max`(각 경계 존재 시 별도 조건)로 매칭한다. listing 컬렉션 스키마(§4-3)는 변경하지 않는다 — [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md).
+- **교차 모듈 no-FK**: `userId` 값만. 추천은 diagnosis가 `RecommendationCriteria`(지역·조건·`universityCodes` 멤버 코드 집합·월세 min-max·지역구)로 `listing` 공개 query를 동기 호출해 `RecommendedListingView` 페이지를 수신한다([ADR-0002](../adr/0002-inter-module-communication-via-events.md) D5). `universityCodes`는 선택 그룹을 전개한 `Set<String>`(`ETC`는 빈 집합)이고, 월세는 nullable `monthlyRentMin`/`monthlyRentMax`다. listing은 `nearbyUniversityCodes`를 `$in`으로, 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`를 각 경계로 매칭한다. listing 컬렉션 스키마는 변경하지 않는다([ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)).
 - **3단계 대학/지역 조건부 필수**: `university`/`district`는 **두 필드로 분리**하며 NOT NULL 제약이 아니라 **앱 레벨 조건부 필수 불변식**으로 강제한다 — 입국 목적(`purpose`)에 맞는 하나만 채워진다: `purpose=STUDY`면 `university` 필수·`district` 없음, `purpose=NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `400 INVALID_INPUT`+`errors[]`(신규 도메인 코드 없음). enum 값 목록은 위 필드 표(`UniversityGroup`: `HUFS_KHU_KOREA`·…·`ETC` 6개 그룹 / `District`: `GURO_GU`·…·`ETC`)대로.
 - **문항·선택지 출처(US-2-5)**: 문항 제공은 **단계별 server-stateful 질의응답**이다 — 클라이언트가 받을 step(1~6)을 path로 지정해 `GET /api/v1/diagnoses/questions/{step}`(인증 필수, 200)를 호출하면 서버가 (카탈로그 + 진행 중 진단에 저장된 답 + 사용자 언어 키)으로 **그 step 질문 1개만** 선정해 `{ step, field, question(사용자 언어 라벨 문자열), select{type,max}, options[{code,label}] }`로 내려준다(한 번에 다 주지 않음, 다음 step 번호는 클라가 정한다). 현재 step 답은 별도로 `POST /api/v1/diagnoses/answers`(body `{ field, code }`; `conditions`처럼 다중은 `codes` 배열)로 보내면 서버가 진행 중(`IN_PROGRESS`) 진단에 저장한다(누적 답 묶음 전송 없음). 흐름은 `GET questions/1 → POST answers → GET questions/2 → … → GET questions/6 → POST answers → POST /diagnoses`이며, 모든 단계 답이 저장되면 `POST /api/v1/diagnoses`가 진행 중 진단을 `COMPLETED`로 확정한다. 반환 선택지 `code`는 **확정 검증 enum과 1:1 동일 출처**다(언어 무관 단일 키). 문항·선택지 카탈로그는 **MongoDB `diagnosisQuestions` 컬렉션**(아래)에 데이터로만 영속한다. **분기는 서버 비즈니스 로직(diagnosis 서비스 코드)이 결정한다(클라 로컬 분기·카탈로그 분기 메타 아님)** — ③(step 3)은 저장된 `purpose`에 따라 서비스가 알맞은 질문만 담는다(`STUDY`→대학 질문 `university`, `NON_STUDY`→지역구 질문 `district`; 한 응답에 두 목록을 함께 주지 않음). 잘못된 현재 step 답(미정의 enum, 목적-대학/지역 불일치 등)은 공통 `400 INVALID_INPUT`+`errors[]`.
 - **라벨 번역(US-2-6)**: 표시 `question`·`label`만 사용자 표시 언어로 번역하고 `code`는 언어 무관 동일이다. 번역 표시 문자열은 `diagnosisQuestions` 도큐먼트 내부 `question`·`label`의 **인라인 언어-키 맵**(`{ "en": "...", "ja": "...", "ko": "..." }`)에 임베드하고, 추천 사유/액션 텍스트는 `diagnosisSuggestions` 컬렉션의 **동일한 인라인 언어-키 맵**에 둔다(같은 방식 재사용). **해당 언어 키가 없으면 영어(`en`) 폴백**(에러 아님, `Accept-Language` 비의존). 표시 언어는 **user 모듈 공개 query(`getLanguage`)로 동기 취득**하고 `user`가 `users.lang`(사용자가 고른 표시 언어)이 있으면 그 값, 없으면 `en`으로 폴백한다(토큰 클레임 분기 아님, [ADR-0002](../adr/0002-inter-module-communication-via-events.md) Decision 5 · [ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141); 교차 모듈 no-FK 값 참조) → 모듈 의존 `diagnosis`→`user`.

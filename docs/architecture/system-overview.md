@@ -452,7 +452,7 @@ ADR-0005가 **cross-store 조인·트랜잭션을 금지**하므로 단일 엔�
 
 | 속성   | 아키텍처 기준                                                           | 근거                                                                                                        |
 | ------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 성능   | 목록은 커서 페이지네이션, 지도는 `2dsphere` + 마커 결과 상한    | [03-listings](../api/specs/03-listings-favorites.md), [ADR-0005](../adr/0005-polyglot-persistence.md)             |
+| 성능   | 목록은 오프셋 페이지네이션(`page`·`size`), 지도는 `2dsphere` + 마커 결과 상한    | [03-listings](../api/specs/03-listings-favorites.md), [ADR-0005](../adr/0005-polyglot-persistence.md)             |
 | 확장성 | access 토큰 무상태 → 수평 확장(세션 공유 불필요)                       | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md)                                                          |
 | 가용성 | RDS·Mongo·Redis 백업/복제, 무중단 배포는 expand-contract 마이그레이션 | [migration-policy](../database/migration-policy.md)                                                    |
 | 보안   | 전 구간 HTTPS, JWT·refresh 회전·재사용탐지, PII 비로깅·마스킹        | [ADR-0003](../adr/0003-jwt-auth-after-oauth-login.md), [error-response-guide §6](../api/error-response-guide.md) |
