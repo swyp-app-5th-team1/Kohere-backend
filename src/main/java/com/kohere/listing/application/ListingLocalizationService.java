@@ -1,8 +1,8 @@
 package com.kohere.listing.application;
 
-import com.kohere.listing.domain.ListingCatalogEntry;
-import com.kohere.listing.domain.ListingCatalogRepository;
 import com.kohere.listing.domain.LocalizedText;
+import com.kohere.listing.domain.catalog.ListingCatalogEntry;
+import com.kohere.listing.domain.catalog.ListingCatalogRepository;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;

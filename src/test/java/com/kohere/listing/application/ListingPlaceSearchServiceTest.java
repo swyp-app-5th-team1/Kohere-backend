@@ -8,8 +8,8 @@ import static org.mockito.Mockito.when;
 
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.application.dto.ListingPlaceSearchResponse;
-import com.kohere.listing.domain.PlaceSearchClient;
-import com.kohere.listing.domain.PlaceSearchResult;
+import com.kohere.listing.domain.place.PlaceSearchClient;
+import com.kohere.listing.domain.place.PlaceSearchResult;
 import com.kohere.listing.presentation.dto.ListingPlaceSearchRequest;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

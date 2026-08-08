@@ -1,7 +1,7 @@
 package com.kohere.listing.application;
 
-import com.kohere.listing.domain.SearchPlace;
-import com.kohere.listing.domain.SearchPlaceType;
+import com.kohere.listing.domain.place.SearchPlace;
+import com.kohere.listing.domain.place.SearchPlaceType;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;

@@ -1,6 +1,6 @@
 package com.kohere.listing.application.dto;
 
-import com.kohere.listing.domain.SearchPlaceType;
+import com.kohere.listing.domain.place.SearchPlaceType;
 
 /**
  * 키워드가 매칭된 장소 정보다.

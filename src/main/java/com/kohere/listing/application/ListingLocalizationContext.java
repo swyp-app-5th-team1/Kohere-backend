@@ -1,8 +1,8 @@
 package com.kohere.listing.application;
 
 import com.kohere.listing.application.dto.CodeLabelResponse;
-import com.kohere.listing.domain.ListingCatalogCategory;
 import com.kohere.listing.domain.LocalizedText;
+import com.kohere.listing.domain.catalog.ListingCatalogCategory;
 import java.util.Map;
 
 /**

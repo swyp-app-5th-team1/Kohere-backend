@@ -2,8 +2,8 @@ package com.kohere.listing.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.kohere.listing.domain.SearchPlace;
-import com.kohere.listing.domain.SearchPlaceType;
+import com.kohere.listing.domain.place.SearchPlace;
+import com.kohere.listing.domain.place.SearchPlaceType;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

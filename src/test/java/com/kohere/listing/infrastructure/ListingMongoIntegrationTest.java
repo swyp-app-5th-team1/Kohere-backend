@@ -21,8 +21,6 @@ import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
 import com.kohere.listing.domain.ConditionTag;
-import com.kohere.listing.domain.Favorite;
-import com.kohere.listing.domain.FavoriteRepository;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingInvalidSortParamException;
 import com.kohere.listing.domain.ListingMapSearchResult;
@@ -33,8 +31,20 @@ import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingSort;
 import com.kohere.listing.domain.ListingType;
 import com.kohere.listing.domain.LocalizedText;
-import com.kohere.listing.domain.RecentListingRepository;
-import com.kohere.listing.domain.SearchPlaceRepository;
+import com.kohere.listing.domain.favorite.Favorite;
+import com.kohere.listing.domain.favorite.FavoriteRepository;
+import com.kohere.listing.domain.place.SearchPlaceRepository;
+import com.kohere.listing.domain.recent.RecentListingRepository;
+import com.kohere.listing.infrastructure.migration.ListingCatalogLabelFieldChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingCatalogSeedChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingGoshiwonRenameChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingSchemaV2ChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingSchemaV2RepairChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingSchemaV3LocalizationChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingValidatorRelaxBeforeSchemaV3ChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingValidatorV2ChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingValidatorV3ChangeUnit;
+import com.kohere.listing.infrastructure.migration.SearchPlaceSeedChangeUnit;
 import com.kohere.listing.presentation.dto.ListingKeywordSearchRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
@@ -68,6 +78,11 @@ class ListingMongoIntegrationTest {
 
   private static final String LISTING_ID = "6858e2000000000000000002";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000102";
+  private static final String LISTINGS_COLLECTION = "listings";
+  private static final String FAVORITES_COLLECTION = "favorites";
+  private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
+  private static final String SEARCH_PLACES_COLLECTION = "searchPlaces";
+  private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
 
@@ -84,11 +99,11 @@ class ListingMongoIntegrationTest {
   @BeforeEach
   void cleanListingCollections() {
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
-    mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(ListingCatalogDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
     // 실제 기동과 같은 0108→0111 순서를 거쳐 테스트도 최종 label 저장 구조만 읽게 한다.
     new ListingCatalogSeedChangeUnit().execution(mongoTemplate);
     new ListingCatalogLabelFieldChangeUnit().execution(mongoTemplate);
@@ -99,7 +114,7 @@ class ListingMongoIntegrationTest {
   void catalogMigration_labels를_label로_이행한다() {
     Document monthlyRent =
         mongoTemplate
-            .getCollection(ListingCatalogDocument.COLLECTION_NAME)
+            .getCollection(LISTING_CATALOG_COLLECTION)
             .find(new Document("_id", "RENTAL_TYPE:MONTHLY_RENT"))
             .first();
 
@@ -156,7 +171,7 @@ class ListingMongoIntegrationTest {
     listingRepository.save(legacySource);
 
     mongoTemplate
-        .getCollection(ListingDocument.COLLECTION_NAME)
+        .getCollection(LISTINGS_COLLECTION)
         .updateOne(
             new Document("_id", new ObjectId(LISTING_ID)),
             new Document(
@@ -168,7 +183,7 @@ class ListingMongoIntegrationTest {
 
     Document migrated =
         mongoTemplate
-            .getCollection(ListingDocument.COLLECTION_NAME)
+            .getCollection(LISTINGS_COLLECTION)
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
@@ -185,7 +200,7 @@ class ListingMongoIntegrationTest {
   void migration_v1_문서를_v2_저장구조로_이행한다() {
     ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a01");
     mongoTemplate
-        .getCollection(ListingDocument.COLLECTION_NAME)
+        .getCollection(LISTINGS_COLLECTION)
         .insertOne(
             legacyV1ListingDocument(legacyRoomOfferId),
             new InsertOneOptions().bypassDocumentValidation(true));
@@ -198,7 +213,7 @@ class ListingMongoIntegrationTest {
 
     Document migrated =
         mongoTemplate
-            .getCollection(ListingDocument.COLLECTION_NAME)
+            .getCollection(LISTINGS_COLLECTION)
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
@@ -244,7 +259,7 @@ class ListingMongoIntegrationTest {
     Document legacy = legacyV1ListingDocument(legacyRoomOfferId);
     legacy.put("schemaVersion", 2);
     mongoTemplate
-        .getCollection(ListingDocument.COLLECTION_NAME)
+        .getCollection(LISTINGS_COLLECTION)
         .insertOne(legacy, new InsertOneOptions().bypassDocumentValidation(true));
 
     new ListingValidatorRelaxBeforeSchemaV3ChangeUnit().execution(mongoTemplate);
@@ -254,7 +269,7 @@ class ListingMongoIntegrationTest {
 
     Document migrated =
         mongoTemplate
-            .getCollection(ListingDocument.COLLECTION_NAME)
+            .getCollection(LISTINGS_COLLECTION)
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
@@ -276,7 +291,7 @@ class ListingMongoIntegrationTest {
   void migration_기존_validator를_풀고_v2_이행후_다시_적용한다() {
     ObjectId legacyRoomOfferId = new ObjectId("6858e2000000000000000a03");
     mongoTemplate
-        .getCollection(ListingDocument.COLLECTION_NAME)
+        .getCollection(LISTINGS_COLLECTION)
         .insertOne(
             legacyV1ListingDocument(legacyRoomOfferId),
             new InsertOneOptions().bypassDocumentValidation(true));
@@ -289,7 +304,7 @@ class ListingMongoIntegrationTest {
 
     Document migrated =
         mongoTemplate
-            .getCollection(ListingDocument.COLLECTION_NAME)
+            .getCollection(LISTINGS_COLLECTION)
             .find(new Document("_id", new ObjectId(LISTING_ID)))
             .first();
     assertThat(migrated).isNotNull();
@@ -299,10 +314,7 @@ class ListingMongoIntegrationTest {
     Document invalidLegacy = legacyV1ListingDocument(new ObjectId("6858e2000000000000000a04"));
     invalidLegacy.put("_id", new ObjectId("6858e2000000000000000b04"));
     assertThatThrownBy(
-            () ->
-                mongoTemplate
-                    .getCollection(ListingDocument.COLLECTION_NAME)
-                    .insertOne(invalidLegacy))
+            () -> mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(invalidLegacy))
         .isInstanceOf(Exception.class);
   }
 
@@ -310,7 +322,7 @@ class ListingMongoIntegrationTest {
   @Test
   void initialize_지도와_필터_인덱스를_모두_생성한다() {
     Set<String> indexNames =
-        mongoTemplate.indexOps(ListingDocument.class).getIndexInfo().stream()
+        mongoTemplate.indexOps(LISTINGS_COLLECTION).getIndexInfo().stream()
             .map(index -> index.getName())
             .collect(java.util.stream.Collectors.toSet());
 
@@ -324,14 +336,14 @@ class ListingMongoIntegrationTest {
             "listings_status_arc_required");
 
     Set<String> favoriteIndexNames =
-        mongoTemplate.indexOps(FavoriteDocument.class).getIndexInfo().stream()
+        mongoTemplate.indexOps(FAVORITES_COLLECTION).getIndexInfo().stream()
             .map(index -> index.getName())
             .collect(java.util.stream.Collectors.toSet());
 
     assertThat(favoriteIndexNames).contains("favorites_user_listing", "favorites_user_favoritedAt");
 
     Set<String> recentListingIndexNames =
-        mongoTemplate.indexOps(RecentListingDocument.class).getIndexInfo().stream()
+        mongoTemplate.indexOps(RECENT_LISTINGS_COLLECTION).getIndexInfo().stream()
             .map(index -> index.getName())
             .collect(java.util.stream.Collectors.toSet());
 
@@ -339,7 +351,7 @@ class ListingMongoIntegrationTest {
         .contains("recentListings_user_listing", "recentListings_user_viewedAt");
 
     Set<String> searchPlaceIndexNames =
-        mongoTemplate.indexOps(SearchPlaceDocument.class).getIndexInfo().stream()
+        mongoTemplate.indexOps(SEARCH_PLACES_COLLECTION).getIndexInfo().stream()
             .map(index -> index.getName())
             .collect(java.util.stream.Collectors.toSet());
 
@@ -352,10 +364,11 @@ class ListingMongoIntegrationTest {
     SearchPlaceSeedChangeUnit seed = new SearchPlaceSeedChangeUnit();
 
     seed.execution(mongoTemplate);
+    long firstCount = mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).countDocuments();
     seed.execution(mongoTemplate);
 
-    assertThat(mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).countDocuments())
-        .isEqualTo(SearchPlaceSeedFixtures.documents().size());
+    assertThat(mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).countDocuments())
+        .isEqualTo(firstCount);
     assertThat(searchPlaceRepository.findActive())
         .extracting("name")
         .contains("연세대학교", "서울대학교", "신촌역", "관악구");
@@ -371,7 +384,7 @@ class ListingMongoIntegrationTest {
 
     assertThat(
             mongoTemplate
-                .getCollection(ListingDocument.COLLECTION_NAME)
+                .getCollection(LISTINGS_COLLECTION)
                 .countDocuments(new Document("title.ko", "고시원001")))
         .isEqualTo(1);
   }
@@ -389,8 +402,7 @@ class ListingMongoIntegrationTest {
         new Document("status", "PUBLISHED")
             .append("roomOffers", new Document("$elemMatch", roomOfferCondition));
 
-    assertThat(mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).countDocuments(query))
-        .isEqualTo(1);
+    assertThat(mongoTemplate.getCollection(LISTINGS_COLLECTION).countDocuments(query)).isEqualTo(1);
   }
 
   /** 2dsphere 인덱스로 기준 좌표 반경 내 매물을 찾을 수 있는지 확인한다. */
@@ -402,8 +414,7 @@ class ListingMongoIntegrationTest {
     Document near = new Document("$geometry", geometry).append("$maxDistance", 1000);
     Document query = new Document("location", new Document("$near", near));
 
-    Document found =
-        mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).find(query).first();
+    Document found = mongoTemplate.getCollection(LISTINGS_COLLECTION).find(query).first();
     assertThat(found).isNotNull();
     assertThat(found.get("title", Document.class).getString("ko")).isEqualTo("고시원001");
   }
@@ -1232,7 +1243,7 @@ class ListingMongoIntegrationTest {
     assertThat(response.favoriteCount()).isEqualTo(1);
     assertThat(
             mongoTemplate
-                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .getCollection(RECENT_LISTINGS_COLLECTION)
                 .countDocuments(new Document("userId", 1L)))
         .isEqualTo(1);
   }
@@ -1319,7 +1330,7 @@ class ListingMongoIntegrationTest {
     assertThat(result.content().getFirst().viewedAt()).isEqualTo(secondViewedAt);
     assertThat(
             mongoTemplate
-                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .getCollection(RECENT_LISTINGS_COLLECTION)
                 .countDocuments(new Document("userId", 1L)))
         .isEqualTo(1);
   }
@@ -1385,12 +1396,12 @@ class ListingMongoIntegrationTest {
 
     assertThat(
             mongoTemplate
-                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .getCollection(RECENT_LISTINGS_COLLECTION)
                 .countDocuments(new Document("userId", 1L)))
         .isEqualTo(30);
     assertThat(
             mongoTemplate
-                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .getCollection(RECENT_LISTINGS_COLLECTION)
                 .countDocuments(new Document("userId", 2L)))
         .isEqualTo(1);
     assertThat(listingService.getRecentListings(1L).content()).hasSize(10);
@@ -1410,7 +1421,7 @@ class ListingMongoIntegrationTest {
         .isInstanceOf(ListingNotFoundException.class);
     assertThat(
             mongoTemplate
-                .getCollection(RecentListingDocument.COLLECTION_NAME)
+                .getCollection(RECENT_LISTINGS_COLLECTION)
                 .countDocuments(new Document("userId", 1L)))
         .isZero();
   }

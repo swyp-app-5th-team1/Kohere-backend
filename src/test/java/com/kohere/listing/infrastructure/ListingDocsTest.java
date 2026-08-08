@@ -23,9 +23,12 @@ import com.kohere.TestcontainersConfiguration;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.listing.domain.ListingRepository;
-import com.kohere.listing.domain.PlaceSearchClient;
-import com.kohere.listing.domain.PlaceSearchResult;
-import com.kohere.listing.domain.PlaceSearchUpstreamException;
+import com.kohere.listing.domain.place.PlaceSearchClient;
+import com.kohere.listing.domain.place.PlaceSearchResult;
+import com.kohere.listing.domain.place.PlaceSearchUpstreamException;
+import com.kohere.listing.infrastructure.migration.ListingCatalogLabelFieldChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingCatalogSeedChangeUnit;
+import com.kohere.listing.infrastructure.migration.SearchPlaceSeedChangeUnit;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -76,6 +79,11 @@ class ListingDocsTest {
 
   private static final String LISTING_ID = ListingSeedFixtures.GOSHIWON_001_ID;
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
+  private static final String LISTINGS_COLLECTION = "listings";
+  private static final String FAVORITES_COLLECTION = "favorites";
+  private static final String RECENT_LISTINGS_COLLECTION = "recentListings";
+  private static final String SEARCH_PLACES_COLLECTION = "searchPlaces";
+  private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
   private static final String LISTINGS_LIST_SUMMARY = "지도 바텀시트 매물 리스트 조회";
   private static final String LISTINGS_LIST_DESCRIPTION =
       """
@@ -270,11 +278,11 @@ class ListingDocsTest {
             .apply(springSecurity())
             .apply(documentationConfiguration(restDocumentation))
             .build();
-    mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(FavoriteDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(RecentListingDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(SearchPlaceDocument.COLLECTION_NAME).deleteMany(new Document());
-    mongoTemplate.getCollection(ListingCatalogDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(FAVORITES_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(RECENT_LISTINGS_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(SEARCH_PLACES_COLLECTION).deleteMany(new Document());
+    mongoTemplate.getCollection(LISTING_CATALOG_COLLECTION).deleteMany(new Document());
     new ListingSeedRunner(listingRepository).run(null);
     new ListingCatalogSeedChangeUnit().execution(mongoTemplate);
     new ListingCatalogLabelFieldChangeUnit().execution(mongoTemplate);

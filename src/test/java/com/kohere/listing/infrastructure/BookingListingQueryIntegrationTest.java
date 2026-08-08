@@ -41,6 +41,7 @@ class BookingListingQueryIntegrationTest {
 
   private static final String LISTING_ID = "6858e2000000000000000002";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000102";
+  private static final String LISTINGS_COLLECTION = "listings";
   private static final LocalDate NEXT_AVAILABLE_FROM = LocalDate.of(2026, 8, 1);
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
@@ -51,7 +52,7 @@ class BookingListingQueryIntegrationTest {
 
   @BeforeEach
   void cleanListings() {
-    mongoTemplate.getCollection(ListingDocument.COLLECTION_NAME).deleteMany(new Document());
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
   }
 
   @Test
