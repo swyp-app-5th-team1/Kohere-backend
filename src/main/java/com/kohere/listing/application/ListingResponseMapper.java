@@ -231,9 +231,7 @@ final class ListingResponseMapper {
 
   /** 가까운 교통수단 코드는 code/label로, 고유 문구는 선택된 언어로 바꾼다. */
   private static ListingDetailResponse.NearestTransitResponse toNearestTransit(
-      Listing listing,
-      ListingLocalizationContext localization,
-      TransitNameStyle transitNameStyle) {
+      Listing listing, ListingLocalizationContext localization, TransitNameStyle transitNameStyle) {
     Listing.NearestTransit transit = listing.getNearestTransit();
     return new ListingDetailResponse.NearestTransitResponse(
         localization.codeLabel(ListingCatalogCategory.TRANSIT_TYPE, transit.type()),
