@@ -230,9 +230,24 @@ final class ListingResponseMapper {
     Listing.NearestTransit transit = listing.getNearestTransit();
     return new ListingDetailResponse.NearestTransitResponse(
         localization.codeLabel(ListingCatalogCategory.TRANSIT_TYPE, transit.type()),
-        localization.text(transit.name()),
+        toTransitDisplayName(transit, localization),
         transit.walkMinutes(),
         localization.text(transit.nearbyPlacesDescription()));
+  }
+
+  /** 영어 지하철역 이름의 Station 접미사를 화면 표시용 Sta.로 축약한다. */
+  private static String toTransitDisplayName(
+      Listing.NearestTransit transit, ListingLocalizationContext localization) {
+    String name = localization.text(transit.name());
+    String stationSuffix = " Station";
+
+    if (!"en".equalsIgnoreCase(localization.language())
+        || transit.type() != Listing.TransitType.SUBWAY
+        || !name.endsWith(stationSuffix)) {
+      return name;
+    }
+
+    return name.substring(0, name.length() - stationSuffix.length()) + " Sta.";
   }
 
   /** 건물 유형만 code/label로 바꾸고 물리 정보는 그대로 보존한다. */

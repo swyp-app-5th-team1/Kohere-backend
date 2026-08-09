@@ -147,6 +147,7 @@ class ListingServiceTest {
     assertThat(response.contract().maxStayMonths()).isEqualTo(12);
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("Female Only");
+    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
     assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
@@ -227,6 +228,7 @@ class ListingServiceTest {
     assertThat(response.type().label()).isEqualTo("고시원");
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("여성 전용");
+    assertThat(response.nearestTransit().name()).isEqualTo("서울대입구역");
     assertThat(response.roomOffers().getFirst().name()).isEqualTo("스탠다드 1인실");
     assertThat(response.descriptions().description()).isEqualTo("테스트 설명");
   }
