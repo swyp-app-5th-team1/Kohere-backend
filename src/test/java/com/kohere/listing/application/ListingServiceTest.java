@@ -147,7 +147,7 @@ class ListingServiceTest {
     assertThat(response.contract().maxStayMonths()).isEqualTo(12);
     assertThat(response.genderPolicy().code()).isEqualTo("FEMALE_ONLY");
     assertThat(response.genderPolicy().label()).isEqualTo("Female Only");
-    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
+    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Station");
     assertThat(response.propertyPolicies().arcRequired()).isFalse();
     assertThat(response.conditions())
         .extracting(responseCondition -> responseCondition.code())
@@ -201,6 +201,7 @@ class ListingServiceTest {
     ListingSummaryResponse response =
         listingService.getListings(new ListingSearchRequest()).content().getFirst();
 
+    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
     assertThat(response.roomOffers())
         .extracting(ListingDetailResponse.RoomOfferResponse::roomOfferId)
         .containsExactly(ROOM_OFFER_ID);

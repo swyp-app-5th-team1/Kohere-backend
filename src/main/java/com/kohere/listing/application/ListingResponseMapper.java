@@ -27,6 +27,11 @@ final class ListingResponseMapper {
 
   private ListingResponseMapper() {}
 
+  private enum TransitNameStyle {
+    FULL,
+    ABBREVIATED
+  }
+
   /** 목록/키워드 검색 화면의 매물 응답을 현재 사용자 언어로 만든다. */
   static ListingSummaryResponse toSummary(
       ListingSearchResult result, Integer distanceMeters, ListingLocalizationContext localization) {
@@ -42,7 +47,7 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
-        toNearestTransit(listing, localization),
+        toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         listing.getPropertyPolicies(),
@@ -131,7 +136,7 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
-        toNearestTransit(listing, localization),
+        toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         listing.getPropertyPolicies(),
@@ -162,7 +167,7 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
-        toNearestTransit(listing, localization),
+        toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         listing.getPropertyPolicies(),
@@ -192,7 +197,7 @@ final class ListingResponseMapper {
         localization.codeLabel(ListingCatalogCategory.GENDER_POLICY, listing.getGenderPolicy()),
         toGeoPoint(listing),
         toAddress(listing, localization),
-        toNearestTransit(listing, localization),
+        toNearestTransit(listing, localization, TransitNameStyle.FULL),
         listing.getNearbyUniversityCodes(),
         toBuilding(listing, localization),
         listing.getPropertyPolicies(),
@@ -226,22 +231,27 @@ final class ListingResponseMapper {
 
   /** 가까운 교통수단 코드는 code/label로, 고유 문구는 선택된 언어로 바꾼다. */
   private static ListingDetailResponse.NearestTransitResponse toNearestTransit(
-      Listing listing, ListingLocalizationContext localization) {
+      Listing listing,
+      ListingLocalizationContext localization,
+      TransitNameStyle transitNameStyle) {
     Listing.NearestTransit transit = listing.getNearestTransit();
     return new ListingDetailResponse.NearestTransitResponse(
         localization.codeLabel(ListingCatalogCategory.TRANSIT_TYPE, transit.type()),
-        toTransitDisplayName(transit, localization),
+        toTransitDisplayName(transit, localization, transitNameStyle),
         transit.walkMinutes(),
         localization.text(transit.nearbyPlacesDescription()));
   }
 
-  /** 영어 지하철역 이름의 Station 접미사를 화면 표시용 Sta.로 축약한다. */
+  /** 응답 종류에 따라 영문 지하철역 이름을 정식 명칭 또는 축약 명칭으로 반환한다. */
   private static String toTransitDisplayName(
-      Listing.NearestTransit transit, ListingLocalizationContext localization) {
+      Listing.NearestTransit transit,
+      ListingLocalizationContext localization,
+      TransitNameStyle transitNameStyle) {
     String name = localization.text(transit.name());
     String stationSuffix = " Station";
 
-    if (!"en".equalsIgnoreCase(localization.language())
+    if (transitNameStyle == TransitNameStyle.FULL
+        || !"en".equalsIgnoreCase(localization.language())
         || transit.type() != Listing.TransitType.SUBWAY
         || !name.endsWith(stationSuffix)) {
       return name;
