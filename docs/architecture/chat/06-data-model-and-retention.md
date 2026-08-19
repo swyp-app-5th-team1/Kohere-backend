@@ -273,7 +273,7 @@ Undo 후 `cleared_through_message_id > 0`이면 상태는 `FINALIZED`, 그렇지
 
 재진입 시 이미 내부 기한이 지났지만 batch가 아직 처리하지 않았다면 요청 트랜잭션이 먼저 pending 경계를 확정한 뒤 방을 재노출한다.
 
-실제 신규 메시지 INSERT가 성공했을 때만 수신자의 방을 재노출한다. 중복 `clientMessageId`와 지연된 `CREATE_ONLY` booking event는 가시성을 바꾸지 않는다.
+실제 신규 메시지 INSERT가 성공했을 때만 수신자의 방을 재노출한다. 중복 `clientMessageId`와 지연된 예약 이벤트의 방 존재 보장은 가시성을 바꾸지 않는다.
 
 번역 작업의 완료·재시도·실패도 신규 메시지가 아니므로 방을 재노출하지 않는다.
 
@@ -345,6 +345,6 @@ SEND, ensure, 신고 snapshot도 같은 room → member 순서를 사용해 교�
 - chat listener 성공 시 publication 완료 처리
 - 실패 publication은 backoff 후 재처리
 - `eventId`·`bookingId`와 방 UNIQUE로 중복 생성 방지
-- listener는 `CREATE_ONLY`로 동작해 기존 삭제방을 재노출하지 않음
+- listener는 누락된 방의 존재만 보장하며 기존 삭제방을 재노출하지 않음
 
 이 업무 이벤트 내구성은 실시간 STOMP Simple Broker와 별개다.

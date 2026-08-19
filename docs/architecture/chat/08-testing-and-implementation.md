@@ -67,7 +67,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 같은 clientMessageId 재시도는 DB 한 행
 - 같은 clientMessageId와 다른 content는 충돌
 - 차단 관계에서 DB INSERT와 broker publish 모두 0회
-- CREATE_ONLY booking event가 삭제방을 재노출하지 않음
+- 지연된 예약 이벤트의 방 존재 보장이 삭제방을 재노출하지 않음
 
 ### 2.2 MySQL 통합
 
@@ -165,10 +165,11 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 1. `ChatListingQueryService`, `ChatCounterpartQueryService`, `ChatReportQueryService` 공개 interface
 2. `package-info.java`의 allowed dependency와 `@NamedInterface` 정합화
-3. `ensureLandlordRoom`의 `INTERACTIVE_REOPEN`, `CREATE_ONLY` 구현
-4. 문의 API와 durable BookingCreatedEvent 보상 listener
-5. 방 목록·단건·과거/누락 메시지 조회
-6. 기존 `/read`, REST message POST, `unreadCount` 비노출
+3. 사용자 요청용 `enterLandlordRoom` 구현: 같은 방을 반환하고 요청자의 목록 숨김만 해제
+4. 예약 이벤트용 `ensureLandlordRoomExists` 구현: 누락된 방만 생성하고 기존 사용자별 숨김 상태는 유지
+5. 문의 API와 durable BookingCreatedEvent 보상 listener
+6. 방 목록·단건·과거/누락 메시지 조회
+7. 기존 `/read`, REST message POST, `unreadCount` 비노출
 
 ### 3단계: WebSocket·STOMP
 

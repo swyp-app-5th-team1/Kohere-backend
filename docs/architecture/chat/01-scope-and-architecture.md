@@ -143,7 +143,7 @@ flowchart LR
 - `report -> chat::api`: 방 참여자, 상대, 증거 범위 확인
 - `report -> user::api`: 로그인 사용자의 언어 확인
 - `booking -> 공개 BookingCreatedEvent`: chat에 직접 의존하지 않음
-- `chat -> booking 공개 event`: 지연된 신청 이벤트로 방을 CREATE_ONLY 보장
+- `chat -> booking 공개 event`: 지연된 신청 이벤트로 누락된 방의 존재만 보장하고 사용자별 숨김 상태는 변경하지 않음
 
 필요한 작은 공개 interface:
 
