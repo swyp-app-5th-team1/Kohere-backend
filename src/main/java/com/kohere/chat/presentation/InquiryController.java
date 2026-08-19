@@ -5,10 +5,10 @@ import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>문의는 매물에 종속되는 액션이므로 {@code /listings/{listingId}} 하위에 둔다. 스펙:
  * docs/api/specs/04-booking-inquiry-chat.md §2.
  *
- * <p>TODO: 신규 생성(201)/기존 방 반환(200) 구분과 {@code Location} 헤더는 응용 계층 결과({@code created})에 따라 채운다.
+ * <p>응용 계층 결과의 {@code created}가 true면 201, false면 200을 반환한다. 실제 방 조회·생성은 후속 구현 단계에서 완성한다.
  */
 @RestController
 @RequestMapping("/api/v1/listings/{listingId}")
@@ -28,8 +28,10 @@ public class InquiryController {
   private final ChatService chatService;
 
   @PostMapping("/inquiries")
-  @ResponseStatus(HttpStatus.CREATED)
-  public ApiResponse<InquiryResponse> createInquiry(@PathVariable String listingId) {
-    return ApiResponse.success(chatService.createInquiry(listingId));
+  public ResponseEntity<ApiResponse<InquiryResponse>> createInquiry(
+      @PathVariable String listingId) {
+    InquiryResponse response = chatService.createInquiry(listingId);
+    HttpStatus status = response.created() ? HttpStatus.CREATED : HttpStatus.OK;
+    return ResponseEntity.status(status).body(ApiResponse.success(response));
   }
 }

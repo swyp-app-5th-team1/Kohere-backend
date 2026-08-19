@@ -1,5 +1,7 @@
 # US-4-4 — 채팅 메시지 조회·전송·읽음 처리
 
+> **대체됨:** 아래 그림은 이전 REST 전송·읽음 설계를 보존한 과거 자료다. 현재 구현에는 사용하지 않는다. 최신 시나리오는 [채팅 시퀀스 다이어그램](../../chat/05-sequence-diagrams.md), 정확한 계약은 [채팅 API](../../chat/02-api-contracts.md)와 [STOMP 계약](../../chat/03-websocket-stomp.md)을 따른다.
+
 > **[후속·이연]** 이 다이어그램은 인앱 채팅(기존 F-03 chat 결합)으로 1차 MVP에서 후속으로 분리·이연되었다. 매물 예약(신청, US-4-1·US-4-2)과는 별개 기능이며, 파일명은 legacy이고 대응 US 번호는 **US-4-5(채팅 메시지 조회·전송·읽음 처리)** 로 재정합됨.
 >
 > 모듈: 신청 · 문의 (인앱 채팅) · [유저 스토리](../../../requirements/user-stories.md) · [API 스펙](../../../api/specs/04-booking-inquiry-chat.md)

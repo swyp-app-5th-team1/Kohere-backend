@@ -1,8 +1,9 @@
 /**
  * 채팅 Bounded Context. 매물 임대인과의 1:1 채팅방(ChatRoom)과 메시지(Message)를 담당한다. 문의(inquiry)는 매물 임대인과의 채팅방을
- * 생성/반환하고, 채팅방 리스트·메시지 조회(커서)·텍스트 메시지 전송·읽음 처리를 제공한다. 커뮤니티의 이웃(NEIGHBOR) 채팅도 이 모듈을 재사용한다.
+ * 생성/반환하고, 채팅방 목록·메시지 조회·STOMP TEXT 전송·서버 BOOKING_CARD 생성을 제공한다. 읽음 처리는 후속 범위이며 커뮤니티의 이웃(NEIGHBOR)
+ * 채팅도 현재 사용자 API에는 노출하지 않는다.
  *
- * <p>도메인 에러 코드 prefix: {@code CHAT}. 스펙: docs/api/specs/04-booking-inquiry-chat.md(문의/채팅 부분).
+ * <p>도메인 에러 코드 prefix: {@code CHAT}. 현재 채팅 스펙: docs/architecture/chat/README.md.
  *
  * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}에 의존하고, 모듈 간 통신은 도메인
  * 이벤트 기반이다(ADR-0002). booking 모듈이 발행하는 {@code BookingCreatedEvent}를 구독하므로 {@code booking}을 허용 의존에

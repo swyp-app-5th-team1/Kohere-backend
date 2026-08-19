@@ -76,7 +76,6 @@ public enum ErrorCode {
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
   CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 문의할 수 없습니다."),
   CHAT_ROOM_INACTIVE(HttpStatus.UNPROCESSABLE_ENTITY, "비활성 채팅방입니다."),
-  CHAT_MESSAGE_NOT_IN_ROOM(HttpStatus.UNPROCESSABLE_ENTITY, "해당 방의 메시지가 아닙니다."),
 
   // --- 커뮤니티 (community) — docs/api/specs/05-community.md ---
   POST_NOT_FOUND(HttpStatus.NOT_FOUND, "게시글을 찾을 수 없습니다."),

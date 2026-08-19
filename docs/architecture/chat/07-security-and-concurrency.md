@@ -10,7 +10,7 @@
 - 온보딩 전 `ROLE_ONBOARDING` 사용자는 채팅을 사용할 수 없다.
 - REST controller는 기존 예약 controller처럼 `AuthPrincipal.userId`를 service에 전달한다.
 - STOMP 인증은 [03-websocket-stomp.md](03-websocket-stomp.md)의 CONNECT 계약을 따른다.
-- 발신자·신고자·차단자는 항상 인증 Principal에서 얻는다.
+- 사용자 `TEXT` 발신자·신고자·차단자는 항상 인증 Principal에서 얻는다. `BOOKING_CARD`는 신뢰된 서버 이벤트가 만들며 `senderId`는 null이다.
 - body의 `senderId`, `reporterId`, `tenantId`, `landlordId`, `blockedUserId`를 신뢰하지 않는다.
 - 신고 대상과 차단 대상은 room의 다른 참여자로 서버가 결정한다.
 
@@ -18,7 +18,7 @@
 
 ### REST
 
-방 목록은 자신의 member 행이 있는 방만 반환한다. 방 단건·메시지 이력·삭제·Undo·차단·신고는 다음을 검사한다.
+방 목록은 자신의 member 행이 있는 방만 반환한다. 방 단건·메시지 이력·삭제·차단·신고는 다음을 검사한다.
 
 1. 로그인 완료 사용자
 2. 방 존재
@@ -32,16 +32,17 @@
 - CONNECT에서 JWT와 ACTIVE 상태 확인
 - SUBSCRIBE에서 exact destination과 room 참여자 확인
 - SEND interceptor에서 destination과 인증 확인
-- 실제 DB 쓰기 직전 service transaction에서 참여자·관리 종료·양방향 차단을 다시 확인
+- 실제 DB 쓰기 직전 service transaction에서 참여자·양방향 차단을 다시 확인
 - broker/user prefix로 향하는 클라이언트 직접 MESSAGE는 거부
+- 클라이언트 payload의 `type`, `bookingCard`, `payload`, `bookingId`는 받지 않으며 `BOOKING_CARD` 위조 전송을 거부
 - 정확히 허용한 다섯 user queue 외에는 deny-all
 - 번역 결과는 해당 `recipientUserId`의 `/user/queue/chat-translations`에만 전달
 
 interceptor 검사만으로 service 검사를 생략하지 않는다. 구독 뒤 차단되거나 내부 호출로 service가 실행되는 경우도 방어해야 한다.
 
-## 3. 메시지 검증 순서
+## 3. 사용자 TEXT 검증 순서
 
-메시지를 저장하기 전에 다음을 검사한다.
+사용자가 보낸 TEXT를 저장하기 전에 다음을 검사한다.
 
 1. session Principal과 token 만료
 2. 양의 roomId와 허용 destination
@@ -54,7 +55,7 @@ interceptor 검사만으로 service 검사를 생략하지 않는다. 구독 뒤
 
 차단된 전송은 `chat_messages` INSERT, room 갱신, broker publish 전에 종료한다. 거부된 본문을 로그나 별도 실패 queue에 남기지 않는다.
 
-참여자·차단·본문 검증을 통과해 MySQL에 저장된 원문만 외부 번역 provider로 보낼 수 있다. 클라이언트가 보낸 원문 언어·대상 언어·수신자 ID는 신뢰하지 않는다.
+참여자·차단·본문 검증을 통과해 MySQL에 저장된 TEXT 원문만 외부 번역 provider로 보낼 수 있다. 클라이언트가 보낸 원문 언어·대상 언어·수신자 ID는 신뢰하지 않는다. `BOOKING_CARD` payload는 Google 번역에 보내지 않는다.
 
 ## 4. 방 생성 동시성
 
@@ -76,6 +77,8 @@ UNIQUE (chat_room_id, user_id)
 JPA flush의 unique exception을 catch한 rollback-only transaction 안에서 재조회하지 않는다. native atomic statement를 사용하거나 충돌 transaction을 끝낸 뒤 안전한 새 read transaction으로 조회한다.
 
 ## 5. 메시지 저장 동시성
+
+### 사용자 TEXT
 
 하나의 transaction에서 다음을 처리한다.
 
@@ -99,6 +102,19 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 
 선행 SELECT만으로 중복을 판단하지 않는다. 두 동시 요청이 모두 조회를 통과할 수 있기 때문이다. 중복 retry는 삭제방 재노출이나 `last_message_at` 변경도 만들지 않는다.
 
+### 서버 BOOKING_CARD
+
+신청 카드의 생성 요청은 클라이언트가 아니라 MySQL에 저장된 `BookingCreatedEvent`에서만 시작한다.
+
+1. room과 두 member를 TEXT와 같은 순서로 잠근다.
+2. 문의하기와 같은 `(listingId, tenantId, landlordId)` 방을 조회하거나 생성한다.
+3. booking 공개 API에서 기존 신청 상세 데이터를 조회해 카드 payload를 만든다.
+4. `(chatRoomId, bookingId)` UNIQUE를 최종 중복 판정으로 사용한다.
+5. 신규 카드일 때만 `last_message_id`, `last_message_at`, 필요한 방 재표시를 갱신한다.
+6. commit 후에만 room topic으로 카드를 발행한다.
+
+같은 `bookingId` 이벤트 재처리는 기존 카드를 그대로 사용하며 두 번째 카드, broadcast, 마지막 메시지 갱신과 방 재표시를 만들지 않는다. 새 `bookingId`의 카드 최초 저장은 실제 신규 활동으로 처리한다.
+
 ## 6. 신고 트랜잭션
 
 ### 접수
@@ -107,8 +123,8 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 
 1. room lock
 2. reporter 참여자 여부와 reported user 도출
-3. 신고자에게 현재 보이는 범위와 마지막 messageId 확인
-4. 최근 메시지 snapshot 생성
+3. 신고자에게 현재 보이는 범위와 마지막 TEXT messageId 확인
+4. 최근 TEXT 원문 snapshot 생성 (`BOOKING_CARD` payload 제외)
 5. report와 최초 evidence 저장
 6. 한 번에 commit
 
@@ -122,7 +138,7 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 chat_room → chat_room_members(ID 오름차순) → 필요한 message/report row
 ```
 
-SEND, room ensure, DELETE, Undo, 신고 snapshot이 같은 순서를 따른다. 후속 물리 삭제 batch도 이 순서를 유지해야 하며 상세는 [후속 보존 설계](future/02-retention-and-physical-deletion.md)를 따른다.
+TEXT SEND, room ensure, BOOKING_CARD 저장, DELETE, 신고 snapshot이 같은 순서를 따른다. 후속 물리 삭제 batch도 이 순서를 유지해야 하며 상세는 [후속 보존 설계](future/02-retention-and-physical-deletion.md)를 따른다.
 
 ## 8. 커밋과 broker 발행
 
@@ -132,19 +148,23 @@ SEND, room ensure, DELETE, Undo, 신고 snapshot이 같은 순서를 따른다. 
 - 누락된 실시간 전달은 REST `afterMessageId` catch-up으로 복구한다.
 - 강한 실시간 재전송 보장이 제품 요구가 되면 transactional outbox를 추가한다.
 
-신청의 `BookingCreatedEvent` 내구성과 채팅 메시지의 실시간 broker 전달은 별개다. 전자는 MySQL-backed Event Publication Registry를 사용하고, 후자는 초기에는 Simple Broker와 REST 복구를 사용한다.
+신청의 `BookingCreatedEvent` 내구성과 채팅 메시지의 실시간 broker 전달은 별개다. 전자는 MySQL-backed Event Publication Registry로 채팅방과 `BOOKING_CARD` 저장 완료까지 재처리하고, 후자는 초기에는 Simple Broker와 REST 복구를 사용한다.
 
 ## 9. 번역 worker와 외부 API
 
-- 원문 메시지 commit과 번역 성공을 하나의 transaction이나 성공 조건으로 묶지 않는다.
+- TEXT 원문 메시지 commit과 번역 성공을 하나의 transaction이나 성공 조건으로 묶지 않는다.
 - 외부 Google 호출 중 room·member·message DB lock을 보유하지 않는다.
 - 번역 작업의 최종 멱등성은 `(messageId, recipientUserId, targetLanguage)` UNIQUE가 보장한다.
 - 같은 `clientMessageId` 재시도와 worker 재시도는 번역 행과 Google 요청을 불필요하게 중복 생성하지 않는다.
-- timeout, 제한된 지수 backoff·jitter, 최대 시도 횟수와 circuit breaker를 둔다.
+- timeout·연결 오류·429·5xx만 한 Worker 작업 안에서 짧고 설정 가능한 backoff를 두고 최초 요청 포함 최대 5회 호출한다.
+- 호출 직전에 `attempt_count`를 증가시키고, crash 복구 뒤에는 남은 횟수만 처리해 총 provider 호출이 5회를 넘지 않게 한다.
+- 별도의 다음 재시도 시각은 저장하지 않으며, 5회 실패 또는 잘못된 요청·인증·설정 오류는 `FAILED`로 끝낸다.
+- provider 장애가 길어질 때 요청 폭증을 막기 위해 timeout과 circuit breaker를 둔다.
 - Google 장애·지원하지 않는 언어·과도한 결과 크기는 원문 SEND 오류가 아니다.
 - 최종 번역 실패는 수신자 개인 번역 이벤트로 알리고 원문을 유지한다.
 - translation queue 이벤트를 놓치면 참여자·삭제 경계를 검사한 REST 메시지 이력으로 복구한다.
 - 원문과 번역문은 모두 신뢰하지 않는 plain text로 취급하고 앱에서 HTML로 렌더링하지 않는다.
+- BOOKING_CARD에는 번역 작업을 만들지 않고 payload의 고정 라벨은 앱에서 `ko/en`으로 표시한다.
 
 Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Identity Federation으로 관리한다. 기존 소셜 로그인용 Google client ID와 혼용하거나 모바일 앱에 포함하지 않는다. 운영 호출은 TLS를 사용하며 project quota와 비용 경보를 설정한다.
 
@@ -164,8 +184,6 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 | 빈 메시지 | `INVALID_INPUT` |
 | 3,000자 초과 | `CHAT_MESSAGE_TOO_LONG` |
 | 같은 clientMessageId에 다른 본문 | `CHAT_CLIENT_MESSAGE_CONFLICT` |
-| Undo 내부 기한 만료 | `CHAT_RESTORE_WINDOW_EXPIRED` |
-| 오래된 undoToken | `CHAT_STALE_DELETE_OPERATION` |
 | 유효하지 않은 신고 사유 | `REPORT_INVALID_REASON` |
 | 신고 없음 또는 다른 신고자 | `REPORT_NOT_FOUND` |
 | 메시지 없는 방 신고 | `CHAT_REPORT_NO_MESSAGES` |
@@ -181,6 +199,7 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 
 - JWT와 STOMP Authorization header
 - 원문과 번역문
+- BOOKING_CARD payload의 신청자 이름·성별·국적·이메일과 매물·금액 정보
 - Google 번역 request·response와 credential
 - 신고 evidence 원문
 
@@ -201,6 +220,7 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 - [ ] `Principal.name == userId` 보장
 - [ ] 인증 interceptor가 메시지 인가 interceptor보다 먼저 실행
 - [ ] SEND·SUBSCRIBE room 참여자 검사
+- [ ] 클라이언트의 BOOKING_CARD·bookingId·payload 직접 전송 거부
 - [ ] 서비스 transaction에서 SEND 권한 재검증
 - [ ] 정확한 destination 외 deny-all
 - [ ] 개인 번역 결과를 지정 수신자에게만 전달
@@ -209,7 +229,7 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 - [ ] 차단 후 본문 저장·발행 금지
 - [ ] 거부된 본문의 Google 호출 금지
 - [ ] 사용자·방 단위 rate limit
-- [ ] 원문·번역문·provider payload·token·evidence 로그 금지
+- [ ] 원문·번역문·BOOKING_CARD payload·provider payload·token·evidence 로그 금지
 - [ ] Google credential 서버 보관, timeout·retry·quota 설정
 - [ ] 원문·번역문 plain text 처리와 출력 escaping
 - [ ] 외부 번역 처리 고지와 Google 자동 번역 attribution

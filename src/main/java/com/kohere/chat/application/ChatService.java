@@ -3,11 +3,8 @@ package com.kohere.chat.application;
 import com.kohere.chat.application.dto.ChatRoomResponse;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.application.dto.MessageResponse;
-import com.kohere.chat.application.dto.ReadResponse;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.MessageRepository;
-import com.kohere.chat.presentation.dto.ReadRequest;
-import com.kohere.chat.presentation.dto.SendMessageRequest;
 import com.kohere.common.response.CursorResponse;
 import com.kohere.common.response.PageResponse;
 import lombok.RequiredArgsConstructor;
@@ -30,22 +27,15 @@ public class ChatService {
   private final MessageRepository messageRepository;
 
   public InquiryResponse createInquiry(String listingId) {
-    throw new UnsupportedOperationException("TODO: 매물 문의(임대인 채팅방 생성/조회 + 매물 카드 고정)");
+    throw new UnsupportedOperationException("TODO: 매물 문의 채팅방 생성 또는 조회");
   }
 
-  public PageResponse<ChatRoomResponse> listRooms(String category, int page, int size) {
-    throw new UnsupportedOperationException("TODO: 내 채팅방 리스트 조회(카테고리 필터·lastMessageAt desc)");
+  public PageResponse<ChatRoomResponse> listRooms(int page, int size) {
+    throw new UnsupportedOperationException("TODO: 내 채팅방 목록 조회(lastMessageAt desc)");
   }
 
-  public CursorResponse<MessageResponse> getMessages(Long roomId, String cursor, int size) {
-    throw new UnsupportedOperationException("TODO: 채팅방 메시지 조회(커서 페이지네이션, 최신순)");
-  }
-
-  public MessageResponse sendMessage(Long roomId, SendMessageRequest request) {
-    throw new UnsupportedOperationException("TODO: 텍스트 메시지 전송(lastMessageAt 갱신 + 푸시 이벤트)");
-  }
-
-  public ReadResponse markRead(Long roomId, ReadRequest request) {
-    throw new UnsupportedOperationException("TODO: 읽음 처리(마지막 읽은 메시지까지 전진, 멱등)");
+  public CursorResponse<MessageResponse> getMessages(
+      Long roomId, String cursor, String afterMessageId, int size) {
+    throw new UnsupportedOperationException("TODO: 과거 또는 누락 메시지 커서 조회");
   }
 }

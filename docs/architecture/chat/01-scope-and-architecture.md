@@ -6,10 +6,11 @@ Kohere의 기존 예약·인증·차단·다국어 기능을 재사용해 다음
 
 - 로그인 완료 사용자 간 세입자·임대인 1:1 채팅
 - 문의하기와 신청하기가 동일 채팅방을 사용하는 흐름
+- 신청 완료 시 같은 채팅방에 임차인·임대인 화면용 `BOOKING_CARD` 표시
 - MySQL 기반 메시지 영속화
 - WebSocket + STOMP 실시간 송수신
 - 받은 메시지의 사용자 언어별 자동 번역과 원문 보기
-- 채팅방 삭제, 즉시 Undo, 차단, 채팅방 신고
+- 복원할 수 없는 사용자별 채팅방 삭제, 차단, 채팅방 신고
 
 현재 `chat`과 일반 `report` 모듈은 이름과 REST 골격 위주이며 핵심 서비스·저장소가 구현되지 않았다. 기존 골격은 활용하되 영속화, 인증 주체 전달, 권한 검사, STOMP, 삭제, 신고 처리는 새로 완성해야 한다.
 
@@ -41,6 +42,12 @@ WebSocket 위에서 `CONNECT`, `SUBSCRIBE`, `SEND`처럼 메시지의 목적을 
 - 받은 메시지는 번역본을 먼저 표시하고 원문 보기를 제공한다.
 - 내가 보낸 메시지는 원문을 먼저 표시한다.
 - 번역 실패는 원문 메시지의 저장 성공을 취소하지 않는다.
+
+### BOOKING_CARD와 payload
+
+`BOOKING_CARD`는 사용자가 직접 보내는 채팅이 아니라 입주 신청이 저장됐을 때 서버가 만드는 신청 정보 카드다. 문의로 이미 만든 채팅방이 있으면 그 방에 추가하고, 방이 없을 때만 같은 기준으로 새 방을 만든다.
+
+`payload`는 카드에 필요한 신청 정보를 묶은 JSON 데이터다. 일반 `TEXT`는 `content`에 원문을 저장하고, `BOOKING_CARD`는 `payload`에 매물·신청자·입주일·기간·금액 정보를 저장한다. 외부 API 응답에서는 더 이해하기 쉬운 `bookingCard`라는 이름으로 반환한다.
 
 ## 3. 채팅방의 기준
 
@@ -95,6 +102,8 @@ flowchart LR
     BROKER --> TENANT
     BROKER --> LANDLORD
     REST --> BOOKING
+    BOOKING -->|"BookingCreatedEvent"| CHAT
+    CHAT -->|"기존 Booking 카드 데이터 조회"| BOOKING
     REST --> REPORT
     REPORT --> CHAT
     REPORT --> USER
@@ -108,7 +117,7 @@ flowchart LR
 1. 앱은 방 생성·목록·이력·삭제·차단·신고에는 REST API를 사용하고, 실시간 메시지 송수신에는 WebSocket/STOMP를 사용한다.
 2. 서버는 JWT로 로그인 사용자를 확인한다.
 3. 메시지를 보내면 Chat Application이 방 참여자, 차단 여부, 3,000자 제한, `clientMessageId` 중복을 검사한다.
-4. 검사를 통과하면 MySQL에 다음 내용을 한 트랜잭션으로 저장한다.
+4. 사용자가 텍스트를 보내고 검사를 통과하면 MySQL에 다음 내용을 한 트랜잭션으로 저장한다.
 
    - `chat_messages`: 사용자가 보낸 원문과 서버가 만든 `messageId`
    - `chat_message_translations`: 번역해야 할 작업을 `PENDING` 상태로 저장하며, 이때 번역문은 아직 비어 있음
@@ -118,20 +127,23 @@ flowchart LR
 5. 그림의 `DB 커밋 후`는 위 내용이 모두 저장됐다는 뜻이다. 하나라도 저장에 실패하면 Broker로 메시지를 전달하지 않는다.
 6. Simple Broker는 저장이 끝난 메시지를 현재 접속해 구독 중인 앱에 전달한다. Broker가 본문을 검사하거나 기록을 장기간 보관하지는 않는다.
 7. Translation Worker는 직접 번역하지 않는다. MySQL의 번역 대기 작업을 찾아 Google API에 요청하고, Google이 만든 번역본을 저장·전달하는 백엔드 작업이다.
-8. Booking Service는 기존 입주 신청을, Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
+8. Booking Service는 기존 입주 신청과 카드에 필요한 신청 상세 데이터를 담당한다. 신청 완료 이벤트를 받은 Chat Application은 문의하기와 같은 방을 보장하고 카드만 채팅 메시지로 저장한다. Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
+
+입주 신청의 경우에는 기존 Booking Service가 이미 매물 이미지·제목·주소·객실명, 신청자 프로필, 입주일·계약 기간, 보증금·총금액을 조합한다. 이 로직을 복제하지 않고 채팅용 공개 조회 결과로 재사용해 `BOOKING_CARD` 스냅샷을 만든다. 신청 이벤트가 늦게 다시 처리돼도 `bookingId`가 같은 카드를 두 번 저장하지 않는다.
 
 `MySQL → Translation Worker` 화살표는 MySQL이 Worker를 직접 호출한다는 뜻이 아니다. Spring 애플리케이션 안의 Worker가 MySQL에 저장된 번역 대기 작업을 조회해 처리한다.
 
 한 줄로 줄이면 다음과 같다.
 
 ```text
-앱 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실시간 전달 → Google 번역 결과 저장·전달
+문의·신청 → 같은 채팅방 보장 → 신청이면 BOOKING_CARD 저장
+TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실시간 전달 → Google 번역 결과 저장·전달
 ```
 
 ### 책임 분리
 
-1. REST는 방 생성·목록·방 정보·과거/누락 메시지 조회·삭제·Undo·차단·신고를 담당한다.
-2. STOMP는 연결 중 새 텍스트 메시지의 실시간 송수신을 담당한다.
+1. REST는 방 생성·목록·방 정보·과거/누락 메시지 조회·삭제·차단·신고를 담당한다.
+2. STOMP는 연결 중 새 텍스트 메시지와 서버가 저장한 신청 카드의 실시간 수신을 담당한다. 클라이언트가 SEND할 수 있는 타입은 `TEXT`뿐이다.
 3. Chat Application은 인증 사용자, 참여 권한, 차단, 본문, 중복을 검사한다.
 4. MySQL은 방·메시지·상태의 정본이다.
 5. Simple Broker는 MySQL 커밋이 끝난 메시지만 구독자에게 전달한다.
@@ -148,6 +160,7 @@ flowchart LR
 | JWT | `JwtTokenService` | REST와 STOMP CONNECT가 같은 검증 규칙 사용 |
 | 사용자 신원 | `AuthPrincipal` | userId를 API 요청자와 메시지 발신자로 사용 |
 | 신청 | 기존 Booking API·`BookingService` | chat 안에 예약 로직을 복제하지 않음 |
+| 신청 카드 데이터 | `BookingDetailResponse`, `LandlordBookingDetailResponse`를 만드는 기존 조회·계산 로직 | 채팅용 공개 `BookingCardView`로 노출해 카드 스냅샷 생성에 사용 |
 | 차단 | `UserBlockService`, `user_blocks` | 서버가 방의 상대를 도출해 호출 |
 | 언어 | `UserAccountService.getLanguage` | 채팅 번역 대상 언어와 신고 사유 label 결정 |
 | 공통 응답 | `ApiResponse`, `PageResponse`, `CursorResponse` | 기존 REST 응답 형식 유지 |
@@ -160,7 +173,7 @@ flowchart LR
 | 기능 | 그대로 재사용 | 백엔드에서 추가할 것 | 프런트엔드 변경 |
 | --- | --- | --- | --- |
 | 차단 | `UserBlockService`, `user_blocks`, 기존 차단 목록·해제 | `roomId`로 상대를 찾는 채팅방 차단 API, 방 생성·메시지 전송 전 양방향 차단 검사 | 채팅방 차단 버튼을 새 room 기반 API에 연결 |
-| 삭제 | 예약 기능의 “요청자에게만 숨김” 처리 방식만 참고 | 채팅용 사용자별 숨김 경계, DELETE, undoToken과 restore API | 삭제 호출, 현재 화면에서 token 보관, 짧은 Undo 버튼 처리 |
+| 삭제 | 예약 기능의 “요청자에게만 숨김” 처리 방식만 참고 | 채팅용 사용자별 숨김 경계와 DELETE API | 삭제 성공 시 내 목록에서 제거하며 복원 UI는 제공하지 않음 |
 | 신고 | 사용자 언어별 고정 사유를 반환하는 기존 패턴 | 채팅방 단위 신고 API, 참여자·상대·원문 증거 검증과 저장 | 상세 입력 없이 고정 사유 하나와 roomId 기준으로 신고 |
 
 따라서 세 기능 모두 처음부터 전부 새로 만드는 것은 아니지만, 기존 API를 그대로 호출하는 것도 아니다. 기존 서비스와 설계 패턴을 재사용하고 채팅방 문맥에 필요한 API와 검증을 추가한다.
@@ -171,7 +184,7 @@ flowchart LR
 - `ChatRoom`, `Message`, repository port와 adapter
 - `ReportController`, `ReportService`, `Report` 골격
 
-기존 `/read` endpoint와 `unreadCount` DTO는 이번 범위에서 노출하지 않는다. 카드·푸시용 `BookingEventHandler` TODO는 활성화하지 않고, 필요하면 신청 후 방을 보장하는 보상 handler로 재정의한다.
+기존 `/read` endpoint와 `unreadCount` DTO는 이번 범위에서 노출하지 않는다. 기존 `BookingEventHandler` 골격은 신청 후 같은 채팅방을 보장하고 `BOOKING_CARD`를 한 번만 저장하는 handler로 완성한다. 푸시 알림은 이번 범위에 포함하지 않는다.
 
 ## 6. 모듈 의존 방향
 
@@ -180,7 +193,7 @@ flowchart LR
 - `report -> chat::api`: 방 참여자, 상대, 증거 범위 확인
 - `report -> user::api`: 로그인 사용자의 언어 확인
 - `booking -> 공개 BookingCreatedEvent`: chat에 직접 의존하지 않음
-- `chat -> booking 공개 event`: 지연된 신청 이벤트로 누락된 방의 존재만 보장하고 사용자별 숨김 상태는 변경하지 않음
+- `chat -> booking 공개 event/API`: 신청 이벤트로 누락된 방을 보장하고 기존 Booking 데이터를 조회해 `BOOKING_CARD`를 한 번만 저장
 
 필요한 작은 공개 interface:
 
@@ -188,6 +201,7 @@ flowchart LR
 - `ChatCounterpartQueryService`: userId로 채팅 표시 이름 조회
 - `ChatReportQueryService`: 방 참여자·상대·증거 사본 조회
 - `MessageTranslationPort`: 원문과 대상 언어를 받아 번역 결과 반환
+- `BookingCardQueryService`: bookingId로 카드에 필요한 기존 신청 상세 데이터를 반환
 
 매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 표시 정보의 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 초기 방 목록에 억지로 포함하지 않는다.
 
@@ -214,6 +228,7 @@ Kohere에는 JWT 검증 정본이 있으므로 예제의 JWT 코드를 복사하
 | 한국인 임대인 → 외국인 세입자 | 세입자의 `en` 번역본 우선 표시 |
 
 - 번역 대상 언어는 클라이언트 요청값이 아니라 수신자의 `users.lang`으로 정한다.
+- 이번 채팅 기능의 지원 언어는 `ko/en`이다. 그 밖의 값이나 미설정 값은 채팅 표시 언어 `en`으로 처리한다.
 - `users.lang`은 화면 표시 언어이며 원문의 작성 언어로 간주하지 않는다.
 - 원문 언어는 Google 번역 요청에서 자동 감지한다.
 - Google 호출은 메시지 저장 transaction 밖에서 비동기로 수행한다.
@@ -221,4 +236,5 @@ Kohere에는 JWT 검증 정본이 있으므로 예제의 JWT 코드를 복사하
 - 사용자가 언어를 바꾸면 이후 새 메시지부터 적용하고 과거 메시지는 자동 일괄 재번역하지 않는다.
 - 번역본은 수신자 전용 STOMP queue로 전달하며 공용 room topic의 원문을 바꾸지 않는다.
 - 신고 증거와 메시지 무결성의 기준은 항상 원문이다.
+- `BOOKING_CARD`의 구조화 데이터는 Google 번역 대상이 아니다. 카드의 이름·성별·국적·금액 같은 값은 그대로 보내고, 고정 화면 라벨은 앱이 `ko/en`으로 표시한다.
 - Google credential은 서버만 보유하고 앱에는 노출하지 않는다.

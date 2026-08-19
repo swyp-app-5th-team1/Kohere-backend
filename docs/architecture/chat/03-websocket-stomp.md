@@ -9,7 +9,7 @@
 - MySQL이 기록의 정본이고 broker는 저장 완료 메시지를 실시간 전달한다.
 - 클라이언트가 보낸 메시지를 broker로 바로 보내지 않는다.
 - 애플리케이션이 인증·참여자·차단·본문·중복을 검사하고 MySQL 커밋을 마친 뒤 발행한다.
-- 공용 room topic은 원문을 전달하고 사용자별 번역 결과는 개인 queue로 분리한다.
+- 공용 room topic은 저장 완료된 `TEXT` 원문과 서버 생성 `BOOKING_CARD`를 전달하고, 사용자별 TEXT 번역 결과는 개인 queue로 분리한다.
 - 번역은 원문 커밋 후 비동기로 처리하며 실패해도 메시지 저장 성공을 바꾸지 않는다.
 - 실시간 수신을 놓치면 REST 메시지 조회로 보충한다.
 
@@ -91,12 +91,14 @@ Simple Broker가 room SUBSCRIBE를 직접 처리하므로 일반 controller만�
 Spring Simple Broker의 STOMP `RECEIPT`에 의존하지 않는다. SUBSCRIBE frame을 전송한 시점과 실제 구독 등록 시점 사이의 누락 구간을 막기 위해 application-level barrier를 사용한다.
 
 1. 클라이언트가 `/user/queue/chat-control`을 구독한다.
-2. `/app/chat/control/ping`을 보내 pong이 올 때까지 재시도한다.
+2. UUID `requestId`가 포함된 `/app/chat/control/ping`을 보내 같은 ID의 `PONG`이 올 때까지 재시도한다.
 3. room topic을 SUBSCRIBE한다.
 4. 서버가 해당 session의 `SessionSubscribeEvent`를 확인한다.
 5. 서버가 DB의 `room.lastMessageId`를 high-watermark로 읽는다.
 6. 원래 session에 `SUBSCRIPTION_READY`를 보낸다.
-7. 클라이언트가 high-watermark까지 REST catch-up을 완료한다.
+7. 클라이언트가 high-watermark까지 REST catch-up을 한 번 자동 실행한다.
+
+이 REST catch-up은 채팅방 구독 준비 직후와 재연결 직후의 누락 구간만 메우는 절차다. 연결 중에는 STOMP로 새 메시지를 받으며 일정 간격의 polling은 하지 않는다.
 
 제어 이벤트 예시:
 
@@ -111,9 +113,11 @@ Spring Simple Broker의 STOMP `RECEIPT`에 의존하지 않는다. SUBSCRIBE fra
 
 빈 방이면 `highWatermark`는 `null`이다.
 
+ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-api-contracts.md#65-구독-준비-제어-이벤트)를 따른다.
+
 ## 6. SEND payload와 서버 처리
 
-클라이언트는 다음 두 값만 보낸다.
+클라이언트가 보내는 STOMP 메시지는 `TEXT` 전용이며 다음 두 값만 보낸다.
 
 ```json
 {
@@ -128,15 +132,27 @@ Spring Simple Broker의 STOMP `RECEIPT`에 의존하지 않는다. SUBSCRIBE fra
 2. destination 형식과 roomId 확인
 3. UUID와 본문 형식·3,000자·rate limit 검사
 4. 트랜잭션에서 방 존재·참여자 재검증
-5. 관리자 종료와 양방향 차단 재검증
+5. 채팅방 참여 상태와 양방향 차단 재검증
 6. MySQL UNIQUE 기반 원자적 insert/upsert로 신규·중복 판정
 7. 신규이면 원문 메시지와 수신자별 번역 작업을 함께 저장
 8. 신규이면 방의 마지막 메시지와 양 참여자의 재노출 상태 갱신
 9. 트랜잭션 커밋
-10. 신규 원문 메시지만 room topic에 발행
+10. 신규 TEXT 원문만 room topic에 발행
 11. 발신 session에 애플리케이션 저장 결과 전송
 
 커밋 전에는 broker에 발행하지 않는다. 중복 재시도는 기존 결과만 다시 보내고 두 번째 broadcast를 만들지 않는다.
+
+### 서버가 만드는 BOOKING_CARD
+
+`BOOKING_CARD`는 위 SEND destination으로 들어오지 않는다. 기존 Booking Service가 신청을 저장한 뒤 공개 `BookingCreatedEvent`를 발행하면 Chat Application이 다음 순서로 자동 처리한다.
+
+1. `(listingId, tenantId, landlordId)`로 문의하기와 동일한 채팅방을 조회하거나 생성한다.
+2. 기존 Booking 상세 데이터 조립 로직을 공개 `BookingCardView`로 재사용한다.
+3. 신청 시점의 매물·신청자·입주 조건·금액을 카드 payload로 저장한다.
+4. `(chatRoomId, bookingId)` UNIQUE로 같은 신청 카드의 중복 저장을 막는다.
+5. 신규 카드가 커밋된 경우에만 room topic으로 `BOOKING_CARD` 저장 완료 이벤트를 발행한다.
+
+카드에는 프런트 UUID `clientMessageId`가 없고, 서버 생성 메시지이므로 `senderId`도 null이다. 임차인·임대인은 같은 카드 데이터를 받고 앱이 채팅방의 `myRole`에 따라 화면을 다르게 배치한다. 카드 데이터는 Google 번역 대상이 아니다.
 
 ## 7. 채팅 메시지 자동 번역
 
@@ -157,9 +173,12 @@ Google 번역 호출은 메시지 저장 transaction 안에서 실행하지 않�
 3. worker가 커밋된 작업을 가져와 `text/plain`으로 Google 번역을 호출한다.
 4. 원문 언어는 사용자 설정으로 추정하지 않고 provider의 자동 감지를 사용한다.
 5. 성공하면 사용자별 번역본을 저장하고 `/user/queue/chat-translations`로 최종 결과를 보낸다.
-6. 같은 언어면 `NOT_REQUIRED`, 제한된 재시도 후 실패하면 `FAILED`로 끝낸다.
+6. 같은 언어면 `NOT_REQUIRED`로 끝낸다.
+7. 재시도 가능한 오류는 한 작업 안에서 짧은 간격으로 Google 호출을 최대 5회 시도하고 계속 실패하면 `FAILED`로 끝낸다.
 
-`PENDING`은 내부 작업 상태일 뿐 `번역 중`이라는 화면 문구를 백엔드가 만들거나 보내지 않는다. 외부 payload는 [API 계약의 번역 결과 이벤트](02-api-contracts.md#63-번역-결과-이벤트)를 따른다.
+다섯 번은 최초 요청을 포함한 총 호출 횟수다. 같은 Worker 실행 안에서 호출 사이에 예를 들어 0.5초, 1초, 2초, 4초의 짧고 설정 가능한 backoff를 둔다. 별도의 다음 재시도 시각은 저장하지 않는다. timeout·연결 오류·429·5xx만 재시도하고 잘못된 요청이나 인증·설정 오류는 5회를 채우지 않고 바로 `FAILED`로 끝낼 수 있다.
+
+`PENDING`은 내부 작업 상태일 뿐 `번역 중`이라는 화면 문구를 백엔드가 만들거나 보내지 않는다. 외부 payload는 [API 계약의 번역 결과 이벤트](02-api-contracts.md#64-번역-결과-이벤트)를 따른다.
 
 번역 실패는 원문 SEND 실패가 아니므로 `/user/queue/chat-errors`로 보내지 않는다. 원문 저장 결과와 ACK는 그대로 유지하며 프런트엔드가 원문을 사용할 수 있다.
 
@@ -169,7 +188,7 @@ Simple Broker는 번역 이벤트를 재생하지 않는다. 연결 중 놓친 �
 
 ## 8. clientMessageId
 
-`clientMessageId`는 서버가 아니라 클라이언트가 전송 직전에 만드는 UUID다.
+`clientMessageId`는 사용자가 보내는 `TEXT`에 대해 서버가 아니라 클라이언트가 전송 직전에 만드는 UUID다. 서버 생성 `BOOKING_CARD`에는 사용하지 않는다.
 
 네트워크 timeout 뒤 클라이언트가 같은 메시지를 다시 보내더라도 같은 UUID를 사용한다. 서버는 `(roomId, senderId, clientMessageId)` UNIQUE 제약으로 이미 저장된 요청을 알아낸다.
 
@@ -222,9 +241,9 @@ CONNECT 인증 실패는 STOMP ERROR 후 연결을 종료한다. 개별 SEND 오
 }
 ```
 
-`eventType`은 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나다. 이 이벤트는 목록을 즉시 갱신하기 위한 신호일 뿐 정본이 아니다. 오프라인에서 놓치면 다음 REST 방 목록 조회로 복구한다.
+`eventType`은 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나다. `ROOM_REOPENED`는 직접 문의나 실제 새 메시지로 숨긴 채팅방이 목록에 다시 나타났다는 뜻이며, 삭제한 과거 메시지를 복원했다는 뜻이 아니다. 이 이벤트는 목록을 즉시 갱신하기 위한 신호일 뿐 정본이 아니며, 오프라인에서 놓치면 다음 REST 채팅방 목록 조회로 보충한다.
 
-room topic 메시지와 ACK의 도착 순서는 보장하지 않는다. 프런트엔드는 topic payload의 `clientMessageId`로 임시 말풍선을 먼저 합치고 `messageId`로 최종 중복 제거한다.
+사용자 TEXT의 room topic 메시지와 ACK 도착 순서는 보장하지 않는다. 프런트엔드는 topic payload의 `clientMessageId`로 임시 말풍선을 먼저 합치고 `messageId`로 최종 중복 제거한다. 서버 생성 `BOOKING_CARD`에는 ACK가 없으며 `messageId`와 `bookingCard.bookingId`로 중복을 제거한다.
 
 ## 10. 재연결과 누락 복구
 
