@@ -54,6 +54,13 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 삭제방 목록, 복구 가능 방, 내부 만료일을 노출하지 않는다.
 - 앱 종료 후 이전 삭제방을 찾아 복구하는 기능은 제공하지 않는다.
 
+### 1.6 기존 기능 연동 시 프런트엔드 변경
+
+- 차단: 기존 사용자 차단 저장 기능은 재사용하지만 채팅 화면에서는 새 room 기반 차단 API를 호출한다.
+- 삭제: 채팅방 DELETE 응답의 `undoToken`을 현재 화면 메모리에 보관하고 짧은 Undo 버튼을 제공한다.
+- 신고: 상세 사유 입력 없이 서버가 반환한 고정 사유 code 한 개를 room 신고 API로 보낸다.
+- 메시지: 새 전송마다 프런트엔드가 `clientMessageId` UUID를 만들고 같은 메시지 재시도에는 같은 값을 사용한다.
+
 ## 2. 테스트 계획
 
 ### 2.1 도메인·서비스
@@ -78,14 +85,11 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 과거 cursor와 forward `afterMessageId` 정렬·페이지
 - 사용자별 삭제 경계 적용
 - DELETE가 opaque undoToken만 반환
-- DELETE 재시도가 내부 deadline을 연장하지 않음
-- pending 중 재삭제가 같은 cycle에서 경계만 전진
-- 오래된 token과 내부 기한 만료 Undo 거부
-- 두 member 공통 경계까지만 purge
-- prefix purge 후 room 마지막 메시지 포인터 정합성
-- 신고 snapshot과 purge 동시성
-- 열린 신고 동시 접수가 active-slot UNIQUE로 한 행
-- 최종 처리 시 6개월 만료일 계산
+- 같은 숨김 상태의 DELETE 재시도가 새 삭제 기록을 만들지 않음
+- 오래된 token과 짧은 Undo 기간 만료 요청 거부
+- Undo가 직전 숨김 경계를 복원
+- 새 메시지·직접 문의가 방만 다시 표시하고 과거 숨김 경계는 유지
+- 동일 방 신고 동시 접수가 UNIQUE로 한 행
 
 ### 2.3 WebSocket·STOMP 통합
 
@@ -113,17 +117,14 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 방 신고에서 reporter와 reported user를 서버가 결정
 - 자유 입력 detail을 받지 않음
 - 빈 방 신고 거부
-- 열린 신고 재시도 200, 신규 201
-- 최종 처리 뒤 새 대화 없는 재신고 거부
-- 삭제 상태별 신고 가능 범위
+- 동일 방 신고 재시도 200, 신규 201
+- 현재 보이는 메시지 범위만 신고 evidence로 사용
 - 다른 사용자의 reportId 조회를 동일 404 처리
-- 운영 상태 전이와 optimistic lock
-- 7일 reviewDueAt과 처리 완료 + 6개월 retention expiry
-- evidence append-only version과 hash 유지
+- 최초 evidence snapshot과 hash 유지
 
 ### 2.5 채팅 메시지 자동 번역
 
-- 수신자의 `users.lang`이 `en`, `ko`, `ja`일 때 대상 언어가 정확함
+- 수신자의 `users.lang`이 `en`, `ko`일 때 대상 언어가 정확함
 - 미설정 언어가 기존 규칙대로 `en`으로 fallback
 - 발신자의 `users.lang`을 원문 언어로 사용하지 않고 provider 자동 감지
 - 원문 commit·ACK·room broadcast가 Google timeout·4xx·5xx와 독립
@@ -135,7 +136,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - translation 이벤트 유실 후 REST 이력으로 복구
 - 번역 결과가 원문보다 먼저 도착해도 `messageId`로 병합
 - 번역 완료가 방 재노출·마지막 메시지·삭제 경계를 변경하지 않음
-- 원문 물리 파기 시 연결된 번역 행도 파기
+- 방을 숨겨도 원문과 번역 행은 물리 삭제되지 않음
 - 신고 evidence와 hash가 번역 여부와 관계없이 원문 기준
 - 원문·번역문의 markup을 plain text로 처리
 - 로그·APM에 원문, 번역문, provider payload가 없음
@@ -147,7 +148,6 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - booking과 chat의 순환 의존 없음
 - BookingCreatedEvent publication 저장·listener 실패·재처리
 - 같은 eventId·bookingId 재처리의 방 생성 멱등성
-- 일반 신고 source hold 생성·최종 처리 해제의 원자성
 
 ## 3. 구현 순서
 
@@ -157,7 +157,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. 구현 직전 최신 Flyway 번호 확인
 3. chat room·member·message migration
 4. message translation 작업·결과 migration과 worker index
-5. report reason·report·evidence·history·hold migration
+5. report reason·report·최초 evidence migration
 6. Spring Modulith Event Publication Registry migration·재처리 설정
 7. JPA entity와 repository adapter
 
@@ -191,32 +191,31 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 4. 원문 transaction의 `PENDING` 작업 저장과 lease 기반 worker
 5. 자동 언어 감지, 대상 `users.lang` snapshot, 제한된 retry
 6. REST 이력 translation projection과 수신자 개인 STOMP 결과
-7. 원문 파기 시 번역 행 정리와 신고 원문 불변식
+7. 사용자별 숨김 경계의 번역 projection과 신고 원문 불변식
 
 ### 5단계: 삭제·Undo·차단
 
-1. member 삭제 상태, generation, undoToken, 경계
+1. member의 `roomHiddenAt`, 이력 숨김 경계, undoToken과 짧은 Undo 만료
 2. DELETE와 restore endpoint
-3. 내부 만료와 안전한 physical purge batch
-4. 기존 `UserBlockService` 연결
-5. room ensure·SEND에 양방향 차단 guard
+3. 기존 `UserBlockService` 연결
+4. room ensure·SEND에 양방향 차단 guard
 
 ### 6단계: 채팅방 신고
 
-1. 고정 reason catalog와 `ko/en/ja` label
+1. 고정 reason catalog와 `ko/en` label
 2. room participant·counterpart·evidence query
-3. report·append-only evidence·status history·hold
+3. report와 최초 evidence snapshot
 4. 신고 접수와 내 신고 상태 조회
-5. 운영자 목록·상세·상태 변경
-6. 처리 목표와 보존 만료 batch
 
 ### 7단계: 검증과 운영
 
 1. 단위·MySQL·REST·STOMP E2E 테스트
 2. REST Docs와 STOMP protocol 문서화
-3. 연결·지연·거부·재연결·batch 지표
+3. 연결·지연·거부·재연결 지표
 4. 본문 없는 구조화 로그
 5. 다중 인스턴스 전환 조건 점검
+
+관리자 신고 처리와 3개월 만료·물리 삭제의 구현·테스트·운영 계획은 [후속 고도화 문서](future/04-testing-and-operations.md)로 분리한다.
 
 ## 4. 운영 지표
 
@@ -228,8 +227,6 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 번역 처리 latency, 성공·불필요·실패·재시도 수
 - 번역 작업 backlog·최대 지연과 처리 문자 수
 - Event Publication Registry 미완료 건수·최대 지연
-- 삭제·신고 만료 batch backlog와 실패
-- 관리자 신고 처리 목표일 초과 건수
 
 ## 5. Broker 전환 기준
 
@@ -267,9 +264,8 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - WebSocket 단절 중 메시지를 REST catch-up으로 복구한다.
 - 삭제는 상대 기록에 영향을 주지 않고 현재 화면에서 Undo할 수 있다.
 - 사용자에게 삭제방 목록이나 복구 가능 상태를 제공하지 않는다.
-- 내부 유예 만료 후 해당 삭제 경계가 복구 불가능하게 확정된다.
 - 차단 이후 메시지는 저장·전달되지 않고 과거 기록은 유지된다.
-- 신고는 방·신고자·상대·사유·접수·처리·만료·증거를 갖는다.
+- 신고는 방·신고자·상대·사유·접수 시각·원문 증거를 갖는다.
 - 신고 UI와 API에 자유 입력 상세 사유가 없다.
 - 신고 사유 label은 로그인 사용자 언어로 반환된다.
 - 읽음 기능, 카드 메시지, 그룹 채팅은 포함되지 않는다.

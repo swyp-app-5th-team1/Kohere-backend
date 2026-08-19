@@ -2,11 +2,12 @@
 
 이 문서는 모든 채팅 기능에 공통으로 적용되는 서버 방어 규칙의 정본이다.
 
+관리자 신고 처리와 3개월 만료·물리 삭제의 보안·동시성 규칙은 [후속 고도화 문서](future/README.md)로 분리한다.
+
 ## 1. 인증과 신원
 
 - 사용자용 chat·inquiry·report REST는 `hasRole("USER")`로 명시한다.
 - 온보딩 전 `ROLE_ONBOARDING` 사용자는 채팅을 사용할 수 없다.
-- 운영자 신고 API는 별도 `ADMIN` 권한을 사용한다.
 - REST controller는 기존 예약 controller처럼 `AuthPrincipal.userId`를 service에 전달한다.
 - STOMP 인증은 [03-websocket-stomp.md](03-websocket-stomp.md)의 CONNECT 계약을 따른다.
 - 발신자·신고자·차단자는 항상 인증 Principal에서 얻는다.
@@ -22,7 +23,7 @@
 1. 로그인 완료 사용자
 2. 방 존재
 3. 요청자가 tenant 또는 landlord 참여자
-4. 기능별 삭제 상태·차단·관리자 종료 규칙
+4. 기능별 숨김 상태와 차단 규칙
 
 다른 사용자의 방은 roomId를 알아도 조회하거나 변경할 수 없다.
 
@@ -49,8 +50,7 @@ interceptor 검사만으로 service 검사를 생략하지 않는다. 구독 뒤
 5. Unicode code point 최대 3,000자
 6. 사용자·방 단위 rate limit
 7. 방 존재와 참여자
-8. `ADMIN_CLOSED` 여부
-9. 두 사용자 사이 어느 방향의 차단도 없는지
+8. 두 사용자 사이 어느 방향의 차단도 없는지
 
 차단된 전송은 `chat_messages` INSERT, room 갱신, broker publish 전에 종료한다. 거부된 본문을 로그나 별도 실패 queue에 남기지 않는다.
 
@@ -107,27 +107,12 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 
 1. room lock
 2. reporter 참여자 여부와 reported user 도출
-3. 삭제 상태별 신고 가능 범위·마지막 messageId 확인
+3. 신고자에게 현재 보이는 범위와 마지막 messageId 확인
 4. 최근 메시지 snapshot 생성
-5. report, evidence v1, 최초 status history 저장
-6. source room hold 저장
-7. 한 번에 commit
+5. report와 최초 evidence 저장
+6. 한 번에 commit
 
-chat purge도 같은 room row를 먼저 lock하므로 snapshot 전에 원문을 지울 수 없다.
-
-열린 신고 중복은 generated `active_slot` UNIQUE가 최종 방어한다. unique 충돌은 transaction 경계를 안전하게 끝낸 뒤 기존 열린 신고를 조회해 `200`으로 반환한다.
-
-### 운영자 최종 처리
-
-같은 outer transaction에서 다음을 한 번에 commit한다.
-
-- report optimistic version 확인
-- 최종 evidence version append
-- 상태와 status history 저장
-- `resolved_at`, `retention_expires_at` 설정
-- source room hold 해제
-
-evidence 저장이 실패했는데 hold만 먼저 해제되는 상태를 허용하지 않는다.
+신고 중복은 `(reporterId, targetType, targetId)` UNIQUE가 최종 방어한다. unique 충돌은 transaction 경계를 안전하게 끝낸 뒤 기존 신고를 조회해 `200`으로 반환한다.
 
 ## 7. Lock 순서
 
@@ -137,9 +122,7 @@ evidence 저장이 실패했는데 hold만 먼저 해제되는 상태를 허용�
 chat_room → chat_room_members(ID 오름차순) → 필요한 message/report row
 ```
 
-SEND, room ensure, DELETE, Undo, 신고 snapshot, 삭제 만료 job이 같은 순서를 따른다.
-
-batch는 member부터 `FOR UPDATE`하지 않는다. 먼저 due 후보 ID를 잠금 없이 page 조회하고, 각 짧은 transaction에서 room을 먼저 `FOR UPDATE SKIP LOCKED`로 잡은 뒤 두 member를 잠근다. lock 이후 조건을 반드시 다시 검사한다.
+SEND, room ensure, DELETE, Undo, 신고 snapshot이 같은 순서를 따른다. 후속 물리 삭제 batch도 이 순서를 유지해야 하며 상세는 [후속 보존 설계](future/02-retention-and-physical-deletion.md)를 따른다.
 
 ## 8. 커밋과 broker 발행
 
@@ -177,7 +160,7 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 | 방 없음 | `CHAT_ROOM_NOT_FOUND` |
 | 비참여자 | `FORBIDDEN` |
 | 본인 매물 문의 | `CHAT_SELF_INQUIRY_NOT_ALLOWED` |
-| 차단 또는 운영 종료 | `CHAT_UNAVAILABLE` |
+| 차단 관계 | `CHAT_UNAVAILABLE` |
 | 빈 메시지 | `INVALID_INPUT` |
 | 3,000자 초과 | `CHAT_MESSAGE_TOO_LONG` |
 | 같은 clientMessageId에 다른 본문 | `CHAT_CLIENT_MESSAGE_CONFLICT` |
@@ -186,8 +169,6 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 | 유효하지 않은 신고 사유 | `REPORT_INVALID_REASON` |
 | 신고 없음 또는 다른 신고자 | `REPORT_NOT_FOUND` |
 | 메시지 없는 방 신고 | `CHAT_REPORT_NO_MESSAGES` |
-| 직전 처리 뒤 새 대화 없는 재신고 | `REPORT_NO_NEW_ACTIVITY` |
-| 확정 삭제 범위 신고 | `CHAT_REPORT_HISTORY_UNAVAILABLE` |
 | 전송률 초과 | `TOO_MANY_REQUESTS` |
 
 차단 여부를 상대에게 상세히 노출하지 않기 위해 전송에는 일반 `CHAT_UNAVAILABLE`을 사용한다. CONNECT 실패는 STOMP ERROR 후 close하고, 개별 SEND 오류는 원 발신 session의 user queue로만 보낸다.
@@ -216,7 +197,6 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 ## 12. 보안 체크리스트
 
 - [ ] 모든 사용자용 chat·inquiry·report REST에 `ROLE_USER`
-- [ ] admin report에 별도 `ADMIN`
 - [ ] CONNECT JWT, ACTIVE 계정, token expiresAt 검증
 - [ ] `Principal.name == userId` 보장
 - [ ] 인증 interceptor가 메시지 인가 interceptor보다 먼저 실행
@@ -233,4 +213,5 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 - [ ] Google credential 서버 보관, timeout·retry·quota 설정
 - [ ] 원문·번역문 plain text 처리와 출력 escaping
 - [ ] 외부 번역 처리 고지와 Google 자동 번역 attribution
-- [ ] 관리자 상태 변경 감사 이력
+
+관리자 전용 보안 체크리스트는 [후속 관리자 설계](future/01-admin-report-management.md)에 둔다.

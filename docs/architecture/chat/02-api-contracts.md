@@ -22,15 +22,9 @@
 
 모든 사용자용 endpoint는 로그인과 온보딩을 완료한 `ROLE_USER`만 사용할 수 있다.
 
-## 2. 운영자 신고 API
+## 2. 후속 고도화 API
 
-| Method | Path | 설명 |
-| --- | --- | --- |
-| GET | `/api/v1/admin/chat-reports` | 상태·처리 목표일별 신고 목록 |
-| GET | `/api/v1/admin/chat-reports/{reportId}` | 신고·채팅방·증거 상세 |
-| PATCH | `/api/v1/admin/chat-reports/{reportId}/status` | 검토 시작 또는 최종 처리 |
-
-운영자 endpoint는 별도 `ADMIN` 인증과 상태 변경 감사 이력이 필요하다. 관리자 인증 기반이 아직 없다면 사용자 신고 접수를 먼저 구현하고, 운영자 API는 관리자 인증과 함께 공개한다.
+운영자 신고 목록·상세·상태 변경 API는 이번 구현에 포함하지 않는다. 관리자 인증이 준비된 뒤 [운영자 신고 처리 설계](future/01-admin-report-management.md)에 따라 별도로 구현한다.
 
 ## 3. STOMP 경로
 
@@ -164,7 +158,9 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 }
 ```
 
-같은 삭제 cycle의 재시도는 같은 token을 반환하고 내부 3개월 기한을 연장하지 않는다. 앱은 이 token을 현재 화면 메모리에만 잠시 보관하며 삭제방 목록이나 복구 가능 기한을 사용자에게 보여 주지 않는다.
+같은 숨김 상태에서 DELETE를 재시도하면 같은 결과와 token을 반환한다. 앱은 이 token을 현재 화면 메모리에만 잠시 보관하며 삭제방 목록이나 복구 가능 기한을 사용자에게 보여 주지 않는다.
+
+현재 범위의 삭제는 사용자별 soft delete다. 3개월 후 복구 불가능 확정과 물리 삭제는 [후속 고도화](future/02-retention-and-physical-deletion.md)에서 서버 내부 정기 작업으로 구현한다.
 
 ### 5.6 삭제 직후 Undo
 
@@ -176,7 +172,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 }
 ```
 
-현재 삭제 cycle의 token이고 내부 복구 기한 전이면 방과 해당 cycle의 이력을 다시 보이게 한다. 앱을 종료한 뒤 복구 가능한 방을 찾아 주는 기능은 제공하지 않는다.
+현재 삭제 요청의 token이고 화면에서 제공하는 짧은 Undo 기간 안이면 방과 이번 삭제로 숨긴 이력을 다시 보이게 한다. 정확한 Undo 시간은 제품 설정값으로 정하며 3개월 보존기간과는 다른 개념이다. 앱을 종료한 뒤 복구 가능한 방을 찾아 주는 기능은 제공하지 않는다.
 
 ### 5.7 차단
 
@@ -188,7 +184,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 `GET /api/v1/reports/reasons`
 
-code는 언어와 관계없이 같고 label만 사용자의 `ko/en/ja` 설정에 따라 바뀐다. 번역이 없으면 영어로 fallback한다.
+code는 언어와 관계없이 같고 label만 사용자의 `ko/en` 설정에 따라 바뀐다. 번역이 없으면 영어로 fallback한다.
 
 ```json
 {
@@ -223,10 +219,9 @@ code는 언어와 관계없이 같고 label만 사용자의 `ko/en/ja` 설정에
 - `targetId`: path의 roomId
 - `status`: `RECEIVED`
 - `receivedAt`: 서버 접수 시각
-- `reviewDueAt`: 접수 시각 + 7일
 - `evidenceThroughMessageId`: 접수 시점의 마지막 메시지
 
-최소 한 개의 텍스트 메시지가 있어야 신고할 수 있다. 같은 신고자가 같은 방에 열린 신고를 다시 보내면 새 행을 만들지 않고 기존 신고를 `200`으로 반환한다. 최종 처리 뒤에는 직전 신고 이후 새 메시지가 생긴 경우에만 다시 신고할 수 있다.
+최소 한 개의 텍스트 메시지가 있어야 신고할 수 있다. 같은 신고자가 같은 방을 다시 신고하면 새 행을 만들지 않고 기존 신고를 `200`으로 반환한다. 처리 완료 후 재신고 규칙은 운영자 처리와 함께 후속 고도화에서 정한다.
 
 ### 5.10 내 신고 상태
 
@@ -238,7 +233,7 @@ code는 언어와 관계없이 같고 label만 사용자의 `ko/en/ja` 설정에
 
 - reportId, chatRoomId
 - reason code와 현재 언어 label
-- status, receivedAt, reviewDueAt, resolvedAt
+- status, receivedAt
 
 사용자에게 반환하지 않음:
 

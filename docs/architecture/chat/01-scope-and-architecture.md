@@ -101,6 +101,33 @@ flowchart LR
     REPORT --> DB
 ```
 
+### 그림을 쉽게 읽는 방법
+
+이 그림의 박스가 모두 별도 서버라는 뜻은 아니다. 초기에는 `Chat Application`, `Translation Worker`, `Report Application`, `Spring Simple Broker`가 한 대의 EC2에서 실행되는 같은 Spring 애플리케이션 안에 역할별로 나뉘어 있다.
+
+1. 앱은 방 생성·목록·이력·삭제·차단·신고에는 REST API를 사용하고, 실시간 메시지 송수신에는 WebSocket/STOMP를 사용한다.
+2. 서버는 JWT로 로그인 사용자를 확인한다.
+3. 메시지를 보내면 Chat Application이 방 참여자, 차단 여부, 3,000자 제한, `clientMessageId` 중복을 검사한다.
+4. 검사를 통과하면 MySQL에 다음 내용을 한 트랜잭션으로 저장한다.
+
+   - `chat_messages`: 사용자가 보낸 원문과 서버가 만든 `messageId`
+   - `chat_message_translations`: 번역해야 할 작업을 `PENDING` 상태로 저장하며, 이때 번역문은 아직 비어 있음
+   - `chat_rooms`: 마지막 메시지 번호와 시각
+   - 필요한 경우: 실제 새 메시지를 받은 사용자의 숨겨진 방을 다시 표시할 상태
+
+5. 그림의 `DB 커밋 후`는 위 내용이 모두 저장됐다는 뜻이다. 하나라도 저장에 실패하면 Broker로 메시지를 전달하지 않는다.
+6. Simple Broker는 저장이 끝난 메시지를 현재 접속해 구독 중인 앱에 전달한다. Broker가 본문을 검사하거나 기록을 장기간 보관하지는 않는다.
+7. Translation Worker는 직접 번역하지 않는다. MySQL의 번역 대기 작업을 찾아 Google API에 요청하고, Google이 만든 번역본을 저장·전달하는 백엔드 작업이다.
+8. Booking Service는 기존 입주 신청을, Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
+
+`MySQL → Translation Worker` 화살표는 MySQL이 Worker를 직접 호출한다는 뜻이 아니다. Spring 애플리케이션 안의 Worker가 MySQL에 저장된 번역 대기 작업을 조회해 처리한다.
+
+한 줄로 줄이면 다음과 같다.
+
+```text
+앱 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실시간 전달 → Google 번역 결과 저장·전달
+```
+
 ### 책임 분리
 
 1. REST는 방 생성·목록·방 정보·과거/누락 메시지 조회·삭제·Undo·차단·신고를 담당한다.
@@ -112,7 +139,7 @@ flowchart LR
 7. 전역 사용자 차단은 기존 user 모듈이 계속 소유한다.
 8. Translation Worker는 원문 커밋 후 수신자의 `users.lang`으로 번역하고 결과를 별도 저장한다.
 9. Google 번역 지연·실패는 메시지 저장과 원문 실시간 전달에 영향을 주지 않는다.
-10. 신고 접수·운영 처리는 report 모듈이 소유하고 chat 모듈은 방·증거 조회 API를 제공한다.
+10. 현재 신고 접수는 report 모듈이 소유하고 chat 모듈은 방·증거 조회 API를 제공한다. 운영자 처리는 [후속 고도화](future/README.md)에서 다룬다.
 
 ## 5. 기존 코드 재사용
 
@@ -127,6 +154,16 @@ flowchart LR
 | DB | Flyway, JPA, MySQL | 새 migration과 JPA adapter 작성 |
 | 외부 API adapter | 기존 port/adapter·timeout·stub 패턴 | Google 번역 adapter를 provider 독립 port 뒤에 배치 |
 | 테스트 | MySQL·Redis Testcontainers, MockMvc | 기존 통합 테스트 패턴 확장 |
+
+### 기존 기능을 그대로 쓰는 범위와 새로 만드는 범위
+
+| 기능 | 그대로 재사용 | 백엔드에서 추가할 것 | 프런트엔드 변경 |
+| --- | --- | --- | --- |
+| 차단 | `UserBlockService`, `user_blocks`, 기존 차단 목록·해제 | `roomId`로 상대를 찾는 채팅방 차단 API, 방 생성·메시지 전송 전 양방향 차단 검사 | 채팅방 차단 버튼을 새 room 기반 API에 연결 |
+| 삭제 | 예약 기능의 “요청자에게만 숨김” 처리 방식만 참고 | 채팅용 사용자별 숨김 경계, DELETE, undoToken과 restore API | 삭제 호출, 현재 화면에서 token 보관, 짧은 Undo 버튼 처리 |
+| 신고 | 사용자 언어별 고정 사유를 반환하는 기존 패턴 | 채팅방 단위 신고 API, 참여자·상대·원문 증거 검증과 저장 | 상세 입력 없이 고정 사유 하나와 roomId 기준으로 신고 |
+
+따라서 세 기능 모두 처음부터 전부 새로 만드는 것은 아니지만, 기존 API를 그대로 호출하는 것도 아니다. 기존 서비스와 설계 패턴을 재사용하고 채팅방 문맥에 필요한 API와 검증을 추가한다.
 
 다음 기존 골격은 완성 대상이다.
 
@@ -174,7 +211,7 @@ Kohere에는 JWT 검증 정본이 있으므로 예제의 JWT 코드를 복사하
 | 전송 방향 | 기본 동작 |
 | --- | --- |
 | 외국인 세입자 → 한국인 임대인 | 임대인에게 한국어 번역본 우선 표시 |
-| 한국인 임대인 → 외국인 세입자 | 세입자의 `en` 또는 `ja` 번역본 우선 표시 |
+| 한국인 임대인 → 외국인 세입자 | 세입자의 `en` 번역본 우선 표시 |
 
 - 번역 대상 언어는 클라이언트 요청값이 아니라 수신자의 `users.lang`으로 정한다.
 - `users.lang`은 화면 표시 언어이며 원문의 작성 언어로 간주하지 않는다.

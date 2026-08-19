@@ -2,6 +2,8 @@
 
 > 작성일: 2026-08-19
 >
+> 최종 수정: 2026-08-20
+>
 > 상태: 구현 전 합의안
 >
 > 범위: 설계 문서만 작성했으며 애플리케이션 코드는 변경하지 않는다.
@@ -21,16 +23,18 @@
 | [03-websocket-stomp.md](03-websocket-stomp.md) | WebSocket/STOMP 인증, 구독, 전송, 재연결, 브로커 |
 | [04-feature-flows.md](04-feature-flows.md) | 문의·신청·메시지·자동 번역·삭제·차단·신고 기능 흐름 |
 | [05-sequence-diagrams.md](05-sequence-diagrams.md) | 기능별 Mermaid 시퀀스 다이어그램 |
-| [06-data-model-and-retention.md](06-data-model-and-retention.md) | 원문·번역 MySQL 모델, 삭제 상태, 신고 증거, 물리 파기 |
+| [06-data-model-and-retention.md](06-data-model-and-retention.md) | 현재 구현할 원문·번역·사용자별 숨김·신고 접수 데이터 모델 |
 | [07-security-and-concurrency.md](07-security-and-concurrency.md) | 권한, 트랜잭션, 동시성, 외부 번역 API, 오류, 로깅 |
 | [08-testing-and-implementation.md](08-testing-and-implementation.md) | 클라이언트 동작, 테스트, 구현 순서, 운영 전환 기준 |
+| [future/README.md](future/README.md) | 관리자 신고 처리, 3개월 만료, 물리 삭제 등 후속 고도화 설계 |
 
 ### 문서의 역할과 우선순위
 
 - 제품 범위와 화면 표시 정책은 `01-scope-and-architecture.md`가 정본이다.
 - 외부 REST 계약은 `02-api-contracts.md`가 정본이다.
 - 실시간 protocol 계약은 `03-websocket-stomp.md`가 정본이다.
-- 내부 저장·삭제·보존 규칙은 `06-data-model-and-retention.md`가 정본이다.
+- 현재 저장·사용자별 숨김 규칙은 `06-data-model-and-retention.md`가 정본이다.
+- 관리자 처리와 자동 보존 만료·물리 삭제 규칙은 `future/` 문서가 정본이다.
 - 공통 보안·동시성 규칙은 `07-security-and-concurrency.md`가 정본이다.
 - `04-feature-flows.md`와 `05-sequence-diagrams.md`는 위 정본을 쉽게 설명하는 자료이며 새 정책을 선언하지 않는다.
 
@@ -51,7 +55,7 @@
 | 번역 표시 | 받은 메시지는 번역본 우선, 원문 보기 제공; 내가 보낸 메시지는 원문 우선 |
 | 번역 처리 | 원문 저장 후 Google Cloud Translation Advanced v3로 비동기 처리 |
 | 읽음 기능 | 읽음 표시와 안 읽은 메시지 수는 후속 구현 |
-| 삭제 | 요청자에게만 숨김, 즉시 Undo 제공, 내부 유예기간 3개월 |
+| 삭제 | 요청자에게만 숨김, 현재 화면에서 짧은 Undo 제공 |
 | 차단 | 이전 대화는 유지하고 이후 양방향 전송만 차단 |
 | 신고 | 개별 메시지가 아닌 채팅방과 상대 사용자를 신고 |
 | 신고 입력 | 고정 사유 한 개만 선택하고 상세 사유는 받지 않음 |
@@ -70,9 +74,15 @@
 - 백업 데이터 파기 자동화
 - 번역문 직접 수정과 사용자별 번역 용어 설정
 - 언어 변경 전 과거 메시지의 자동 일괄 재번역
+- 관리자 신고 목록·상세·상태 변경 API
+- 삭제 후 3개월 만료 확정과 메시지·방의 물리 삭제 작업
+- 신고 처리 완료 후 보관 만료·물리 삭제 작업
+
+위 세 항목은 폐기한 요구가 아니라 [후속 고도화 문서](future/README.md)로 분리한 요구다. 특히 “3개월 후 DB에서 삭제”는 사용자가 호출하는 REST API가 아니라 서버가 정기적으로 실행할 내부 작업이다.
 
 ## 읽기 순서
 
 - 제품 흐름을 이해하려면 `01 → 04 → 05` 순서로 읽는다.
 - API를 연동하려면 `02 → 03`을 읽는다.
 - 백엔드를 구현하려면 `01 → 02 → 03 → 06 → 07 → 08` 순서로 읽는다.
+- 관리자 처리와 물리 삭제를 고도화할 때는 `future/README.md`부터 읽는다.
