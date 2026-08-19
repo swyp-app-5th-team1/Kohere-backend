@@ -1,0 +1,78 @@
+# Kohere 1:1 채팅 설계 문서
+
+> 작성일: 2026-08-19
+>
+> 상태: 구현 전 합의안
+>
+> 범위: 설계 문서만 작성했으며 애플리케이션 코드는 변경하지 않는다.
+
+이 폴더는 Kohere의 세입자·임대인 1:1 채팅 기능을 구현하기 위한 기준 문서다. 기존의 긴 단일 문서를 책임별로 나눴으며, 같은 내용을 여러 파일에 반복하지 않는다.
+
+기존 문서에 남아 있는 카드 메시지, 읽음 처리, 1,000자 제한, 메시지 단위 신고가 이 폴더의 결정과 충돌하면 이번 채팅 구현에서는 이 폴더의 문서를 우선한다. 기존 문서와 실제 코드는 구현 단계에서 별도로 정합화한다.
+
+채팅 번역은 원문 메시지와 분리한다. MySQL에 저장한 원문이 항상 정본이며, Google Cloud Translation으로 만든 사용자 언어별 번역본은 화면 표시를 돕는 파생 데이터다.
+
+## 문서 구성
+
+| 문서 | 내용 |
+| --- | --- |
+| [01-scope-and-architecture.md](01-scope-and-architecture.md) | 제품 범위, 표시 정책, 쉬운 용어, 전체 구조, 기존 코드 재사용 |
+| [02-api-contracts.md](02-api-contracts.md) | REST API와 STOMP 경로, 주요 요청·응답 계약 |
+| [03-websocket-stomp.md](03-websocket-stomp.md) | WebSocket/STOMP 인증, 구독, 전송, 재연결, 브로커 |
+| [04-feature-flows.md](04-feature-flows.md) | 문의·신청·메시지·자동 번역·삭제·차단·신고 기능 흐름 |
+| [05-sequence-diagrams.md](05-sequence-diagrams.md) | 기능별 Mermaid 시퀀스 다이어그램 |
+| [06-data-model-and-retention.md](06-data-model-and-retention.md) | 원문·번역 MySQL 모델, 삭제 상태, 신고 증거, 물리 파기 |
+| [07-security-and-concurrency.md](07-security-and-concurrency.md) | 권한, 트랜잭션, 동시성, 외부 번역 API, 오류, 로깅 |
+| [08-testing-and-implementation.md](08-testing-and-implementation.md) | 클라이언트 동작, 테스트, 구현 순서, 운영 전환 기준 |
+
+### 문서의 역할과 우선순위
+
+- 제품 범위와 화면 표시 정책은 `01-scope-and-architecture.md`가 정본이다.
+- 외부 REST 계약은 `02-api-contracts.md`가 정본이다.
+- 실시간 protocol 계약은 `03-websocket-stomp.md`가 정본이다.
+- 내부 저장·삭제·보존 규칙은 `06-data-model-and-retention.md`가 정본이다.
+- 공통 보안·동시성 규칙은 `07-security-and-concurrency.md`가 정본이다.
+- `04-feature-flows.md`와 `05-sequence-diagrams.md`는 위 정본을 쉽게 설명하는 자료이며 새 정책을 선언하지 않는다.
+
+## 핵심 결정
+
+| 항목 | 결정 |
+| --- | --- |
+| 사용자 | 로그인과 온보딩을 완료한 `ROLE_USER` |
+| 채팅 형태 | 세입자와 임대인의 1:1 채팅만 지원 |
+| 채팅방 식별 | `(listingId, tenantId, landlordId)`마다 한 방 |
+| 문의·신청 | 두 진입점 모두 같은 방을 사용 |
+| 저장소 | MySQL이 채팅 기록의 정본 |
+| 실시간 통신 | WebSocket 위에서 STOMP 사용 |
+| 현재 브로커 | 단일 EC2·단일 JVM의 Spring Simple Broker |
+| 사용자 메시지 | `TEXT`만 지원, 공백·줄바꿈 포함 Unicode code point 최대 3,000자 |
+| 재전송 중복 | 클라이언트 UUID `clientMessageId`와 MySQL UNIQUE로 방지 |
+| 자동 번역 | 받은 메시지를 로그인 사용자의 `users.lang`으로 번역 |
+| 번역 표시 | 받은 메시지는 번역본 우선, 원문 보기 제공; 내가 보낸 메시지는 원문 우선 |
+| 번역 처리 | 원문 저장 후 Google Cloud Translation Advanced v3로 비동기 처리 |
+| 읽음 기능 | 읽음 표시와 안 읽은 메시지 수는 후속 구현 |
+| 삭제 | 요청자에게만 숨김, 즉시 Undo 제공, 내부 유예기간 3개월 |
+| 차단 | 이전 대화는 유지하고 이후 양방향 전송만 차단 |
+| 신고 | 개별 메시지가 아닌 채팅방과 상대 사용자를 신고 |
+| 신고 입력 | 고정 사유 한 개만 선택하고 상세 사유는 받지 않음 |
+
+## 이번 범위에서 제외
+
+- 그룹 채팅
+- 이미지·영상·파일 메시지
+- `LISTING_CARD`, `BOOKING_CARD`, `SYSTEM` 메시지
+- 읽음 위치, 안 읽은 메시지 수, 숫자 1 표시
+- 메시지 수정·개별 삭제·전송 취소
+- 타이핑 중·접속 중 표시
+- 채팅방 자동 시간 만료
+- 푸시 알림
+- 다중 서버용 외부 broker relay
+- 백업 데이터 파기 자동화
+- 번역문 직접 수정과 사용자별 번역 용어 설정
+- 언어 변경 전 과거 메시지의 자동 일괄 재번역
+
+## 읽기 순서
+
+- 제품 흐름을 이해하려면 `01 → 04 → 05` 순서로 읽는다.
+- API를 연동하려면 `02 → 03`을 읽는다.
+- 백엔드를 구현하려면 `01 → 02 → 03 → 06 → 07 → 08` 순서로 읽는다.
