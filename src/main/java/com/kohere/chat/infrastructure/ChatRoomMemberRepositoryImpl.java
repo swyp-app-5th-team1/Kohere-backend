@@ -1,10 +1,13 @@
 package com.kohere.chat.infrastructure;
 
 import com.kohere.chat.domain.ChatRoomMember;
+import com.kohere.chat.domain.ChatRoomMemberPage;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 /**
@@ -50,6 +53,17 @@ public class ChatRoomMemberRepositoryImpl implements ChatRoomMemberRepository {
     return jpaRepository.findByChatRoomIdOrderByIdAsc(chatRoomId).stream()
         .map(ChatRoomMemberRepositoryImpl::toDomain)
         .toList();
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public ChatRoomMemberPage findVisiblePageByUserId(Long userId, int page, int size) {
+    // 정렬은 JPQL에 고정되어 있으므로 Pageable에는 offset과 limit만 전달한다.
+    Page<ChatRoomMemberJpaEntity> result =
+        jpaRepository.findVisiblePageByUserId(userId, PageRequest.of(page, size));
+    List<ChatRoomMember> content =
+        result.getContent().stream().map(ChatRoomMemberRepositoryImpl::toDomain).toList();
+    return new ChatRoomMemberPage(content, result.getTotalElements());
   }
 
   /**

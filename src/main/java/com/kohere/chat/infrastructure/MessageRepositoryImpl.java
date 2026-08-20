@@ -2,6 +2,7 @@ package com.kohere.chat.infrastructure;
 
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +33,18 @@ public class MessageRepositoryImpl implements MessageRepository {
   @Override
   public Optional<Message> findById(Long messageId) {
     return jpaRepository.findById(messageId).map(MessageRepositoryImpl::toDomain);
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public List<Message> findByIds(Collection<Long> messageIds) {
+    if (messageIds.isEmpty()) {
+      return List.of();
+    }
+    // 현재 페이지가 참조하는 마지막 메시지를 단일 IN 쿼리로 읽어 방 개수만큼 SQL이 늘어나는 것을 막는다.
+    return jpaRepository.findAllById(messageIds).stream()
+        .map(MessageRepositoryImpl::toDomain)
+        .toList();
   }
 
   /** {@inheritDoc} */

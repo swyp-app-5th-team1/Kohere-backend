@@ -1,5 +1,6 @@
 package com.kohere.chat.domain;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,17 @@ public interface MessageRepository {
    * @return 존재하면 메시지, 없으면 빈 값
    */
   Optional<Message> findById(Long messageId);
+
+  /**
+   * 채팅방 목록 페이지가 가리키는 마지막 메시지들을 한 번에 조회한다.
+   *
+   * <p>각 채팅방의 {@code lastMessageId}마다 단건 조회를 반복하지 않기 위한 batch 포트다. 반환 순서는 보장하지 않으며 호출자가 messageId를
+   * 키로 다시 조립한다.
+   *
+   * @param messageIds 조회할 서버 메시지 ID 모음
+   * @return 존재하는 메시지 목록
+   */
+  List<Message> findByIds(Collection<Long> messageIds);
 
   /**
    * TEXT 재시도의 멱등 키로 이미 저장된 메시지를 찾는다.

@@ -1,12 +1,14 @@
 package com.kohere.chat.domain;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
  * 채팅방 도메인이 MySQL 구현 세부사항 없이 저장·조회할 수 있게 하는 영속 포트다.
  *
  * <p>구현은 infrastructure 계층에 두어 의존성을 역전한다. {@code category}는 내부 저장값으로 유지하지만 현재 사용자 API의 필터나 응답으로
- * 노출하지 않는다. 목록 조립과 사용자별 가시성 조회는 실제 REST 기능을 연결하는 후속 단계에서 참여자 포트와 함께 확장한다.
+ * 노출하지 않는다. 목록 조회는 참여자 포트가 먼저 정한 현재 페이지의 roomId만 이 포트로 일괄 조회해 사용자별 가시성과 공유 방 데이터를 분리한다.
  */
 public interface ChatRoomRepository {
 
@@ -27,6 +29,17 @@ public interface ChatRoomRepository {
    * @return 존재하면 채팅방, 없으면 빈 값
    */
   Optional<ChatRoom> findById(Long roomId);
+
+  /**
+   * 한 목록 페이지에 포함된 채팅방들을 한 번에 조회한다.
+   *
+   * <p>방마다 {@link #findById(Long)}를 반복하면 20개 목록에 20번의 SQL이 추가되는 N+1 문제가 생긴다. 목록 서비스는 먼저 참여자 페이지에서
+   * roomId를 모은 뒤 이 메서드를 한 번만 호출한다. 반환 순서는 보장하지 않으며 호출자가 ID map으로 조립한다.
+   *
+   * @param roomIds 조회할 서버 채팅방 ID 모음
+   * @return 존재하는 채팅방 목록
+   */
+  List<ChatRoom> findByIds(Collection<Long> roomIds);
 
   /**
    * 문의하기와 신청하기가 공유하는 비즈니스 키로 기존 방을 찾는다.

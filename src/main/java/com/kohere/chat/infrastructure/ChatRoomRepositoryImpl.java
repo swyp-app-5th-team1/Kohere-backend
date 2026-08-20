@@ -2,6 +2,8 @@ package com.kohere.chat.infrastructure;
 
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomRepository;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -35,6 +37,18 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepository {
   public Optional<ChatRoom> findById(Long roomId) {
     // Optional.map을 사용해 부재를 예외로 바꾸지 않고 포트의 계약 그대로 유지한다.
     return jpaRepository.findById(roomId).map(ChatRoomRepositoryImpl::toDomain);
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public List<ChatRoom> findByIds(Collection<Long> roomIds) {
+    if (roomIds.isEmpty()) {
+      return List.of();
+    }
+    // Spring Data의 findAllById는 하나의 IN 쿼리를 사용한다. DB 반환 순서는 목록 정렬과 무관하므로 서비스가 ID map으로 복원한다.
+    return jpaRepository.findAllById(roomIds).stream()
+        .map(ChatRoomRepositoryImpl::toDomain)
+        .toList();
   }
 
   /** {@inheritDoc} */

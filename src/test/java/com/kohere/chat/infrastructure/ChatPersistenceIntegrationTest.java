@@ -8,6 +8,7 @@ import com.kohere.chat.domain.ChatCategory;
 import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
+import com.kohere.chat.domain.ChatRoomMemberPage;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.ListingSnapshot;
@@ -128,6 +129,9 @@ class ChatPersistenceIntegrationTest {
     assertThat(messageRepository.findAfter(savedRoom.getId(), savedText.getId(), 10))
         .extracting(Message::getId)
         .containsExactly(savedCard.getId());
+    assertThat(messageRepository.findByIds(List.of(savedCard.getId(), savedText.getId())))
+        .extracting(Message::getId)
+        .containsExactlyInAnyOrder(savedText.getId(), savedCard.getId());
 
     // 물리 저장이 BINARY(16)인지 길이를 직접 확인해 Hibernate가 VARCHAR UUID로 조용히 바꾸는 회귀를 막는다.
     Integer storedUuidBytes =
@@ -136,6 +140,36 @@ class ChatPersistenceIntegrationTest {
             Integer.class,
             savedText.getId());
     assertThat(storedUuidBytes).isEqualTo(16);
+  }
+
+  /** 숨긴 방은 제외하고 보이는 방만 마지막 활동 시각 순으로 페이지 조회하는지 실제 MySQL 조인으로 확인한다. */
+  @Test
+  void findsVisibleRoomMembersOrderedByLatestActivity() {
+    Instant base = now();
+    ChatRoom olderRoom = chatRoomRepository.save(newRoom("64f000000000000000000011", base));
+    ChatRoom activeRoom =
+        chatRoomRepository.save(newRoom("64f000000000000000000012", base.plusSeconds(1)));
+    ChatRoom hiddenRoom =
+        chatRoomRepository.save(newRoom("64f000000000000000000013", base.plusSeconds(2)));
+
+    memberRepository.save(
+        newMember(olderRoom.getId(), 101L, 202L, ChatParticipantRole.TENANT, base));
+    memberRepository.save(
+        newMember(activeRoom.getId(), 101L, 202L, ChatParticipantRole.TENANT, base));
+    ChatRoomMember savedHidden =
+        memberRepository.save(
+            newMember(hiddenRoom.getId(), 101L, 202L, ChatParticipantRole.TENANT, base));
+    jdbcTemplate.update(
+        "UPDATE chat_room_members SET room_hidden_at = ? WHERE id = ?",
+        base.plusSeconds(3),
+        savedHidden.getId());
+
+    ChatRoomMemberPage page = memberRepository.findVisiblePageByUserId(101L, 0, 10);
+
+    assertThat(page.totalElements()).isEqualTo(2L);
+    assertThat(page.content())
+        .extracting(ChatRoomMember::getChatRoomId)
+        .containsExactly(activeRoom.getId(), olderRoom.getId());
   }
 
   /** DB UNIQUE가 같은 매물·임차인·임대인 조합의 두 번째 방을 막는지 확인한다. */

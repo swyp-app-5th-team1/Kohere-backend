@@ -45,4 +45,17 @@ public interface ChatRoomMemberRepository {
    * @return member ID 오름차순의 참여자 상태 목록
    */
   List<ChatRoomMember> findByChatRoomId(Long chatRoomId);
+
+  /**
+   * 로그인 사용자의 화면에 현재 보이는 채팅방 상태를 최근 활동 순으로 조회한다.
+   *
+   * <p>{@code roomHiddenAt != null}인 행은 사용자가 삭제해 목록에서 숨긴 상태이므로 제외한다. 정렬은 연결된 채팅방의 마지막 메시지 시각을 사용하고,
+   * 메시지가 없는 방은 생성 시각을 사용한다.
+   *
+   * @param userId JWT에서 얻은 로그인 사용자 ID
+   * @param page 0부터 시작하는 페이지 번호
+   * @param size 한 페이지 크기
+   * @return 정렬된 참여자 상태와 전체 개수
+   */
+  ChatRoomMemberPage findVisiblePageByUserId(Long userId, int page, int size);
 }
