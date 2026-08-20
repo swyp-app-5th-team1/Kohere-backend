@@ -32,6 +32,12 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
+/**
+ * 프런트엔드와 합의한 REST·STOMP JSON 모양을 서비스 구현보다 먼저 고정하는 직렬화 계약 테스트다.
+ *
+ * <p>실제 WebSocket broker 없이도 DTO 필드명, UUID 형식, 원문·번역 분리, 서버 생성 BOOKING_CARD 규칙을 검증할 수 있다. 연결·인가·DB
+ * commit 이후 publish는 STOMP 구현 단계의 통합 테스트에서 별도로 확인한다.
+ */
 class ChatContractTest {
 
   private static final UUID CLIENT_MESSAGE_ID =
@@ -43,6 +49,7 @@ class ChatContractTest {
           .registerModule(new JavaTimeModule())
           .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
+  /** 문의 응답에 경로와 상세 조회로 이미 알 수 있는 값을 중복 노출하지 않는지 확인한다. */
   @Test
   void inquiryResponseContainsOnlyRoomIdAndCreated() {
     JsonNode json = objectMapper.valueToTree(new InquiryResponse(556L, false));
@@ -52,6 +59,7 @@ class ChatContractTest {
     assertThat(json.path("created").asBoolean()).isFalse();
   }
 
+  /** 이번 범위에서 제외한 category와 unreadCount가 방 목록 계약에 되살아나지 않게 한다. */
   @Test
   void roomListItemDoesNotExposeCategoryOrUnreadCount() {
     ChatRoomResponse response =
@@ -76,6 +84,7 @@ class ChatContractTest {
     assertThat(json.has("unreadCount")).isFalse();
   }
 
+  /** TEXT가 원문을 잃지 않은 채 현재 수신자용 번역본을 별도 객체로 제공하는지 확인한다. */
   @Test
   void textMessageKeepsOriginalAndOptionalTranslationFields() {
     MessageResponse response =
@@ -111,6 +120,7 @@ class ChatContractTest {
     assertThat(json.path("translation").path("targetLanguage").asText()).isEqualTo("ko");
   }
 
+  /** BOOKING_CARD는 서버 생성 메시지이므로 프런트 UUID·발신자·TEXT·번역 필드가 비어 있는지 확인한다. */
   @Test
   void bookingCardUsesBookingNamesAndHasNoTextFields() {
     BookingCardResponse bookingCard =
@@ -153,6 +163,7 @@ class ChatContractTest {
     assertThat(json.path("bookingCard").has("contractPeriodMonths")).isFalse();
   }
 
+  /** 프런트엔드가 만든 UUID와 원문만 SEND하며 잘못된 UUID는 binding 단계에서 거부되는지 확인한다. */
   @Test
   void stompSendPayloadUsesClientUuidAndContentOnly() throws Exception {
     ChatMessageSendPayload payload = new ChatMessageSendPayload(CLIENT_MESSAGE_ID, "안녕하세요");
@@ -169,6 +180,7 @@ class ChatContractTest {
         .isInstanceOf(JsonProcessingException.class);
   }
 
+  /** destination 문자열과 구독 준비 high-watermark 이벤트가 문서 계약에서 벗어나지 않게 한다. */
   @Test
   void stompDestinationAndControlEventContractsAreFixed() {
     assertThat(ChatStompDestinations.MESSAGE_SEND).isEqualTo("/app/chat-rooms/{roomId}/messages");
@@ -184,11 +196,13 @@ class ChatContractTest {
     assertThat(json.path("eventType").asText()).isEqualTo("SUBSCRIPTION_READY");
   }
 
+  /** 사용자가 보내는 TEXT와 서버가 만드는 BOOKING_CARD 외 타입을 공개 계약에 실수로 추가하지 않게 한다. */
   @Test
   void publicMessageTypesContainOnlyTextAndBookingCard() {
     assertThat(MessageType.values()).containsExactly(MessageType.TEXT, MessageType.BOOKING_CARD);
   }
 
+  /** Jackson이 내보낸 실제 필드 순서를 간결하게 비교하기 위한 도우미. */
   private static List<String> fieldNames(JsonNode json) {
     List<String> names = new ArrayList<>();
     json.fieldNames().forEachRemaining(names::add);

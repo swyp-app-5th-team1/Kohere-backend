@@ -12,13 +12,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 매물 문의 REST 컨트롤러. 입력 검증·DTO 변환만 담당하고 비즈니스 로직은 응용 계층에 위임한다 (docs/convention/code-style.md §3-3).
- * 응답은 공통 래퍼로 감싼다.
+ * 매물 문의를 시작할 때 임대인과의 1:1 채팅방을 보장하는 REST 진입점이다.
  *
- * <p>문의는 매물에 종속되는 액션이므로 {@code /listings/{listingId}} 하위에 둔다. 스펙:
- * docs/api/specs/04-booking-inquiry-chat.md §2.
+ * <p>문의는 매물에 종속된 동작이므로 {@code /listings/{listingId}} 아래에 둔다. 같은 매물·세입자·임대인 조합을 다시 요청하면 방을 중복 생성하지
+ * 않고 기존 ID를 반환한다. 이 API가 roomId를 반환한 뒤 실제 텍스트 전송은 STOMP가 담당한다.
  *
- * <p>응용 계층 결과의 {@code created}가 true면 201, false면 200을 반환한다. 실제 방 조회·생성은 후속 구현 단계에서 완성한다.
+ * <p>계약: docs/architecture/chat/02-api-contracts.md §5.1.
  */
 @RestController
 @RequestMapping("/api/v1/listings/{listingId}")
@@ -27,6 +26,15 @@ public class InquiryController {
 
   private final ChatService chatService;
 
+  /**
+   * 해당 매물의 기존 채팅방을 조회하거나 없으면 새로 만든다.
+   *
+   * <p>신규 생성은 {@code 201 Created}, 멱등 재호출로 기존 방을 반환하면 {@code 200 OK}다. 두 경우 모두 앱은 반환된 동일한 {@code
+   * chatRoomId}로 화면을 연다.
+   *
+   * @param listingId 문의할 매물 식별자
+   * @return 보장된 채팅방 ID와 이번 요청의 생성 여부
+   */
   @PostMapping("/inquiries")
   public ResponseEntity<ApiResponse<InquiryResponse>> createInquiry(
       @PathVariable String listingId) {

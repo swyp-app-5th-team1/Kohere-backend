@@ -18,7 +18,7 @@
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
 | [`booking`](#4-5-booking) | **MySQL** — `V9`/`V11`로 이미 배포됨([ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표에는 아직 미반영 — 확인 필요) | `bookings`·`booking_reports`(예약 신고 접수, US-4-9)·`booking_report_reasons`(신고 사유 카탈로그) | ✅ |
-| [`chat`](#4-6-chat) | **저장소(추후 결정)** | `chat_rooms`·`messages`·`chat_room_members` | ✅ |
+| [`chat`](#4-6-chat) | **MySQL** | `chat_rooms`·`chat_room_members`·`chat_messages` (`V24`) | ✅ |
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
 | [`gamification`](#4-8-gamification) | **MongoDB** | `quizzes`(문항·선택지 카탈로그 — 인라인 언어-키 맵·무상태 채점) | 이후 |
 | [`report`](#4-9-report) | **저장소(추후 결정)** | `reports` | 이후 |
@@ -679,7 +679,7 @@
 
 > 스토어: **MySQL** — `bookings`는 이미 [`V9__bookings.sql`](../../src/main/resources/db/migration/V9__bookings.sql)·[`V11__add_bookings_landlord_id.sql`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 **MySQL에 배포된 사실**이다. 아래 물리 타입·DDL은 논리 스키마가 아니라 실제 MySQL 스키마이며, 신규 DDL(`V14`·`V16`·`V17`·`V18`)도 공유 Flyway 시퀀스의 버전 번호를 예약하는 실행 가능한 마이그레이션이다. 다만 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표엔 `booking` 매핑이 **아직 미반영**(추후 결정)이라 ADR 차원의 결정은 열려 있다(확인 필요). domain-model `Booking`(동일 세입자–동일 방 상품 활성 1건 — 중복 방지 UNIQUE).
 >
-> **스코프(1차 MVP)**: 매물 예약(= 신청, `Booking`)은 인앱 채팅과 분리된 독립 기능이다(user-stories US-4-1·US-4-2, 그리고 조회 엔드포인트를 `userType`으로 분기하는 임대인 받은 신청 조회 US-4-6). 예약 생성 시 `BOOKING_CARD` 자동 전송·`BookingCreatedEvent` 발행은 **후속·이연**(chat 결합, §4-6)이라 본 스키마에 관련 필드가 없다.
+> **채팅 연결 경계**: 예약 저장과 조회의 정본은 계속 `booking` 모듈이 맡는다. `V24`에서 chat의 저장 기반은 마련됐지만, 예약 저장 뒤 `BookingCreatedEvent`를 발행하고 같은 채팅방에 `BOOKING_CARD`를 기록하는 연결 로직은 다음 구현 단계에서 완성한다. 이 연결을 위해 `bookings`에 `chat_room_id`나 카드 JSON을 중복 저장하지 않는다. booking은 신청 사실을 이벤트로 알리고, chat이 자기 테이블에 방과 카드를 저장해야 두 모듈의 책임이 섞이지 않기 때문이다(§4-6).
 
 `bookings`
 
@@ -709,7 +709,7 @@
 - **차단 저장은 `user` 소유**: `POST /api/v1/bookings/{bookingId}/block`은 예약 행에서 상대(`요청자 == tenant_id ? landlord_id : tenant_id`)를 도출하지만 차단 자체는 `bookings`에 아무 컬럼도 만들지 않고 `user :: api`를 통해 `user_blocks`(§4-2)에 쓴다 — 차단은 예약이 아니라 사람에 걸리기 때문이다(근거는 §4-2 `user_blocks`). 차단해도 `*_deleted_at`을 세팅하지 않는다(숨김은 차단 필터가 한다).
 - **신규 신청 가드(양방향)**: 예약 생성은 어느 한쪽이라도 차단 관계면 거절한다(`403 FORBIDDEN`) — 단방향만 막으면 차단당한 쪽이 신청해 행은 생기는데 양쪽 목록 어디에도 안 보이는 **블랙홀 예약**이 남는다.
 - **인덱스 불변(`*_deleted_at`은 인덱스에 얹지 않는다)**: 목록 조회에 `tenant_deleted_at IS NULL`(임대인 분기는 `landlord_deleted_at IS NULL`) 술어가 붙지만 위 두 인덱스 `(tenant_id, created_at desc)`·`(landlord_id, created_at desc)`는 **그대로 둔다**. 삭제 컬럼은 선택도가 낮고(대부분의 행이 NULL=미삭제) 갱신되는 nullable 필터라 인덱스에 얹으면 쓰기 비용만 늘고 이득이 없다 — 조회는 이미 선행 컬럼으로 **사용자 1명의 예약**까지 좁혀지고, 남은 소수 행에서 `IS NULL`을 거르는 비용은 MVP 규모에서 무시할 수 있다. `community`가 목록 인덱스에 `deleted`를 포함하는 것(§4-7)과 다른 판단인데, 그쪽은 게시판 전체(전 사용자)를 훑는 목록이라 선행 컬럼만으로 좁혀지지 않기 때문이다. 삭제 비율이 실제로 높아지면 그때 `(tenant_id, tenant_deleted_at, created_at desc)`를 재검토한다.
-- **후속·이연(chat 결합)**: 예약 생성 시 채팅방에 예약 카드를 자동 기록하던 결합(`chatRoomId`·`BOOKING_CARD`·`BookingCreatedEvent`)은 1차 MVP에서 제외하고 재개 시 구현한다(§4-6 chat은 후속·이연). 해당 값은 `bookings`에 저장하지 않는다.
+- **chat 연결은 저장 기반 다음 단계에서 구현**: 현재 `V24`에는 채팅방·참여자·메시지 테이블까지 반영돼 있다. 다음 단계에서 예약 트랜잭션이 `BookingCreatedEvent`를 발행하면 chat listener가 `(listing_id, tenant_id, landlord_id)`로 같은 방을 보장하고 `BOOKING_CARD`를 한 번만 저장한다. `bookings`에는 `chat_room_id`나 카드 payload를 추가하지 않는다. 방의 유일성과 카드 중복 방지는 각각 chat의 UNIQUE 제약이 맡는다.
 - **`*_deleted_at` 추가 — 전진 마이그레이션 V14 예정**(최신이 `V13__users_lang.sql`이므로 다음 번호는 `V14__add_bookings_deleted_at.sql`, [migration-policy](./migration-policy.md)): `bookings`는 이미 배포된 `V9__bookings.sql`(+`V11`)이라 두 컬럼도 **별도 신규 마이그레이션**(컬럼 추가만, 확장 변경)으로 넣는다. **nullable**(NULL = 미삭제)이라 백필도, NOT NULL 3단계 전개도 필요 없다 — 기존 행은 그대로 "미삭제"가 되어 **배포 t=0 항등**이 성립한다. 인덱스는 추가하지 않는다(위 註).
 
     ```sql
@@ -834,54 +834,94 @@
 
 ### 4-6. `chat`
 
-> 스토어: **저장소(추후 결정)** — **논리 스키마**. domain-model `ChatRoom`(+`Message`·`ReadCursor`, VO `BookingCard`·`ListingCard`·`ListingSnapshot`).
+> 스토어: **MySQL** — [`V24__create_chat_core_tables.sql`](../../src/main/resources/db/migration/V24__create_chat_core_tables.sql)로 채팅방·참여자별 표시 상태·공유 메시지의 물리 스키마를 확정했다. domain-model `ChatRoom`·`ChatRoomMember`·`Message`, 값 객체 `ListingSnapshot`·`BookingCardPayload`와 일치한다.
 >
-> **[후속·이연 · 1차 MVP 제외]** `chat`(문의·인앱 채팅) 스키마는 매물 예약(§4-5)과 분리된 후속 기능이다(설계 보존). 매물 예약은 이 스키마에 의존하지 않으며, 예약 카드(`BOOKING_CARD`)·`BookingCreatedEvent` 결합도 재개 시 구현한다.
+> `V24`는 저장 기반을 만드는 단계다. 문의·신청에서 방을 생성하는 응용 흐름, 신청 이벤트를 `BOOKING_CARD`로 연결하는 처리, STOMP 송수신은 이 테이블 위에 순서대로 구현한다. 번역·신고 테이블은 해당 기능을 구현할 때 별도 전진 migration으로 추가한다.
 
 `chat_rooms`
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
-| `id` | long | PK |
-| `category` | enum `ChatCategory` | NOT NULL |
-| `listing_id` | string | NULL · Mongo `listings._id` ObjectId hex 문자열 값 참조. NEIGHBOR이면 null |
-| `tenant_id` | long | NOT NULL · → user(값 참조) |
-| `landlord_id` | long | NOT NULL · → user(값 참조) |
-| `listing_snapshot` | object(VO `ListingSnapshot`) | NULL · `listingId`(ObjectId 문자열)·`title`·`thumbnailUrl`·`monthlyRent`(비정규화) |
-| `active` | bool | NOT NULL, default true |
-| `last_message_at` | datetime | NULL · 목록 정렬키(desc) |
-| `created_at` | datetime | NOT NULL |
+| `id` | BIGINT | PK, AUTO_INCREMENT · API의 `chatRoomId` |
+| `category` | VARCHAR(16) | NOT NULL, default `LANDLORD` · CHECK `category = 'LANDLORD'` |
+| `listing_id` | VARCHAR(24) | NOT NULL · Mongo `listings._id` ObjectId 문자열 값 참조 |
+| `tenant_id` | BIGINT | NOT NULL · 세입자 `users.id` 값 참조 |
+| `landlord_id` | BIGINT | NOT NULL · 임대인 `users.id` 값 참조 |
+| `listing_snapshot` | JSON | NOT NULL · 생성 당시 `title`·`thumbnailUrl`·`address` |
+| `last_message_id` | BIGINT | NULL · 현재 마지막 `chat_messages.id`를 가리키는 조회용 포인터 |
+| `last_message_at` | DATETIME(6) | NULL · 마지막 메시지의 서버 저장 시각 |
+| `created_at` | DATETIME(6) | NOT NULL · 생성 시각(UTC) |
+| `updated_at` | DATETIME(6) | NOT NULL · 마지막 메시지 포인터 등 방 상태 변경 시각(UTC) |
 
-`messages`
+**제약·인덱스**:
 
-| 필드 | 타입 | 키/제약 |
-| --- | --- | --- |
-| `id` | long | PK |
-| `chat_room_id` | long | NOT NULL, FK→`chat_rooms.id`(같은 모듈) |
-| `sender_id` | long | NULL · → user(값 참조). 시스템/카드는 null |
-| `type` | enum `MessageType` | NOT NULL |
-| `content` | text | NULL · `TEXT`에만, 1~1000자 |
-| `booking_card` | object(VO `BookingCard`) | NULL · `BOOKING_CARD`에만(`moveInDate`·`contractPeriod`·`monthlyRent`·`listingTitle`·`bookingId`) |
-| `listing_card` | object(VO `ListingCard`) | NULL · `LISTING_CARD`에만(`listingId`·`title`·`monthlyRent`·`thumbnailUrl`) |
-| `pinned` | bool | NOT NULL, default false |
-| `sent_at` | datetime | NOT NULL · 전송 시각 |
+- UNIQUE `uq_chat_rooms_listing_participants (listing_id, tenant_id, landlord_id)`: 문의하기와 신청하기 중 무엇이 먼저 실행돼도 같은 참여자·매물 조합은 하나의 `roomId`로 수렴한다.
+- CHECK `ck_chat_rooms_distinct_participants (tenant_id <> landlord_id)`: 자기 자신과의 1:1 방을 DB에서도 막는다.
+- CHECK `ck_chat_rooms_category (category = 'LANDLORD')`: 현재 외부 기능은 매물 임대인-임차인 채팅만 지원한다. 다른 카테고리는 컬럼의 임의 값으로 먼저 열지 않고, 요구사항이 생길 때 migration으로 CHECK를 확장한다.
+- CHECK `ck_chat_rooms_listing_snapshot_object (JSON_TYPE(listing_snapshot) = 'OBJECT')`: MySQL JSON은 배열이나 스칼라도 저장할 수 있으므로 채팅방 헤더 스냅샷이 객체라는 최소 형태를 고정한다.
+- CHECK `ck_chat_rooms_last_message_pair`: `last_message_id`와 `last_message_at`은 둘 다 null이거나 둘 다 값이 있어야 한다. 두 값이 어긋나면 목록 미리보기와 정렬 기준이 서로 다른 메시지를 가리킬 수 있기 때문이다.
+- INDEX `idx_chat_rooms_tenant_last_message (tenant_id, last_message_at DESC, id DESC)` / `idx_chat_rooms_landlord_last_message (landlord_id, last_message_at DESC, id DESC)`: 먼저 각 사용자의 방으로 범위를 줄인다. 빈 방을 `created_at` 기준으로 섞는 최종 `COALESCE(last_message_at, created_at)` 정렬은 초기 규모에서 좁혀진 결과의 filesort를 허용하고, 실제 방 수가 커지면 `activity_at` 또는 함수 인덱스를 측정 후 추가한다.
 
-`chat_room_members` (읽음 커서)
+`last_message_id`는 **메시지를 한 건만 저장한다는 뜻이 아니다**. 모든 메시지는 아래 `chat_messages`에 계속 쌓이고, 이 컬럼은 목록에서 가장 최근 메시지를 빠르게 찾기 위한 포인터만 보관한다.
+
+`chat_room_members`
 
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
-| `id` | long | PK |
-| `chat_room_id` | long | NOT NULL, FK→`chat_rooms.id`(같은 모듈) |
-| `user_id` | long | NOT NULL · → user(값 참조) |
-| `last_read_message_id` | long | NULL · → `messages.id`(같은 모듈). 전진만 |
-| `updated_at` | datetime | NOT NULL · 읽음 갱신 시각 |
+| `id` | BIGINT | PK, AUTO_INCREMENT |
+| `chat_room_id` | BIGINT | NOT NULL · `chat_rooms.id` 값 참조 |
+| `user_id` | BIGINT | NOT NULL · 이 표시 상태를 소유한 `users.id` |
+| `counterpart_id` | BIGINT | NOT NULL · 1:1 상대 `users.id` |
+| `member_role` | VARCHAR(16) | NOT NULL · `TENANT` 또는 `LANDLORD` |
+| `room_hidden_at` | DATETIME(6) | NULL · null이면 목록에 보이고, 값이 있으면 이 사용자에게만 숨김 |
+| `history_hidden_through_message_id` | BIGINT | NOT NULL, default `0` · 이 사용자에게 다시 보여 주지 않을 마지막 과거 `messageId`; `0`이면 숨긴 이력 없음 |
+| `delete_requested_at` | DATETIME(6) | NULL · 가장 최근 실제 삭제 요청 시각 |
+| `created_at` | DATETIME(6) | NOT NULL · 생성 시각(UTC) |
+| `updated_at` | DATETIME(6) | NOT NULL · 숨김·재표시 상태 변경 시각(UTC) |
 
-**인덱스**: PK 각 / UNIQUE `chat_rooms(listing_id,tenant_id,landlord_id)`(방 유일·문의 멱등) / INDEX `chat_rooms(tenant_id,last_message_at desc)`·`(landlord_id,last_message_at desc)`(참여자별 목록) / INDEX `messages(chat_room_id, id desc)`(커서 페이지) / UNIQUE `chat_room_members(chat_room_id,user_id)`.
+**제약·인덱스**:
 
-- **교차 모듈 no-FK**: `listing_id`(Mongo ObjectId 문자열)·`tenant_id`·`landlord_id`·`sender_id`·`user_id` 값 참조. 같은 모듈 `messages.chat_room_id`·`chat_room_members.*`만 FK.
-- **읽음 커서**: `unreadCount`는 저장하지 않고 `messages` 중 `id > last_read_message_id`인 본인 미발신 수로 계산. 읽음은 전진만·멱등.
-- **카드/스냅샷 비정규화**: `booking_card`/`listing_card`/`listing_snapshot`은 생성 시점 정보를 굳힌 임베드 VO(매물 변경과 독립). `content`는 `TEXT`에만·카드는 카드 타입에만(앱 레벨 배타; DB CHECK는 store 확정 후).
-- **NEIGHBOR 유니크**: `listing_id=null`의 유니크 시맨틱이 스토어별 상이(MySQL NULL 비충돌 vs Mongo partial index) → store 확정 시 결정([§6](#6-결정-필요-open-questions)).
+- UNIQUE `uq_chat_room_members_room_user (chat_room_id, user_id)`: 방 하나에서 사용자별 표시 상태가 두 행으로 갈라지지 않게 한다.
+- CHECK `ck_chat_room_members_distinct_counterpart (user_id <> counterpart_id)` / `ck_chat_room_members_role (member_role IN ('TENANT', 'LANDLORD'))`: 상대와 역할 값의 기본 불변식을 DB에서도 확인한다.
+- CHECK `ck_chat_room_members_history_boundary (history_hidden_through_message_id >= 0)`: 실제 메시지 ID 또는 `0` sentinel만 허용한다. null 대신 `0`을 쓰면 `message_id > history_hidden_through_message_id` 조회가 SQL의 null 비교 때문에 전부 누락되지 않는다.
+- INDEX `idx_chat_room_members_user_visibility (user_id, room_hidden_at, chat_room_id)`: 로그인 사용자의 현재 보이는 채팅방부터 좁혀 조회한다.
+
+채팅방과 메시지는 두 사용자가 공유하지만 삭제는 사용자 화면별 동작이다. 그래서 방을 만들 때 임차인과 임대인의 member 행을 각각 만들고, 한 사용자가 삭제하면 그 사람의 `room_hidden_at`과 과거 숨김 경계만 바꾼다. 상대방 행은 그대로이므로 상대방 화면에서 대화가 사라지지 않는다. 새 메시지로 방을 다시 표시할 때도 `history_hidden_through_message_id`를 낮추지 않아 사용자가 이미 삭제한 과거 이력을 복원하지 않는다.
+
+읽음 기능은 이번 범위가 아니므로 `last_read_message_id`와 `unread_count`는 저장하지 않는다.
+
+`chat_messages`
+
+| 필드 | 타입 | 키/제약 |
+| --- | --- | --- |
+| `id` | BIGINT | PK, AUTO_INCREMENT · 서버 `messageId` |
+| `chat_room_id` | BIGINT | NOT NULL · 메시지가 속한 `chat_rooms.id` 값 참조 |
+| `sender_id` | BIGINT | NULL · `TEXT` 발신자의 `users.id`; 서버 카드면 null |
+| `type` | VARCHAR(32) | NOT NULL · `TEXT` 또는 `BOOKING_CARD` |
+| `content` | TEXT | NULL · 사용자가 보낸 변경 불가 원문; 카드면 null |
+| `payload` | JSON | NULL · `BookingCardPayload` 구조화 스냅샷; TEXT면 null |
+| `booking_id` | BIGINT | NULL · 카드의 출처인 `bookings.id`; TEXT면 null |
+| `client_message_id` | BINARY(16) | NULL · TEXT 전송 전에 앱이 만든 멱등 UUID; 카드면 null |
+| `sent_at` | DATETIME(6) | NOT NULL · 클라이언트 시각이 아닌 서버 저장 시각(UTC) |
+
+`chat_messages`는 상대방에게 보내는 동안만 쓰는 임시 큐가 아니라, **모든 채팅방에서 저장이 완료된 메시지의 공유 정본**이다. 임차인용·임대인용 사본을 따로 만들지 않고 메시지 한 건을 한 행으로 저장한다. `chat_room_id`가 소속 방을, `sender_id`가 TEXT 발신자를 알려 주며, 수신자는 그 방의 `chat_room_members`에서 서버가 결정하므로 `receiver_id` 컬럼이 필요 없다.
+
+**타입별 CHECK `ck_chat_messages_type_fields`**:
+
+| 타입 | 필수 값 | 반드시 null인 값 |
+| --- | --- | --- |
+| `TEXT` | `sender_id`, 1~3,000자의 `content`, `client_message_id` | `booking_id`, `payload` |
+| `BOOKING_CARD` | `booking_id`, `payload` | `sender_id`, `content`, `client_message_id` |
+
+TEXT와 카드를 한 테이블에 저장해야 신청 카드와 일반 메시지가 하나의 `messageId` 시간축에서 자연스럽게 정렬된다. 대신 잘못된 nullable 조합이 들어오지 않도록 CHECK를 둔다. 현재 메시지 타입은 이 둘뿐이며 `LISTING_CARD`나 일반 `SYSTEM` 타입은 `V24` 스키마에 없다.
+
+**유일성·조회 인덱스**:
+
+- UNIQUE `uq_chat_messages_client_message (chat_room_id, sender_id, client_message_id)`: 앱이 응답을 못 받아 같은 TEXT를 다시 보내도 동일 UUID는 한 번만 저장한다.
+- UNIQUE `uq_chat_messages_booking (chat_room_id, booking_id)`: 동일 신청 이벤트가 재처리돼도 같은 방에 신청 카드가 두 장 생기지 않는다.
+- INDEX `idx_chat_messages_room_id_desc (chat_room_id, id DESC)`: 과거 페이지 조회와 재연결 후 누락 메시지 보충을 같은 `messageId` 범위 조회로 처리한다.
+
+**FK를 만들지 않는 이유**: 이 저장소의 기존 일관된 no-FK 정책에 맞춰 `listing_id`·사용자 ID·`booking_id`뿐 아니라 같은 chat 모듈의 `chat_room_id`·`last_message_id`도 값으로 참조한다. 존재 여부·참여 권한과 “메시지 저장 + 마지막 메시지 포인터 갱신”의 정합성은 응용 서비스의 한 트랜잭션과 DB UNIQUE/CHECK로 보장한다. 이렇게 하면 모듈 간 DB 결합과 삭제 순서 의존을 만들지 않으면서도 저장 규칙은 DB 제약으로 최종 방어할 수 있다.
 
 ### 4-7. `community`
 
@@ -1085,10 +1125,10 @@
 
 영속 물리화 전 닫아야 할 **저장소·인프라 결정**(도메인 설계는 [domain-model](../architecture/domain-model.md)에서 확정됨).
 
-1. **저장소 ADR 3건**: `booking`·`chat`·`report`의 스토어(MySQL vs MongoDB) 미결정 → 식별자(BIGINT vs ObjectId)·임베드 VO(`booking_card`/`listing_snapshot`) 표현·단일 트랜잭션 보장이 이에 종속. 단 `booking`은 [`V9`](../../src/main/resources/db/migration/V9__bookings.sql)/[`V11`](../../src/main/resources/db/migration/V11__add_bookings_landlord_id.sql)로 MySQL에 이미 배포돼(BIGINT 식별자 확정) **스토어 자체는 열려 있지 않다** — 남은 미결은 [ADR-0005](../adr/0005-polyglot-persistence.md) 폴리글랏 배치 표에 그 사실을 반영하는 일뿐이다(§4-5). `chat`·`report`는 스토어부터 미결정이다.
+1. **남은 저장소 결정**: `booking`은 [`V9`](../../src/main/resources/db/migration/V9__bookings.sql), `chat`은 [`V24`](../../src/main/resources/db/migration/V24__create_chat_core_tables.sql)로 MySQL 물리 스키마가 배포 대상에 포함돼 두 저장소는 더 이상 미결정이 아니다. 남은 스토어 결정은 `report`이며, [ADR-0005](../adr/0005-polyglot-persistence.md)의 폴리글랏 배치 표에는 booking·chat의 실제 MySQL 배치를 반영해야 한다.
 2. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
 3. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
-4. **NEIGHBOR 채팅방 유일성**: `chat_rooms(listing_id=null)`의 복합 유니크 처리(MySQL NULL 비충돌 vs Mongo partial unique) — store 확정 시.
+4. **채팅 저장소·카테고리 — 해결됨**: `V24`는 MySQL과 `LANDLORD` 카테고리만 허용하고 `listing_id`를 NOT NULL로 고정했다. 따라서 `NEIGHBOR`나 `listing_id=null` 방의 유일성은 현재 스키마의 결정 필요 항목이 아니다. 향후 실제 요구가 생기면 기존 컬럼에 임의 값을 넣지 않고 새 migration에서 카테고리 CHECK와 유일성 규칙을 함께 설계한다.
 5. **문자열 길이**: 스펙 미명시 항목(`title`·이름·`nickname`·`email`·`country`·`provider_user_id`·`terms_version` 등) 실제 검증 규칙 확정.
 6. **이메일 인증 정책(세입자)**: 인증번호 길이·만료(TTL)·검증 시도 상한·재발송 레이트리밋 미확정. 메일 발송은 **SMTP**(구체 relay/provider는 인프라 결정 — [ADR-0021](../adr/0021-cost-optimization-profile.md))(§4-1 A-2).
 7. **연락처 SMS 인증 정책(임대인)**: SMS provider 선정·인증번호 정책=**이메일과 통일**(6자리·코드 5분·마커 30분·시도 5회·재발송 60초)·**프로필 연락처 변경 시 SMS 재인증**은 확정(provider 상세는 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)). ~~연락처 유니크 제약 채택 여부~~ → **해결됨** — `uq_users_phone_number`를 V23으로 채택했다([§4-2](#4-2-user) · [ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §5). 남은 미확정: SMS provider 단가·국내외(한국) 번호 발신.

@@ -278,7 +278,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. `chat_rooms`, `chat_room_members`, `chat_messages`의 UNIQUE·조회 인덱스·기본값을 적용한다. `chat_messages`에는 nullable `booking_id`, `payload`와 타입별 필드 조건을 포함한다.
 3. 자동 번역 작업·결과와 신고 접수 테이블은 각 기능 단계에서 별도 migration으로 추가할 수 있도록 번호를 예약하지 않고 순서대로 작성한다.
 4. JPA entity, repository port와 adapter를 구현하고 `ddl-auto=validate`로 migration과 매핑을 비교한다.
-5. `chat -> listing::api`, `chat -> user::api`, `report -> chat::api`, `report -> user::api` 공개 interface와 Modulith allowed dependency를 정리한다.
+5. `chat -> listing::api`, `chat -> user::api` 공개 interface와 Modulith allowed dependency를 정리한다. `report -> chat::api`, `report -> user::api`는 실제 신고 조회 계약을 정의하는 8단계에서 추가해 사용하지 않는 모듈 권한을 미리 열지 않는다.
 6. chat·inquiry·report REST를 `ROLE_USER`로 명시하고 온보딩 token 접근을 차단한다.
 7. STOMP에서 재사용할 JWT 검증 결과에 `userId`, 온보딩 완료 여부와 검증된 만료시각을 제공한다. 토큰 발급 흐름은 변경하지 않는다.
 
@@ -411,7 +411,8 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 4. 최소 한 개의 TEXT 원문이 있는 방만 신고할 수 있고 최근 최대 20개 TEXT 원문을 evidence로 저장한다. BOOKING_CARD payload는 신고 원문 증거에서 제외한다.
 5. 신규 신고는 `201`, 같은 사용자의 같은 채팅방 재시도는 기존 신고를 `200`으로 반환한다.
 6. 사용자는 본인이 접수한 신고의 공개 상태만 조회하고 내부 증거·상대 ID·운영 메모는 받지 않는다.
-7. 관리자 목록·처리·완료 API와 신고자료 자동 삭제는 구현하지 않는다.
+7. `report -> chat::api`, `report -> user::api` 공개 조회 계약과 Modulith allowed dependency를 이 단계에서 추가한다.
+8. 관리자 목록·처리·완료 API와 신고자료 자동 삭제는 구현하지 않는다.
 
 완료 조건:
 

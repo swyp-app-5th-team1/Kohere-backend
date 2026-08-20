@@ -1,15 +1,16 @@
 # MySQL 데이터 모델과 현재 저장 흐름
 
-이 문서는 **이번 구현 범위**의 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
+이 문서는 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 이 가운데 현재 물리화가 끝난 저장 기반은 `V24`의 `chat_rooms`·`chat_room_members`·`chat_messages` 세 테이블이다. 뒤의 번역·신고 구조는 각 기능 단계에서 별도 migration으로 추가한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
 관리자 신고 처리, 삭제 후 3개월 만료 확정, 메시지·방의 물리 삭제는 현재 migration과 batch 범위에 포함하지 않는다. 해당 설계는 [후속 고도화 문서](future/README.md)로 분리한다.
 
 ## 1. 공통 원칙
 
-- MySQL이 방·메시지·번역 결과·사용자별 숨김·신고 접수의 정본이다.
+- MySQL의 `V24` 세 테이블이 방·사용자별 숨김·공유 메시지의 현재 정본이다.
 - 시각은 UTC `DATETIME(6)`로 저장한다.
 - 상태 값은 MySQL native ENUM 대신 `VARCHAR`를 사용한다.
-- user, listing처럼 다른 모듈이 소유한 ID는 값으로 참조한다.
+- user, listing, booking처럼 다른 모듈이 소유한 ID뿐 아니라 chat 테이블 사이 ID도 값으로 참조하고 FK를 만들지 않는다. 존재·참여 권한과 저장 순서는 애플리케이션 트랜잭션으로 검증하며, DB UNIQUE/CHECK가 중복과 잘못된 필드 조합을 최종 차단한다.
+- `chat_messages`는 전송 중 임시 큐나 사용자별 사본이 아니라 모든 채팅방에서 저장이 완료된 메시지의 공유 정본이다.
 - `chat_messages.content`는 사용자가 보낸 `TEXT`의 불변 원문이며 기록·신고의 정본이다.
 - `BOOKING_CARD`는 기존 Booking 데이터를 재사용해 만든 서버 메시지이며 신청 시점의 구조화 값을 `payload`에 저장한다.
 - 자동 번역은 사용자·대상 언어별 파생 데이터이며 원문을 덮어쓰지 않는다.
@@ -21,82 +22,139 @@
 
 ### 2.1 `chat_rooms`
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `id` | 채팅방 PK |
-| `category` | 이번 범위에서는 `LANDLORD` |
-| `listing_id` | 매물 ID |
-| `tenant_id` | 세입자 ID |
-| `landlord_id` | 임대인 ID |
-| `listing_snapshot` | 생성 당시 매물 제목·대표 이미지·주소 JSON |
-| `last_message_id` | 현재 마지막 메시지 ID, 빈 방이면 null |
-| `last_message_at` | 현재 마지막 메시지 시각, 빈 방이면 null |
-| `created_at`, `updated_at` | 생성·변경 시각 |
+| 컬럼 | MySQL 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `BIGINT NOT NULL AUTO_INCREMENT` | 채팅방 PK |
+| `category` | `VARCHAR(16) NOT NULL DEFAULT 'LANDLORD'` | 이번 범위에서는 `LANDLORD` |
+| `listing_id` | `VARCHAR(24) NOT NULL` | MongoDB 매물 ObjectId 문자열 |
+| `tenant_id` | `BIGINT NOT NULL` | 세입자 `users.id` 값 참조 |
+| `landlord_id` | `BIGINT NOT NULL` | 임대인 `users.id` 값 참조 |
+| `listing_snapshot` | `JSON NOT NULL` | 생성 당시 매물 제목·대표 이미지·주소 |
+| `last_message_id` | `BIGINT NULL` | 현재 마지막 메시지 ID, 빈 방이면 null |
+| `last_message_at` | `DATETIME(6) NULL` | 현재 마지막 메시지 시각, 빈 방이면 null |
+| `created_at`, `updated_at` | `DATETIME(6) NOT NULL` | 생성·변경 시각 |
 
 필수 제약·인덱스:
 
 ```sql
-UNIQUE (listing_id, tenant_id, landlord_id)
-CHECK (tenant_id <> landlord_id)
-INDEX (tenant_id, last_message_at, id)
-INDEX (landlord_id, last_message_at, id)
+CONSTRAINT uq_chat_rooms_listing_participants
+  UNIQUE (listing_id, tenant_id, landlord_id)
+CONSTRAINT ck_chat_rooms_distinct_participants
+  CHECK (tenant_id <> landlord_id)
+CONSTRAINT ck_chat_rooms_category
+  CHECK (category = 'LANDLORD')
+CONSTRAINT ck_chat_rooms_listing_snapshot_object
+  CHECK (JSON_TYPE(listing_snapshot) = 'OBJECT')
+CONSTRAINT ck_chat_rooms_last_message_pair
+  CHECK (
+    (last_message_id IS NULL AND last_message_at IS NULL)
+    OR (last_message_id IS NOT NULL AND last_message_at IS NOT NULL)
+  )
+INDEX idx_chat_rooms_tenant_last_message
+  (tenant_id, last_message_at DESC, id DESC)
+INDEX idx_chat_rooms_landlord_last_message
+  (landlord_id, last_message_at DESC, id DESC)
 ```
 
-`room_offer_id`는 방의 유일키에 포함하지 않는다. 매물이 나중에 비공개·삭제돼도 기존 방 헤더는 `listing_snapshot`으로 표시한다.
+`room_offer_id`는 방의 유일키에 포함하지 않는다. 문의와 신청은 `(listing_id, tenant_id, landlord_id)`가 같으면 하나의 채팅방을 함께 사용한다. 매물이 나중에 비공개·삭제돼도 기존 방 헤더는 `listing_snapshot`으로 표시한다.
+
+`last_message_id`는 메시지를 하나만 보관한다는 뜻이 아니다. 모든 메시지는 `chat_messages`에 계속 저장하고, 목록에서 가장 최근 메시지를 빠르게 찾기 위한 포인터만 방에 둔다. `last_message_at`과 항상 함께 채우거나 함께 비워야 미리보기와 정렬 기준이 어긋나지 않는다.
+
+두 참여자 인덱스는 먼저 로그인 사용자의 방으로 범위를 줄인다. 빈 방도 생성 시각에 맞춰 섞는 최종 정렬식 `COALESCE(last_message_at, created_at)`은 함수 계산이므로 현재 인덱스만으로 정렬 전체를 해결하지 못할 수 있다. 사용자별 방 수가 작은 초기 범위에서는 좁혀진 결과의 정렬을 허용하고, 실제 방 수·쿼리 계획이 커지면 별도 `activity_at` 컬럼이나 함수 인덱스를 측정 후 추가한다.
 
 ### 2.2 `chat_room_members`
 
 방을 만들 때 tenant와 landlord의 두 행을 한 트랜잭션으로 생성한다.
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `id` | member PK |
-| `chat_room_id` | 방 ID |
-| `user_id` | 참여 사용자 ID |
-| `counterpart_id` | 1:1 상대 사용자 ID |
-| `member_role` | `TENANT`, `LANDLORD` |
-| `room_hidden_at` | 현재 내 목록에서 숨긴 시각, 보이면 null |
-| `history_hidden_through_message_id` | 이 사용자에게 숨길 마지막 과거 messageId |
-| `delete_requested_at` | 최근 삭제 요청 시각 |
-| `created_at`, `updated_at` | 생성·변경 시각 |
+| 컬럼 | MySQL 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `BIGINT NOT NULL AUTO_INCREMENT` | member PK |
+| `chat_room_id` | `BIGINT NOT NULL` | `chat_rooms.id` 값 참조 |
+| `user_id` | `BIGINT NOT NULL` | 참여 사용자 `users.id` |
+| `counterpart_id` | `BIGINT NOT NULL` | 1:1 상대 `users.id` |
+| `member_role` | `VARCHAR(16) NOT NULL` | `TENANT`, `LANDLORD` |
+| `room_hidden_at` | `DATETIME(6) NULL` | 현재 내 목록에서 숨긴 시각, 보이면 null |
+| `history_hidden_through_message_id` | `BIGINT NOT NULL DEFAULT 0` | 이 사용자에게 숨길 마지막 과거 messageId, `0`이면 숨긴 이력 없음 |
+| `delete_requested_at` | `DATETIME(6) NULL` | 최근 삭제 요청 시각 |
+| `created_at`, `updated_at` | `DATETIME(6) NOT NULL` | 생성·변경 시각 |
 
 ```sql
-UNIQUE (chat_room_id, user_id)
-INDEX (user_id, room_hidden_at, chat_room_id)
+CONSTRAINT uq_chat_room_members_room_user
+  UNIQUE (chat_room_id, user_id)
+CONSTRAINT ck_chat_room_members_distinct_counterpart
+  CHECK (user_id <> counterpart_id)
+CONSTRAINT ck_chat_room_members_history_boundary
+  CHECK (history_hidden_through_message_id >= 0)
+CONSTRAINT ck_chat_room_members_role
+  CHECK (member_role IN ('TENANT', 'LANDLORD'))
+INDEX idx_chat_room_members_user_visibility
+  (user_id, room_hidden_at, chat_room_id)
 ```
 
-`room_hidden_at`은 방 목록에 보이는지를, `history_hidden_through_message_id`는 메시지 조회에서 어디까지 숨길지를 뜻한다. 두 값이 분리되어 있으므로 새 메시지로 방이 다시 나타나도 예전에 숨긴 메시지는 복원되지 않는다.
+`room_hidden_at`은 방 목록에 보이는지를, `history_hidden_through_message_id`는 메시지 조회에서 어디까지 숨길지를 뜻한다. 숨긴 적이 없을 때 경계는 `0`이다. null 대신 `0`을 쓰면 `messageId > history_hidden_through_message_id` 조회에서 SQL null 비교 때문에 정상 메시지까지 전부 누락되는 일을 피할 수 있다. 두 값이 분리되어 있으므로 새 메시지로 방이 다시 나타나도 예전에 숨긴 메시지는 복원되지 않는다.
 
 사용자가 삭제한 채팅방과 과거 이력을 되돌리는 token이나 복원 API는 만들지 않는다. 같은 매물에서 다시 문의하거나 실제 새 메시지를 받아 채팅방이 다시 표시돼도 `history_hidden_through_message_id`는 낮아지지 않는다.
 
 ### 2.3 `chat_messages`
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `id` | 서버 `messageId`, PK |
-| `chat_room_id` | 방 ID |
-| `sender_id` | `TEXT`는 인증 Principal의 발신자, 서버 카드면 null |
-| `type` | `TEXT`, `BOOKING_CARD` |
-| `content` | 사용자가 보낸 TEXT 원문, 카드면 null |
-| `payload` | `BOOKING_CARD`의 매물·신청자·입주 조건·금액 JSON, TEXT면 null |
-| `booking_id` | 카드 생성 출처인 신청 ID, TEXT면 null |
-| `client_message_id` | TEXT에서 프런트엔드가 만든 UUID, 카드면 null; `BINARY(16)` 권장 |
-| `sent_at` | 서버 저장 시각 |
+| 컬럼 | MySQL 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `BIGINT NOT NULL AUTO_INCREMENT` | 서버 `messageId`, PK |
+| `chat_room_id` | `BIGINT NOT NULL` | `chat_rooms.id` 값 참조 |
+| `sender_id` | `BIGINT NULL` | `TEXT`는 인증 Principal의 발신자, 서버 카드면 null |
+| `type` | `VARCHAR(32) NOT NULL` | `TEXT`, `BOOKING_CARD` |
+| `content` | `TEXT NULL` | 사용자가 보낸 TEXT 원문, 카드면 null |
+| `payload` | `JSON NULL` | `BOOKING_CARD`의 매물·신청자·입주 조건·금액, TEXT면 null |
+| `booking_id` | `BIGINT NULL` | 카드 생성 출처인 신청 ID, TEXT면 null |
+| `client_message_id` | `BINARY(16) NULL` | TEXT에서 프런트엔드가 만든 UUID, 카드면 null |
+| `sent_at` | `DATETIME(6) NOT NULL` | 서버 저장 시각 |
 
 ```sql
-UNIQUE (chat_room_id, sender_id, client_message_id)
-UNIQUE (chat_room_id, booking_id)
-INDEX (chat_room_id, id DESC)
+CONSTRAINT uq_chat_messages_client_message
+  UNIQUE (chat_room_id, sender_id, client_message_id)
+CONSTRAINT uq_chat_messages_booking
+  UNIQUE (chat_room_id, booking_id)
+CONSTRAINT ck_chat_messages_type
+  CHECK (type IN ('TEXT', 'BOOKING_CARD'))
+CONSTRAINT ck_chat_messages_type_fields
+  CHECK (
+    (
+      type = 'TEXT'
+      AND sender_id IS NOT NULL
+      AND content IS NOT NULL
+      AND CHAR_LENGTH(content) BETWEEN 1 AND 3000
+      AND client_message_id IS NOT NULL
+      AND booking_id IS NULL
+      AND payload IS NULL
+    )
+    OR
+    (
+      type = 'BOOKING_CARD'
+      AND sender_id IS NULL
+      AND content IS NULL
+      AND client_message_id IS NULL
+      AND booking_id IS NOT NULL
+      AND payload IS NOT NULL
+      AND JSON_TYPE(payload) = 'OBJECT'
+    )
+  )
+INDEX idx_chat_messages_room_id_desc (chat_room_id, id DESC)
 ```
+
+`client_message_id`는 권장 사항이 아니라 TEXT에 필수인 실제 `BINARY(16)` 컬럼이다. 프런트엔드가 전송 전에 UUID를 만들고, 같은 요청을 재전송했을 때 서버가 두 번째 메시지를 저장하지 않는 멱등 키로 사용한다.
 
 두 타입의 값은 다음처럼 구분한다.
 
 | 타입 | `sender_id` | `content` | `client_message_id` | `booking_id`·`payload` |
 | --- | --- | --- | --- | --- |
-| `TEXT` | 필수 | 필수 | 필수 | null |
+| `TEXT` | 필수 | 1~3,000자 필수 | 필수 | null |
 | `BOOKING_CARD` | null | null | null | 필수 |
 
-메시지는 저장 후 수정하지 않는다. TEXT 본문은 애플리케이션에서 공백·줄바꿈을 포함해 Unicode code point 3,000자로 제한하고 검색 인덱스는 만들지 않는다. 카드 payload는 기존 `BookingDetailResponse`와 `LandlordBookingDetailResponse`를 만드는 조회·계산 로직을 채팅용 공개 `BookingCardView`로 재사용해 만든다.
+`chat_messages`는 임차인용·임대인용 행을 따로 만들지 않는다. 한 메시지를 한 번 저장하고 `chat_room_id`로 소속 방, `sender_id`로 TEXT 발신자를 구분한다. 수신자는 `chat_room_members`에서 서버가 결정하므로 `receiver_id` 컬럼은 없다.
+
+메시지의 ID·방·종류·전송 시각과 TEXT 원문은 저장 후 수정하지 않는다. 다만 `BOOKING_CARD` 안의 신청자 개인정보는 아래 익명화 규칙이 적용될 때에만 가린다. DB CHECK는 TEXT `content`를 1~3,000자로 제한하고 타입별 필드를 배타적으로 강제한다. 따라서 TEXT에 카드 payload가 섞이거나, 서버 카드가 사용자 발신자로 저장되거나, 본문 없는 TEXT가 정본에 남지 않는다. 현재 허용 타입은 `TEXT`와 `BOOKING_CARD`뿐이며 `LISTING_CARD`나 일반 `SYSTEM` 타입은 없다. 카드 payload는 도메인 `BookingCardPayload`의 매물·신청자·객실·입주 조건·금액 스냅샷을 JSON으로 저장한다.
+
+`(chat_room_id, sender_id, client_message_id)` UNIQUE는 TEXT 재전송 중복을 막고, `(chat_room_id, booking_id)` UNIQUE는 같은 신청 이벤트가 재처리될 때 카드가 두 장 생기는 것을 막는다. `(chat_room_id, id DESC)` 인덱스는 과거 페이지 조회와 재연결 누락 보충에서 같은 messageId 범위 조회를 빠르게 한다.
 
 카드에 저장한 신청자 이름·성별·국가·이메일은 탈퇴 후에도 원래 값으로 남겨 두지 않는다. user 탈퇴·익명화 이벤트를 받으면 해당 사용자의 `BOOKING_CARD` payload도 ADR-0014의 익명화 규칙에 맞춰 갱신한다. 신청 조건과 금액처럼 거래 사실에 필요한 비식별 값은 별도 보존 정책을 따른다.
 
