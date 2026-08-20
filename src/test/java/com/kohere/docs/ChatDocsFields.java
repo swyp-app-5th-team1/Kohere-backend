@@ -22,21 +22,27 @@ public final class ChatDocsFields {
 
   public static final String INQUIRY_DESCRIPTION =
       """
-      공개 매물의 임대인과 로그인 세입자가 사용할 1:1 채팅방을 조회하거나 생성한다.
+      매물 화면에서 **문의하기**를 눌렀을 때 1:1 채팅방을 열기 위한 API다.
 
-      **요청 방식**
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 세입자의 access token을 보낸다.
+
+      **프론트 요청 방법**
 
       - 요청 본문은 없다.
-      - 세입자 ID는 액세스 토큰에서, 임대인 ID는 매물 정본에서 서버가 결정한다. 사용자 ID를 요청으로 받지 않는다.
-      - 같은 `listingId`·세입자·임대인 조합은 언제나 같은 `chatRoomId`를 사용한다.
+      - 매물 목록 또는 매물 상세 응답에서 받은 `listingId`만 URL에 넣는다.
+      - 프론트가 세입자 ID나 임대인 ID를 보낼 필요는 없다. 서버가 access token과 매물 정보로 두 사용자를 찾는다.
+      - 같은 매물에서 같은 세입자와 임대인이 다시 문의하면 새 채팅방을 만들지 않고 기존 채팅방을 반환한다.
 
-      **응답 방식**
+      **프론트 처리 방법**
 
       - 새 방을 만든 경우 `201 Created`, `created=true`다.
       - 기존 방을 반환한 경우 `200 OK`, `created=false`다.
-      - 앱은 두 경우 모두 `chatRoomId`로 채팅방 화면을 연다.
+      - 두 응답의 JSON 구조는 같다. 프론트는 두 경우 모두 `chatRoomId`로 채팅방 화면을 열면 된다.
+      - `created`는 새 방인지 구분하는 참고값이다. 화면 이동 여부를 이 값으로 나누지 않는다.
       - 이 응답은 프로필 이미지나 매물 대표 이미지를 제공하지 않는다. 채팅방 목록의 상대 이미지는 앱이 기본 아이콘으로 표시한다.
-      - 매물 신청 완료 뒤 표시하는 `BOOKING_CARD`의 대표 이미지는 별도 카드 payload에 포함된다.
+      - 매물 신청 완료 뒤 표시하는 `BOOKING_CARD`의 대표 이미지는 메시지 이력 응답의 `bookingCard` 안에 별도로 포함된다.
 
       **에러 코드**
 
@@ -62,15 +68,26 @@ public final class ChatDocsFields {
 
   public static final String ROOM_LIST_DESCRIPTION =
       """
-      로그인 사용자에게 현재 보이는 1:1 매물 채팅방을 최근 활동 순으로 조회한다.
+      채팅 탭을 열었을 때 보여 줄 **내 1:1 채팅방 목록**을 최근 활동 순으로 조회한다.
 
-      **요청 방식**
+      **헤더**
 
-      - 사용자 ID는 액세스 토큰에서 결정하며 query로 받지 않는다.
-      - `page`는 0부터 시작하고 `size`는 1~100이다.
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 사용자의 access token을 보낸다.
+
+      **프론트 요청 방법**
+
+      - 사용자 ID는 access token에서 확인하므로 별도로 보내지 않는다.
+      - 첫 요청은 `page=0`으로 보낸다. `page`를 생략해도 기본값은 0이다.
+      - `size`는 한 번에 받을 채팅방 개수다. 기본값은 20이고 1~100까지 보낼 수 있다.
+      - 응답의 `page.hasNext=true`이면 다음 요청에서 `page`를 1 증가시킨다.
       - 사용자가 삭제해 숨긴 채팅방은 목록에서 제외한다.
 
-      **응답 방식**
+      ```http
+      GET /api/v1/chat-rooms?page=0&size=20
+      GET /api/v1/chat-rooms?page=1&size=20  // 다음 페이지
+      ```
+
+      **프론트 표시 방법**
 
       - 앱의 채팅 목록 한 줄에 필요한 채팅방 ID, 내 역할, 매물 제목·주소, 상대 ID·이름, 마지막 메시지와 차단 여부를 반환한다.
       - 상대 프로필 이미지와 일반 채팅방용 매물 이미지는 반환하지 않는다. 앱은 상대방 자리에 기본 프로필 아이콘을 표시한다.
@@ -78,7 +95,7 @@ public final class ChatDocsFields {
       - 마지막 메시지가 `TEXT`이면 `preview`에 표시할 문자열을 반환한다. 현재 단계에서는 저장된 원문이며 자동 번역 연결 뒤에는 수신자용 번역본을 우선한다.
       - 마지막 메시지가 `BOOKING_CARD`이면 `preview=null`이다. 앱이 `myRole`과 `ko/en` UI 문구로 “신청이 접수되었습니다” 또는 “새로운 입주 신청이 도착했습니다”를 표시한다.
       - `blocked=true`이면 두 사용자 사이 어느 방향으로든 차단 관계가 있어 새 메시지를 보낼 수 없다. 차단 방향은 노출하지 않는다.
-      - 서버는 현재 페이지의 채팅방과 마지막 메시지를 각각 일괄 조회하므로 방 개수만큼 DB 조회가 반복되지 않는다.
+      - 채팅방이 하나도 없으면 `content=[]`, `totalElements=0`, `totalPages=0`, `hasNext=false`다. 빈 화면으로 처리하면 된다.
 
       **에러 코드**
 
@@ -92,6 +109,8 @@ public final class ChatDocsFields {
       """;
 
   public static final String[] ROOM_LIST_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] ROOM_LIST_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ROOM_LIST_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   public static final String ROOM_DETAIL_SUMMARY = "채팅방 기본 정보 조회";
 
@@ -99,13 +118,22 @@ public final class ChatDocsFields {
       """
       채팅방 화면을 열 때 필요한 매물·상대·역할·차단 정보를 한 건 조회한다.
 
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 사용자의 access token을 보낸다.
+
       **언제 사용하는가**
 
       - 채팅방 목록에서 한 항목을 눌렀을 때
       - 푸시 알림이나 딥링크의 `roomId`로 채팅방 화면을 바로 열 때
       - 앱 재실행·새로고침 뒤 채팅방 헤더를 다시 만들 때
 
-      **응답 방식**
+      **프론트 요청 방법**
+
+      - 채팅방 목록 또는 문의하기 응답에서 받은 `chatRoomId`를 URL의 `roomId`에 그대로 넣는다.
+      - `roomId`는 프론트가 생성하는 UUID가 아니라 서버가 반환한 숫자다.
+
+      **프론트 표시 방법**
 
       - 실제 대화 메시지는 포함하지 않는다. 메시지는 `/api/v1/chat-rooms/{roomId}/messages`에서 별도로 조회한다.
       - 매물 제목·주소는 채팅방 생성 시 저장한 사본이라 원본 매물이 비공개·삭제돼도 대화 맥락을 유지한다.
@@ -123,12 +151,14 @@ public final class ChatDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `roomId`가 숫자가 아님 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음·비참여자·요청자에게 숨겨진 방 |
       """;
 
+  public static final String[] ROOM_DETAIL_400 = {"MALFORMED_REQUEST"};
   public static final String[] ROOM_DETAIL_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
   public static final String[] ROOM_DETAIL_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] ROOM_DETAIL_404 = {"CHAT_ROOM_NOT_FOUND"};
@@ -137,7 +167,16 @@ public final class ChatDocsFields {
 
   public static final String MESSAGE_HISTORY_DESCRIPTION =
       """
-      로그인 사용자가 참여 중인 채팅방의 저장된 메시지를 커서 방식으로 조회한다.
+      채팅방 화면에 표시할 **저장된 대화 메시지**를 조회한다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 사용자의 access token을 보낸다.
+
+      **프론트 요청 전 준비**
+
+      - 채팅방 목록·상세 또는 문의하기 응답에서 받은 `chatRoomId`를 URL의 `roomId`에 넣는다.
+      - 처음 들어갈 때는 `cursor`와 `afterMessageId`를 모두 생략한다.
 
       **언제 사용하는가**
 
@@ -154,7 +193,7 @@ public final class ChatDocsFields {
          GET /api/v1/chat-rooms/10/messages?size=3
          ```
 
-      2. 서버가 최근 메시지와 다음 조회 위치를 반환한다.
+      2. 서버가 최근 메시지와 다음 조회 위치를 반환한다. 아래 예시는 전체 응답 중 `data` 내부만 줄여서 표시한 것이다.
 
          ```json
          {
@@ -182,7 +221,7 @@ public final class ChatDocsFields {
       이전 응답의 nextCursor → 다음 요청의 cursor
       ```
 
-      프론트는 cursor를 직접 계산하지 않는다. 서버가 반환한 `nextCursor`를 그대로 사용하면 된다.
+      프론트는 cursor를 직접 계산하지 않는다. 서버가 반환한 `nextCursor`를 문자열 그대로 사용하면 된다.
 
       **파라미터를 쉽게 정리하면**
 
@@ -206,6 +245,11 @@ public final class ChatDocsFields {
       - `cursor` 조회 결과는 최신 메시지부터 내림차순이다.
       - `afterMessageId` 조회 결과는 앱이 순서대로 합칠 수 있도록 오래된 메시지부터 오름차순이다.
 
+      **빈 결과 처리**
+
+      - 표시할 메시지가 없으면 `content=[]`, `nextCursor=null`, `hasNext=false`다.
+      - 오류가 아니라 정상 `200 OK`이므로 빈 대화 화면으로 처리한다.
+
       **메시지 종류**
 
       - `TEXT`: 사용자가 보낸 변경되지 않은 원문을 `originalContent`로 반환한다. `clientMessageId`는 전송 시 프런트가 생성한 UUID다.
@@ -223,8 +267,8 @@ public final class ChatDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 두 커서를 함께 사용, 0 이하·문자 커서, size 범위 위반 |
-      | 400 | `MALFORMED_REQUEST` | size가 정수가 아님 |
+      | 400 | `INVALID_INPUT` | 두 커서를 함께 사용, 0 이하 커서, size 범위 위반 |
+      | 400 | `MALFORMED_REQUEST` | `roomId`·`cursor`·`afterMessageId`·`size` 중 숫자여야 하는 값이 숫자가 아님 |
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
@@ -238,10 +282,10 @@ public final class ChatDocsFields {
 
   private ChatDocsFields() {}
 
-  /** 경로의 매물 ID는 MongoDB ObjectId 문자열이며 요청 본문은 별도로 없다. */
+  /** 프론트가 매물 목록·상세에서 받은 ID를 그대로 사용할 수 있도록 출처까지 설명한다. */
   public static ParameterDescriptor[] inquiryPathParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("listingId").description("문의할 공개 매물 ID(ObjectId 24자리 hex)")
+      parameterWithName("listingId").description("매물 목록 또는 매물 상세 응답에서 받은 listingId. 문의할 공개 매물의 ID")
     };
   }
 
@@ -249,16 +293,24 @@ public final class ChatDocsFields {
   public static List<FieldDescriptor> inquiryResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.chatRoomId", JsonFieldType.NUMBER, "앱이 열어야 할 서버 채팅방 ID"),
-        field("data.created", JsonFieldType.BOOLEAN, "이번 요청에서 새 방을 만들었으면 true, 기존 방이면 false"),
+        field(
+            "data.chatRoomId",
+            JsonFieldType.NUMBER,
+            "열어야 할 채팅방 ID. 채팅방 상세·메시지 조회와 WebSocket 구독에 같은 값을 사용"),
+        field(
+            "data.created",
+            JsonFieldType.BOOLEAN,
+            "이번 요청으로 새 채팅방을 만들었으면 true, 이미 있던 채팅방을 반환했으면 false. 값과 관계없이 chatRoomId로 화면 이동"),
         errorNull());
   }
 
   /** 채팅방 목록의 offset 페이지 query 계약이다. */
   public static ParameterDescriptor[] roomListQueryParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("page").optional().description("0-base 페이지 번호(기본 0). 음수는 400"),
-      parameterWithName("size").optional().description("페이지 크기(기본 20). 1~100 밖은 400")
+      parameterWithName("page")
+          .optional()
+          .description("가져올 페이지 번호. 첫 페이지는 0이며 기본값도 0. 다음 페이지는 1씩 증가"),
+      parameterWithName("size").optional().description("한 페이지에 받을 채팅방 개수. 기본값 20, 허용 범위 1~100")
     };
   }
 
@@ -266,29 +318,38 @@ public final class ChatDocsFields {
   public static List<FieldDescriptor> roomListResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.content[].chatRoomId", JsonFieldType.NUMBER, "채팅방 화면·후속 API에 사용할 서버 채팅방 ID"),
+        field(
+            "data.content[].chatRoomId",
+            JsonFieldType.NUMBER,
+            "이 항목을 눌렀을 때 열 채팅방 ID. 상세·메시지 조회와 WebSocket 구독에 사용"),
         enumField(
             "data.content[].myRole",
             ChatParticipantRole.class,
-            "로그인 사용자의 역할. BOOKING_CARD의 임차인·임대인 UI 선택에 사용"),
-        field("data.content[].listing.listingId", JsonFieldType.STRING, "채팅방과 연결된 매물 ID"),
-        field("data.content[].listing.title", JsonFieldType.STRING, "채팅방 생성 시 저장한 매물 제목"),
-        field("data.content[].listing.address", JsonFieldType.STRING, "채팅방 생성 시 저장한 표시 주소"),
-        field("data.content[].counterpart.userId", JsonFieldType.NUMBER, "1:1 채팅 상대의 users.id"),
-        field("data.content[].counterpart.displayName", JsonFieldType.STRING, "현재 상대 표시 이름"),
+            "현재 로그인 사용자의 채팅 역할. TENANT=임차인, LANDLORD=임대인. 신청 카드 문구와 UI를 역할별로 표시할 때 사용"),
+        field(
+            "data.content[].listing.listingId",
+            JsonFieldType.STRING,
+            "이 채팅이 어떤 매물에 관한 것인지 나타내는 매물 ID"),
+        field("data.content[].listing.title", JsonFieldType.STRING, "채팅 목록에 표시할 매물 제목"),
+        field("data.content[].listing.address", JsonFieldType.STRING, "채팅 목록 또는 채팅방 헤더에 표시할 매물 주소"),
+        field(
+            "data.content[].counterpart.userId",
+            JsonFieldType.NUMBER,
+            "1:1 채팅 상대의 서버 사용자 ID. 표시 이름과 같은 상대를 식별하는 값"),
+        field("data.content[].counterpart.displayName", JsonFieldType.STRING, "채팅 목록에 표시할 상대방 이름"),
         optField("data.content[].lastMessage", JsonFieldType.OBJECT, "사용자에게 보이는 마지막 메시지. 없으면 null"),
         optField(
             "data.content[].lastMessage.messageId",
             JsonFieldType.NUMBER,
-            "마지막 메시지의 서버 ID(lastMessage가 null이면 없음)"),
+            "마지막 메시지의 서버 번호. lastMessage가 null이면 이 필드도 없음"),
         optEnumField(
             "data.content[].lastMessage.type",
             MessageType.class,
-            "마지막 메시지 종류(lastMessage가 null이면 없음)"),
+            "마지막 메시지 종류. TEXT 또는 BOOKING_CARD이며 lastMessage가 null이면 없음"),
         optField(
             "data.content[].lastMessage.preview",
             JsonFieldType.STRING,
-            "TEXT 표시 문자열. BOOKING_CARD이면 null이고 앱이 역할별 고정 문구 사용"),
+            "채팅 목록 두 번째 줄에 표시할 TEXT 문자열. BOOKING_CARD이면 null이므로 앱이 myRole에 맞는 신청 안내 문구 표시"),
         optField(
             "data.content[].lastMessage.sentAt",
             JsonFieldType.STRING,
@@ -297,18 +358,22 @@ public final class ChatDocsFields {
             "data.content[].blocked",
             JsonFieldType.BOOLEAN,
             "어느 방향이든 차단 관계가 있어 새 메시지를 보낼 수 없으면 true"),
-        field("data.page.number", JsonFieldType.NUMBER, "현재 페이지 번호(0-base)"),
-        field("data.page.size", JsonFieldType.NUMBER, "페이지 크기"),
-        field("data.page.totalElements", JsonFieldType.NUMBER, "사용자에게 보이는 전체 채팅방 수"),
-        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 수"),
-        field("data.page.hasNext", JsonFieldType.BOOLEAN, "다음 페이지 존재 여부"),
+        field("data.page.number", JsonFieldType.NUMBER, "현재 받은 페이지 번호. 첫 페이지는 0"),
+        field("data.page.size", JsonFieldType.NUMBER, "요청한 한 페이지 최대 채팅방 개수"),
+        field("data.page.totalElements", JsonFieldType.NUMBER, "현재 사용자에게 보이는 전체 채팅방 개수"),
+        field("data.page.totalPages", JsonFieldType.NUMBER, "전체 페이지 개수. 채팅방이 없으면 0"),
+        field(
+            "data.page.hasNext",
+            JsonFieldType.BOOLEAN,
+            "다음 페이지가 있으면 true. true일 때 page를 1 증가시켜 추가 조회"),
         errorNull());
   }
 
   /** 경로의 roomId는 listingId나 프런트 UUID가 아니라 서버가 발급한 숫자 채팅방 ID다. */
   public static ParameterDescriptor[] roomDetailPathParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("roomId").description("조회할 서버 채팅방 ID(chat_rooms.id)")
+      parameterWithName("roomId")
+          .description("채팅방 목록 또는 문의하기 응답에서 받은 chatRoomId. 프론트가 새로 생성하지 않고 그대로 사용")
     };
   }
 
@@ -316,16 +381,16 @@ public final class ChatDocsFields {
   public static List<FieldDescriptor> roomDetailResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.chatRoomId", JsonFieldType.NUMBER, "조회한 서버 채팅방 ID"),
+        field("data.chatRoomId", JsonFieldType.NUMBER, "현재 연 채팅방 ID. 메시지 조회와 WebSocket 구독에 사용"),
         enumField(
             "data.myRole",
             ChatParticipantRole.class,
-            "로그인 사용자의 역할. BOOKING_CARD의 임차인·임대인 UI 선택에 사용"),
-        field("data.listing.listingId", JsonFieldType.STRING, "채팅방과 연결된 매물 ID"),
-        field("data.listing.title", JsonFieldType.STRING, "채팅방 생성 시 저장한 매물 제목"),
-        field("data.listing.address", JsonFieldType.STRING, "채팅방 생성 시 저장한 표시 주소"),
-        field("data.counterpart.userId", JsonFieldType.NUMBER, "1:1 채팅 상대의 users.id"),
-        field("data.counterpart.displayName", JsonFieldType.STRING, "현재 상대 표시 이름"),
+            "현재 로그인 사용자의 채팅 역할. TENANT=임차인, LANDLORD=임대인. 신청 카드 문구와 UI 선택에 사용"),
+        field("data.listing.listingId", JsonFieldType.STRING, "이 채팅이 어떤 매물에 관한 것인지 나타내는 매물 ID"),
+        field("data.listing.title", JsonFieldType.STRING, "채팅방 상단에 표시할 매물 제목"),
+        field("data.listing.address", JsonFieldType.STRING, "채팅방 상단에 표시할 매물 주소"),
+        field("data.counterpart.userId", JsonFieldType.NUMBER, "현재 대화 상대의 서버 사용자 ID"),
+        field("data.counterpart.displayName", JsonFieldType.STRING, "채팅방 상단에 표시할 상대방 이름"),
         field("data.blocked", JsonFieldType.BOOLEAN, "어느 방향이든 차단 관계가 있어 새 메시지를 보낼 수 없으면 true"),
         errorNull());
   }
@@ -333,7 +398,8 @@ public final class ChatDocsFields {
   /** 경로의 roomId는 프런트 UUID가 아니라 서버가 발급한 숫자 채팅방 ID다. */
   public static ParameterDescriptor[] messageHistoryPathParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("roomId").description("메시지를 조회할 서버 채팅방 ID(chat_rooms.id)")
+      parameterWithName("roomId")
+          .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 chatRoomId. 이 채팅방의 메시지를 조회")
     };
   }
 
@@ -347,7 +413,7 @@ public final class ChatDocsFields {
       parameterWithName("afterMessageId")
           .optional()
           .description(
-              "WebSocket 재연결 누락 보충 전용. 이 messageId보다 새 메시지를 조회한다. 위로 스크롤에는 사용하지 않으며 cursor와 동시에 보내지 않는다."),
+              "WebSocket 재연결 뒤 누락 메시지 보충 전용. 앱이 마지막으로 연속 저장한 messageId를 입력하면 그보다 새 메시지를 반환. 위로 스크롤에는 사용하지 않으며 cursor와 동시 사용 금지"),
       parameterWithName("size").optional().description("한 번에 받을 최대 메시지 개수. 기본값 30, 허용 범위 1~100")
     };
   }
@@ -356,39 +422,60 @@ public final class ChatDocsFields {
   public static List<FieldDescriptor> messageHistoryResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.content", JsonFieldType.ARRAY, "조회된 메시지 목록"),
-        field("data.content[].messageId", JsonFieldType.NUMBER, "MySQL이 발급한 최종 메시지 ID"),
+        field("data.content", JsonFieldType.ARRAY, "화면에 표시할 메시지 목록. 메시지가 없으면 빈 배열 []"),
+        field(
+            "data.content[].messageId",
+            JsonFieldType.NUMBER,
+            "서버가 저장한 메시지 번호. 메시지 정렬·중복 제거와 afterMessageId 기준으로 사용"),
         optField(
             "data.content[].clientMessageId",
             JsonFieldType.STRING,
-            "TEXT 전송 때 프런트가 생성한 중복 방지 UUID. BOOKING_CARD는 null"),
+            "TEXT를 보내기 전에 프론트가 생성한 UUID. 전송 결과를 임시 말풍선과 연결하고 재시도 중복 저장을 막는 값. 같은 메시지를 재시도할 때 같은 UUID를 사용하며 BOOKING_CARD는 null"),
         field("data.content[].chatRoomId", JsonFieldType.NUMBER, "메시지가 속한 서버 채팅방 ID"),
         optField(
             "data.content[].senderId",
             JsonFieldType.NUMBER,
-            "TEXT 발신자의 users.id. 서버 생성 BOOKING_CARD는 null"),
-        field("data.content[].mine", JsonFieldType.BOOLEAN, "로그인 사용자가 보낸 TEXT이면 true"),
-        enumField("data.content[].type", MessageType.class, "TEXT 또는 서버 생성 BOOKING_CARD"),
+            "TEXT를 보낸 사용자의 서버 사용자 ID. 서버가 만든 BOOKING_CARD는 null"),
+        field(
+            "data.content[].mine",
+            JsonFieldType.BOOLEAN,
+            "현재 로그인 사용자가 보낸 TEXT이면 true. 말풍선을 오른쪽/왼쪽에 배치할 때 사용"),
+        enumField(
+            "data.content[].type",
+            MessageType.class,
+            "화면에 그릴 메시지 종류. TEXT=일반 말풍선, BOOKING_CARD=매물 신청 카드"),
         optField(
             "data.content[].originalContent",
             JsonFieldType.STRING,
-            "변경하지 않은 TEXT 원문. BOOKING_CARD는 null"),
-        optField("data.content[].bookingCard", JsonFieldType.OBJECT, "신청 카드 정보. TEXT는 null"),
-        optField("data.content[].bookingCard.bookingId", JsonFieldType.NUMBER, "카드의 원본 신청 ID"),
-        optField("data.content[].bookingCard.listing", JsonFieldType.OBJECT, "신청 시점의 매물 정보"),
+            "사용자가 입력한 TEXT 원문. 번역본이 있어도 원문 보기 기능을 위해 함께 반환하며 BOOKING_CARD는 null"),
+        optField(
+            "data.content[].bookingCard",
+            JsonFieldType.OBJECT,
+            "매물 신청 카드 UI를 그리는 데 필요한 정보. type=BOOKING_CARD일 때만 있고 TEXT는 null"),
+        optField(
+            "data.content[].bookingCard.bookingId",
+            JsonFieldType.NUMBER,
+            "이 카드가 나타내는 매물 신청 ID. type=BOOKING_CARD일 때만 사용"),
+        optField(
+            "data.content[].bookingCard.listing",
+            JsonFieldType.OBJECT,
+            "신청 카드 상단의 이미지·제목·주소·월세를 그리는 매물 정보"),
         optField(
             "data.content[].bookingCard.listing.listingId", JsonFieldType.STRING, "신청 대상 매물 ID"),
         optField(
             "data.content[].bookingCard.listing.thumbnailUrl",
             JsonFieldType.STRING,
             "신청 카드 대표 이미지 URL. 이미지가 없으면 null"),
-        optField("data.content[].bookingCard.listing.title", JsonFieldType.STRING, "신청 시점 매물 제목"),
-        optField("data.content[].bookingCard.listing.address", JsonFieldType.STRING, "신청 시점 표시 주소"),
+        optField(
+            "data.content[].bookingCard.listing.title", JsonFieldType.STRING, "신청 카드에 표시할 매물 제목"),
+        optField(
+            "data.content[].bookingCard.listing.address", JsonFieldType.STRING, "신청 카드에 표시할 매물 주소"),
         optField(
             "data.content[].bookingCard.listing.monthlyRent",
             JsonFieldType.NUMBER,
             "신청 시점 월세(KRW)"),
-        optField("data.content[].bookingCard.applicant", JsonFieldType.OBJECT, "신청 시점 신청자 정보"),
+        optField(
+            "data.content[].bookingCard.applicant", JsonFieldType.OBJECT, "임대인용 신청 카드에 표시할 신청자 정보"),
         optField(
             "data.content[].bookingCard.applicant.userId", JsonFieldType.NUMBER, "신청자 users.id"),
         optField("data.content[].bookingCard.applicant.name", JsonFieldType.STRING, "신청자 이름"),
@@ -411,8 +498,11 @@ public final class ChatDocsFields {
         optField(
             "data.content[].translation",
             JsonFieldType.OBJECT,
-            "로그인 사용자용 TEXT 번역. 아직 없거나 실패·불필요하면 null"),
-        optField("data.content[].translation.content", JsonFieldType.STRING, "자동 번역된 TEXT"),
+            "현재 로그인 사용자에게 보여 줄 TEXT 자동 번역 정보. 번역이 없거나 실패·불필요하면 null이며 앱은 originalContent 표시"),
+        optField(
+            "data.content[].translation.content",
+            JsonFieldType.STRING,
+            "기본 말풍선에 먼저 표시할 자동 번역문. 원문 보기 선택 시 originalContent로 전환"),
         optField(
             "data.content[].translation.sourceLanguage",
             JsonFieldType.STRING,
@@ -422,7 +512,10 @@ public final class ChatDocsFields {
             JsonFieldType.STRING,
             "로그인 사용자의 대상 언어 code(ko 또는 en)"),
         optEnumField("data.content[].translation.provider", TranslationProvider.class, "번역 제공자"),
-        field("data.content[].sentAt", JsonFieldType.STRING, "서버가 메시지를 저장한 시각(ISO-8601 UTC)"),
+        field(
+            "data.content[].sentAt",
+            JsonFieldType.STRING,
+            "메시지 전송 시각(ISO-8601 UTC). 메시지 순서와 화면의 현지 시각 표시에 사용"),
         optField(
             "data.nextCursor",
             JsonFieldType.STRING,

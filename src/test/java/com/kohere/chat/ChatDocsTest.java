@@ -14,12 +14,15 @@ import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_403;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_404;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_400;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_401;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_403;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_404;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_400;
+import static com.kohere.docs.ChatDocsFields.ROOM_LIST_401;
+import static com.kohere.docs.ChatDocsFields.ROOM_LIST_403;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.inquiryPathParameters;
@@ -32,6 +35,7 @@ import static com.kohere.docs.ChatDocsFields.roomDetailResponseFields;
 import static com.kohere.docs.ChatDocsFields.roomListQueryParameters;
 import static com.kohere.docs.ChatDocsFields.roomListResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
+import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -51,6 +55,7 @@ import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
@@ -102,6 +107,7 @@ class ChatDocsTest {
       Pattern.compile("\\\"chatRoomId\\\"\\s*:\\s*(\\d+)");
 
   @Autowired private WebApplicationContext context;
+  @Autowired private JwtProperties jwtProperties;
   @Autowired private JwtTokenService jwtTokenService;
   @Autowired private ChatRoomRepository chatRoomRepository;
   @Autowired private ChatRoomMemberRepository chatRoomMemberRepository;
@@ -192,6 +198,72 @@ class ChatDocsTest {
                 ROOM_LIST_400));
   }
 
+  /** 숫자가 아닌 page는 컨트롤러 파라미터 변환 단계에서 400으로 거부됨을 Swagger에 보여 준다. */
+  @Test
+  @DisplayName("내 채팅방 목록 숫자가 아닌 페이지 문서화")
+  void listChatRoomsMalformedPage() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms")
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .param("page", "first"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-list-malformed-page",
+                ApiDocsTags.CHATS,
+                ROOM_LIST_SUMMARY,
+                ROOM_LIST_DESCRIPTION,
+                ROOM_LIST_400));
+  }
+
+  /** 목록 API도 access token 누락·만료·온보딩 미완료 응답을 다른 Chats API와 동일하게 문서화한다. */
+  @Test
+  @DisplayName("내 채팅방 목록 인증 오류 문서화")
+  void listChatRoomsAuthenticationErrors() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/chat-rooms"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-list-unauthenticated",
+                ApiDocsTags.CHATS,
+                ROOM_LIST_SUMMARY,
+                ROOM_LIST_DESCRIPTION,
+                ROOM_LIST_401));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms").header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-list-token-expired",
+                ApiDocsTags.CHATS,
+                ROOM_LIST_SUMMARY,
+                ROOM_LIST_DESCRIPTION,
+                ROOM_LIST_401));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms")
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-list-onboarding-required",
+                ApiDocsTags.CHATS,
+                ROOM_LIST_SUMMARY,
+                ROOM_LIST_DESCRIPTION,
+                ROOM_LIST_403));
+  }
+
   /** 목록·딥링크에서 받은 roomId로 채팅방 기본 정보를 조회하는 성공 응답을 문서화한다. */
   @Test
   @DisplayName("채팅방 단건 조회 문서화")
@@ -243,6 +315,26 @@ class ChatDocsTest {
                 ROOM_DETAIL_404));
   }
 
+  /** roomId 자리에 숫자가 아닌 값을 넣었을 때의 400을 보여 줘 프론트가 ID 형식을 바로 확인할 수 있게 한다. */
+  @Test
+  @DisplayName("채팅방 단건 숫자가 아닌 roomId 문서화")
+  void getChatRoomDetailWithMalformedRoomId() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}", "room-id")
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-detail-malformed-room-id",
+                ApiDocsTags.CHATS,
+                ROOM_DETAIL_SUMMARY,
+                ROOM_DETAIL_DESCRIPTION,
+                roomDetailPathParameters(),
+                ROOM_DETAIL_400));
+  }
+
   /** 토큰이 없는 단건 조회가 컨트롤러 전에 401로 차단되는 계약을 문서화한다. */
   @Test
   @DisplayName("채팅방 단건 인증 누락 문서화")
@@ -254,6 +346,26 @@ class ChatDocsTest {
         .andDo(
             ApiDocsErrors.errorSnippet(
                 "chat-room-detail-unauthenticated",
+                ApiDocsTags.CHATS,
+                ROOM_DETAIL_SUMMARY,
+                ROOM_DETAIL_DESCRIPTION,
+                roomDetailPathParameters(),
+                ROOM_DETAIL_401));
+  }
+
+  /** 만료된 access token은 재발급 후 다시 요청할 수 있도록 TOKEN_EXPIRED로 구분해 문서화한다. */
+  @Test
+  @DisplayName("채팅방 단건 만료 토큰 문서화")
+  void getChatRoomDetailWithExpiredToken() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}", 556L)
+                .header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-detail-token-expired",
                 ApiDocsTags.CHATS,
                 ROOM_DETAIL_SUMMARY,
                 ROOM_DETAIL_DESCRIPTION,
@@ -398,6 +510,26 @@ class ChatDocsTest {
                 MESSAGE_HISTORY_400));
   }
 
+  /** 숫자 roomId가 필요한 자리에 문자열을 보낸 경우의 400을 성공 오퍼레이션과 함께 Swagger에 합친다. */
+  @Test
+  @DisplayName("채팅방 메시지 숫자가 아닌 roomId 문서화")
+  void getMessagesWithMalformedRoomId() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", "room-id")
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-malformed-room-id",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_400));
+  }
+
   /** 비참여자는 존재하는 roomId를 입력해도 메시지와 방 존재 여부를 알 수 없음을 문서화한다. */
   @Test
   @DisplayName("채팅방 메시지 비참여자 404 문서화")
@@ -439,6 +571,26 @@ class ChatDocsTest {
                 MESSAGE_HISTORY_401));
   }
 
+  /** 만료 토큰을 일반 인증 누락과 구분해 프론트가 토큰 재발급 흐름으로 연결할 수 있게 한다. */
+  @Test
+  @DisplayName("채팅방 메시지 만료 토큰 문서화")
+  void getMessagesWithExpiredToken() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", 556L)
+                .header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-token-expired",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_401));
+  }
+
   /** 온보딩 임시 토큰으로 정식 채팅 메시지를 조회할 수 없다는 403 계약을 문서화한다. */
   @Test
   @DisplayName("채팅방 메시지 온보딩 사용자 거부 문서화")
@@ -472,7 +624,7 @@ class ChatDocsTest {
         .andExpect(jsonPath("$.data.created").value(true))
         .andDo(
             document(
-                "chat-inquiry-create",
+                "chat-inquiry",
                 resourceDetails()
                     .tag(ApiDocsTags.CHATS)
                     .summary(INQUIRY_SUMMARY)
@@ -585,9 +737,35 @@ class ChatDocsTest {
         INQUIRY_401);
   }
 
+  /** 문의하기도 만료 토큰과 온보딩 미완료를 별도 예시로 제공해 프론트의 재로그인·온보딩 분기를 명확히 한다. */
+  @Test
+  @DisplayName("문의 만료 토큰과 온보딩 사용자 문서화")
+  void createInquiryAuthenticationErrors() throws Exception {
+    performError(
+        inquiryRequest().header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "chat-inquiry-token-expired",
+        INQUIRY_401);
+
+    performError(
+        inquiryRequest()
+            .header(
+                HttpHeaders.AUTHORIZATION, bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))),
+        status().isForbidden(),
+        "AUTH_ONBOARDING_REQUIRED",
+        "chat-inquiry-onboarding-required",
+        INQUIRY_403);
+  }
+
   /** 현재 사용자의 access token을 Bearer 헤더 값으로 만든다. */
   private String accessToken() {
     return bearer(jwtTokenService.issueAccessToken(TENANT_ID));
+  }
+
+  /** Swagger 401 예시가 실제 보안 필터의 TOKEN_EXPIRED 응답에서 생성되도록 만료 토큰 헤더를 만든다. */
+  private String expiredAccessTokenHeader() {
+    return bearer(expiredAccessToken(jwtProperties));
   }
 
   /** 실제 문의 endpoint로 목록 테스트용 채팅방과 참여자 두 명을 만든다. */
