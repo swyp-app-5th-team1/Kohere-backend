@@ -15,8 +15,146 @@ import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
 import org.springframework.restdocs.request.ParameterDescriptor;
 
-/** Swagger <b>Chats</b> 태그에서 사용하는 문의 채팅방 생성 오퍼레이션의 설명과 필드 계약이다. */
+/** Swagger <b>Chats</b> 태그에서 사용하는 실시간 연결 안내와 채팅 REST API의 설명·필드 계약이다. */
 public final class ChatDocsFields {
+
+  public static final String STOMP_GUIDE_SUMMARY = "실시간 채팅 STOMP 연결 방법 확인";
+
+  public static final String STOMP_GUIDE_DESCRIPTION =
+      """
+      프런트엔드가 **실시간 채팅에 연결할 때 필요한 주소와 경로를 확인하는 안내 API**다.
+
+      이 GET API가 WebSocket을 대신 연결하는 것은 아니다. Swagger는 HTTP 문서 도구라 STOMP를 직접 실행할 수 없으므로,
+      여기에서 계약을 확인한 뒤 앱의 STOMP 클라이언트로 실제 연결·구독·전송을 구현한다.
+
+      **1. WebSocket 연결 주소**
+
+      - 개발 서버: `wss://dev.kohere.app/ws/chat`
+      - 로컬 서버: `ws://localhost:8080/ws/chat`
+      - 현재 페이지의 host를 사용한다면 `https`에서는 `wss`, `http`에서는 `ws`를 사용한다.
+
+      **2. STOMP CONNECT 인증**
+
+      WebSocket 통로가 열린 뒤 STOMP `CONNECT` frame의 native header에 다음 값을 넣는다.
+
+      ```text
+      Authorization: Bearer {accessToken}
+      ```
+
+      JWT를 `?token=...`처럼 URL에 넣지 않는다. URL은 브라우저 방문 기록, 프록시·서버 로그, APM 등에 남아 토큰이 노출될 수 있다.
+
+      **3. 먼저 구독할 개인 queue**
+
+      개인 queue는 서버가 **현재 사용자 session에만 보내는 처리 결과와 알림을 받는 경로**다.
+      메시지를 보내기 전에 먼저 구독해야 저장 성공 ACK나 오류를 놓치지 않는다.
+
+      | queue | 받는 내용 |
+      |---|---|
+      | `/user/queue/chat-control` | `PONG`, `SUBSCRIPTION_READY` |
+      | `/user/queue/chat-acks` | 내가 보낸 TEXT의 DB 저장 성공 결과 |
+      | `/user/queue/chat-errors` | 내가 보낸 TEXT의 검증·권한 오류 |
+      | `/user/queue/chat-room-events` | 채팅방 생성·갱신·재표시 알림 |
+      | `/user/queue/chat-translations` | 추후 자동 번역 결과를 받을 예약 경로 |
+
+      **4. 개인 queue가 준비됐는지 확인**
+
+      개인 queue들을 구독한 뒤 `/app/chat/control/ping`으로 다음 값을 보낸다.
+
+      ```json
+      { "version": 1, "requestId": "프론트가 생성한 UUID" }
+      ```
+
+      `/user/queue/chat-control`에 같은 `requestId`의 `PONG`이 오면 개인 queue를 정상적으로 받을 수 있다는 뜻이다.
+
+      **5. 채팅방 구독**
+
+      `/topic/chat-rooms/{roomId}`를 구독하면 그 채팅방에 새로 저장되는 `TEXT`와 `BOOKING_CARD`를 실시간으로 받는다.
+      여기서 topic은 방 참여자들이 같은 실시간 이벤트를 받도록 만든 **방송 경로**이며, 데이터를 저장하는 장소는 아니다. 정본은 MySQL이다.
+
+      구독이 서버 broker에 실제 등록되면 개인 control queue로 `SUBSCRIPTION_READY`가 온다.
+
+      - `roomId`: 준비가 끝난 채팅방 번호
+      - `highWatermark`: 준비 완료 시점에 이 사용자에게 보이는 마지막 `messageId`. 메시지가 없으면 null
+
+      `highWatermark`는 구독 등록 사이에 빠질 수 있는 메시지를 확인하는 안전 기준이다. 앱은 준비 이벤트를 받은 뒤
+      `GET /api/v1/chat-rooms/{roomId}/messages?afterMessageId=...`를 자동 호출해 누락분을 보충하고 실시간 이벤트와 합친다.
+      계속 반복하는 polling은 아니다.
+
+      사용자가 삭제해 현재 목록에서 숨긴 채팅방은 직접 구독할 수 없다. 같은 매물에 다시 문의하거나 실제 새 메시지가 도착해 방이 다시 표시된 뒤
+      목록·상세를 다시 조회하고 구독한다. 이때 해당 사용자가 삭제한 과거 대화는 복원되지 않고 삭제 이후 새 메시지만 보인다. 상대방의 기존 이력은 유지된다.
+
+      **6. TEXT 전송**
+
+      `/app/chat-rooms/{roomId}/messages`로 다음 값을 보낸다.
+
+      ```json
+      {
+        "clientMessageId": "b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849",
+        "content": "안녕하세요"
+      }
+      ```
+
+      - `clientMessageId`: 프런트가 전송 직전에 생성한 UUID. 같은 메시지 재시도에는 같은 UUID를 사용한다.
+      - `content`: 사용자가 입력한 원문. 공백을 포함해 최대 3,000 Unicode 문자다.
+
+      저장이 완료되면 room topic으로 `MESSAGE_CREATED`가 온다. 주요 값은 다음과 같다.
+
+      - `messageId`: MySQL이 발급한 최종 메시지 번호
+      - `clientMessageId`: 프런트가 보낸 TEXT UUID. BOOKING_CARD는 null
+      - `chatRoomId`: 메시지가 속한 채팅방 번호
+      - `senderId`: TEXT 발신 사용자 ID. BOOKING_CARD는 null
+      - `type`: `TEXT` 또는 `BOOKING_CARD`
+      - `originalContent`: TEXT 원문. BOOKING_CARD는 null
+      - `bookingCard`: 신청 카드 데이터. TEXT는 null
+      - `sentAt`: 서버 저장 시각
+
+      입주 신청이 저장되면 서버가 `BOOKING_CARD`를 자동 생성해 같은 room topic으로 전달한다. 프런트가 카드를 SEND하지 않는다.
+
+      **7. ACK: 내가 보낸 TEXT의 저장 결과**
+
+      ACK는 STOMP 수신 확인이 아니라 **MySQL 저장 성공 결과**다. `/user/queue/chat-acks`로 다음과 같이 온다.
+
+      ```json
+      {
+        "version": 1,
+        "clientMessageId": "b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849",
+        "messageId": 70051,
+        "sentAt": "2026-08-19T10:15:30.123456Z",
+        "duplicate": false
+      }
+      ```
+
+      - `clientMessageId`: 어떤 임시 말풍선의 결과인지 찾는 UUID
+      - `messageId`: 서버에 저장된 최종 메시지 번호
+      - `sentAt`: 서버에 처음 저장된 시각
+      - `duplicate`: 같은 UUID·같은 본문이 이미 저장돼 기존 결과를 돌려준 경우 true
+
+      임시 말풍선은 사용자가 전송 버튼을 누른 즉시 앱이 화면에 먼저 보여 주는 전송 중 메시지다. 앱은 임시 말풍선과 SEND에 같은
+      `clientMessageId`를 넣고, ACK가 오면 같은 UUID의 말풍선에 서버 `messageId`를 연결해 전송 완료로 바꾼다.
+      `BOOKING_CARD`는 서버가 만들기 때문에 ACK가 없다.
+
+      **8. 오류 처리**
+
+      개별 TEXT 오류는 `/user/queue/chat-errors`로 `clientMessageId`, `code`, `message`가 온다.
+      앱의 재시도·로그인 이동 같은 처리는 변하지 않는 `code`를 기준으로 결정한다. `message`는 사용자 언어와 문구 개선에 따라 바뀔 수 있으므로
+      화면 표시 용도로만 사용한다.
+
+      **9. 재연결**
+
+      연결이 끊기면 새 access token으로 CONNECT하고 개인 queue와 room topic을 다시 구독한다. `SUBSCRIPTION_READY` 뒤 마지막으로 연속 확인한
+      `messageId`를 `afterMessageId`로 보내 REST 이력을 합친다. Simple Broker는 오프라인 동안의 이벤트를 다시 재생하지 않기 때문이다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 안내 API 호출에 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 안내 API 호출에 사용한 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 계정이 안내 API 실행 |
+      """;
+
+  public static final String[] STOMP_GUIDE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] STOMP_GUIDE_403 = {"AUTH_ONBOARDING_REQUIRED"};
 
   public static final String INQUIRY_SUMMARY = "매물 문의 채팅방 열기";
 
@@ -295,7 +433,120 @@ public final class ChatDocsFields {
   public static final String[] MESSAGE_HISTORY_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] MESSAGE_HISTORY_404 = {"CHAT_ROOM_NOT_FOUND"};
 
+  public static final String ROOM_DELETE_SUMMARY = "채팅방 삭제";
+
+  public static final String ROOM_DELETE_DESCRIPTION =
+      """
+      로그인 사용자에게만 채팅방과 삭제 시점까지의 대화를 숨긴다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 사용자의 access token을 보낸다.
+
+      **프론트 요청 방법**
+
+      - 채팅방 목록 또는 상세 응답에서 받은 숫자 `chatRoomId`를 URL의 `roomId`에 넣는다.
+      - 요청 body와 사용자 ID는 보내지 않는다. 삭제 대상 사용자는 access token에서 서버가 확인한다.
+
+      ```http
+      DELETE /api/v1/chat-rooms/556
+      ```
+
+      **성공 응답 처리**
+
+      - 성공 status는 `204 No Content`이고 JSON 응답 본문은 없다.
+      - 프론트는 `204`를 받으면 해당 채팅방을 내 목록과 현재 화면에서 제거하면 된다.
+      - 이미 숨긴 방에 같은 DELETE를 다시 보내도 `204`이며 삭제 시각과 과거 이력 경계는 바뀌지 않는다.
+
+      **삭제의 정확한 의미**
+
+      - 요청한 사용자의 채팅방만 목록에서 숨긴다.
+      - 상대방의 채팅방과 전체 과거 대화는 그대로 유지한다.
+      - 일반 사용자가 삭제를 취소하거나 과거 대화를 복원하는 API는 없다.
+      - DB 원문을 즉시 물리 삭제하는 API가 아니다. 3개월 보존 뒤 물리 삭제는 후속 서버 작업이다.
+      - 같은 매물에 다시 문의하면 같은 `roomId`가 다시 표시될 수 있지만 삭제 전 메시지는 계속 숨긴다.
+      - 숨긴 동안 상대방의 실제 새 메시지가 오면 채팅방이 다시 표시되고, 삭제한 사용자는 그 새 메시지부터 볼 수 있다.
+
+      **보안 규칙**
+
+      - 방이 없거나 요청자가 참여자가 아니면 모두 `404 CHAT_ROOM_NOT_FOUND`다.
+      - 같은 404를 사용해 제3자가 roomId 존재 여부를 알아내지 못하게 한다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `roomId`가 숫자가 아님 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음 또는 비참여자 |
+      """;
+
+  public static final String[] ROOM_DELETE_400 = {"MALFORMED_REQUEST"};
+  public static final String[] ROOM_DELETE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ROOM_DELETE_403 = {"AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] ROOM_DELETE_404 = {"CHAT_ROOM_NOT_FOUND"};
+
   private ChatDocsFields() {}
+
+  /** 실제 WebSocket 처리 코드와 같은 경로가 안내 응답에 노출되는지 Swagger schema에 고정한다. */
+  public static List<FieldDescriptor> stompGuideResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
+        field(
+            "data.webSocketEndpoint",
+            JsonFieldType.STRING,
+            "모든 환경에서 사용하는 WebSocket handshake 상대 경로. 현재 /ws/chat"),
+        field(
+            "data.developmentWebSocketUrl",
+            JsonFieldType.STRING,
+            "배포된 개발 서버에 연결할 전체 WSS 주소. 현재 wss://dev.kohere.app/ws/chat"),
+        field(
+            "data.localWebSocketUrl",
+            JsonFieldType.STRING,
+            "로컬 8080 서버에 연결할 전체 WS 주소. 현재 ws://localhost:8080/ws/chat"),
+        field(
+            "data.connectHeaderName",
+            JsonFieldType.STRING,
+            "STOMP CONNECT native header 이름. Authorization 사용"),
+        field(
+            "data.connectHeaderValueFormat",
+            JsonFieldType.STRING,
+            "CONNECT header 값 형식. {accessToken}을 로그인으로 받은 실제 토큰으로 교체"),
+        field(
+            "data.controlSendDestination",
+            JsonFieldType.STRING,
+            "개인 queue가 준비됐는지 PING/PONG으로 확인하는 SEND 경로"),
+        field(
+            "data.roomSubscribeDestination",
+            JsonFieldType.STRING,
+            "TEXT·BOOKING_CARD를 실시간 수신할 방 topic 형식. {roomId}를 서버 채팅방 번호로 교체"),
+        field(
+            "data.messageSendDestination",
+            JsonFieldType.STRING,
+            "사용자 TEXT를 보낼 SEND 경로 형식. {roomId}를 서버 채팅방 번호로 교체"),
+        field(
+            "data.controlQueue",
+            JsonFieldType.STRING,
+            "PONG과 SUBSCRIPTION_READY를 현재 session만 받는 개인 queue"),
+        field("data.ackQueue", JsonFieldType.STRING, "내가 보낸 TEXT의 MySQL 저장 성공 결과 ACK를 받는 개인 queue"),
+        field("data.errorQueue", JsonFieldType.STRING, "내가 보낸 TEXT의 검증·권한 오류를 받는 개인 queue"),
+        field("data.roomEventQueue", JsonFieldType.STRING, "채팅방 생성·갱신·재표시 신호를 받는 개인 queue"),
+        field(
+            "data.translationQueue",
+            JsonFieldType.STRING,
+            "추후 자동 번역 결과를 받을 개인 queue. 현재 번역 기능은 아직 미구현"),
+        field(
+            "data.maxTextCodePoints",
+            JsonFieldType.NUMBER,
+            "TEXT 원문 한 건에 허용되는 최대 Unicode 문자 수. 현재 3,000"),
+        field(
+            "data.heartbeatSeconds",
+            JsonFieldType.NUMBER,
+            "STOMP 연결 생존 여부를 확인하는 heartbeat 간격(초). 현재 10"),
+        errorNull());
+  }
 
   /** 프론트가 매물 목록·상세에서 받은 ID를 그대로 사용할 수 있도록 출처까지 설명한다. */
   public static ParameterDescriptor[] inquiryPathParameters() {
@@ -389,6 +640,14 @@ public final class ChatDocsFields {
     return new ParameterDescriptor[] {
       parameterWithName("roomId")
           .description("채팅방 목록 또는 문의하기 응답에서 받은 chatRoomId. 프론트가 새로 생성하지 않고 그대로 사용")
+    };
+  }
+
+  /** 삭제할 채팅방 ID가 프런트 생성값이 아니라 서버 응답에서 온 숫자임을 분명히 한다. */
+  public static ParameterDescriptor[] roomDeletePathParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("roomId")
+          .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 숫자 chatRoomId. 현재 로그인 사용자에게만 숨김")
     };
   }
 

@@ -159,6 +159,11 @@ public class SecurityConfig {
                     // 생길 수 있어, 실제 유스케이스를 구현하기 전에 HTTP 경계에서 먼저 차단한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/inquiries")
                     .hasRole("USER")
+                    // 실시간 채팅 안내는 비밀값을 반환하지 않지만, 실제로 사용할 수 있는 주체와 문서의 인증 조건을
+                    // 일치시키기 위해 온보딩을 완료한 ROLE_USER에게만 실행을 허용한다. Swagger 설명 자체는 인증 없이도
+                    // 읽을 수 있고, 이 매처는 Try it out으로 실제 안내 응답을 조회할 때 적용된다.
+                    .requestMatchers(HttpMethod.GET, "/api/v1/chat/stomp-guide")
+                    .hasRole("USER")
                     // 채팅방 목록·상세·메시지 이력 등 /chat-rooms 아래 REST는 모두 개인 대화 데이터를 다룬다.
                     // 참여자 여부는 서비스가 방마다 추가 검증하지만, 여기서는 최소 조건인 ROLE_USER를 공통 적용한다.
                     // WebSocket handshake는 위 공개 경로에서 통로만 열고, STOMP 프레임 인증은 채팅 모듈의

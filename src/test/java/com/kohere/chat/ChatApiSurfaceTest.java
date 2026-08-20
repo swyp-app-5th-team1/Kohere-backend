@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.presentation.ChatRoomController;
+import com.kohere.chat.presentation.ChatStompGuideController;
 import com.kohere.chat.presentation.InquiryController;
 import com.kohere.common.security.AuthPrincipal;
 import java.lang.reflect.Method;
@@ -16,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -80,6 +82,28 @@ class ChatApiSurfaceTest {
         .containsExactly("cursor", "afterMessageId", "size");
   }
 
+  /** 사용자별 삭제는 요청 body 없이 서버 roomId를 사용하는 DELETE 한 경로로만 노출한다. */
+  @Test
+  void roomDeletionUsesServerRoomIdAndHasNoRequestParameters() {
+    Method deleteRoom = methodNamed(ChatRoomController.class, "deleteRoom");
+
+    assertThat(mappedPaths(deleteRoom, DeleteMapping.class)).containsExactly("/{roomId}");
+    assertThat(requestParameterNames(deleteRoom)).isEmpty();
+  }
+
+  /** Swagger 안내용 REST가 실제 STOMP 경로 정본을 반환하고 메시지 전송 API로 오해되지 않게 GET으로만 노출되는지 확인한다. */
+  @Test
+  void stompGuideExposesTheCurrentReadOnlyContract() {
+    ChatStompGuideController controller = new ChatStompGuideController();
+
+    assertThat(
+            mappedPaths(methodNamed(ChatStompGuideController.class, "getGuide"), GetMapping.class))
+        .containsExactly("/stomp-guide");
+    assertThat(controller.getGuide().data().webSocketEndpoint()).isEqualTo("/ws/chat");
+    assertThat(controller.getGuide().data().ackQueue()).isEqualTo("/user/queue/chat-acks");
+    assertThat(controller.getGuide().data().maxTextCodePoints()).isEqualTo(3000);
+  }
+
   /** reflection 단정을 읽기 쉽게 유지하기 위한 이름 기반 메서드 조회 도우미. */
   private static Method methodNamed(Class<?> type, String name) {
     return Arrays.stream(type.getDeclaredMethods())
@@ -122,6 +146,9 @@ class ChatApiSurfaceTest {
     }
     if (annotation instanceof GetMapping getMapping) {
       return Set.of(getMapping.value());
+    }
+    if (annotation instanceof DeleteMapping deleteMapping) {
+      return Set.of(deleteMapping.value());
     }
     throw new IllegalArgumentException("Unsupported mapping annotation: " + annotationType);
   }

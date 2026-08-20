@@ -14,6 +14,12 @@ import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_403;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_404;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_400;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_401;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_403;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_404;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_400;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_401;
 import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_403;
@@ -25,25 +31,34 @@ import static com.kohere.docs.ChatDocsFields.ROOM_LIST_401;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_403;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.ROOM_LIST_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_401;
+import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_403;
+import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.inquiryPathParameters;
 import static com.kohere.docs.ChatDocsFields.inquiryResponseFields;
 import static com.kohere.docs.ChatDocsFields.messageHistoryPathParameters;
 import static com.kohere.docs.ChatDocsFields.messageHistoryQueryParameters;
 import static com.kohere.docs.ChatDocsFields.messageHistoryResponseFields;
+import static com.kohere.docs.ChatDocsFields.roomDeletePathParameters;
 import static com.kohere.docs.ChatDocsFields.roomDetailPathParameters;
 import static com.kohere.docs.ChatDocsFields.roomDetailResponseFields;
 import static com.kohere.docs.ChatDocsFields.roomListQueryParameters;
 import static com.kohere.docs.ChatDocsFields.roomListResponseFields;
+import static com.kohere.docs.ChatDocsFields.stompGuideResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -134,6 +149,64 @@ class ChatDocsTest {
         .willReturn(Optional.of(listingView(LANDLORD_ID)));
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
     given(userAccountService.getUserName(LANDLORD_ID)).willReturn("Hongdae landlord");
+  }
+
+  /** 실제 STOMP 상수로 만든 안내 응답과 프런트용 설명을 Swagger의 Chats 항목에 함께 노출한다. */
+  @Test
+  @DisplayName("실시간 채팅 STOMP 연결 안내 문서화")
+  void getStompGuide() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/chat/stomp-guide").header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.webSocketEndpoint").value("/ws/chat"))
+        .andExpect(jsonPath("$.data.developmentWebSocketUrl").value("wss://dev.kohere.app/ws/chat"))
+        .andExpect(jsonPath("$.data.controlQueue").value("/user/queue/chat-control"))
+        .andExpect(jsonPath("$.data.ackQueue").value("/user/queue/chat-acks"))
+        .andExpect(jsonPath("$.data.roomSubscribeDestination").value("/topic/chat-rooms/{roomId}"))
+        .andExpect(jsonPath("$.data.maxTextCodePoints").value(3000))
+        .andDo(
+            document(
+                "chat-stomp-guide",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(STOMP_GUIDE_SUMMARY)
+                    .description(STOMP_GUIDE_DESCRIPTION),
+                responseFields(stompGuideResponseFields())));
+  }
+
+  /** 안내 API도 실제 채팅 사용자와 같은 인증 조건을 갖는다는 401·403 응답을 Swagger에 고정한다. */
+  @Test
+  @DisplayName("실시간 채팅 STOMP 연결 안내 인증 오류 문서화")
+  void getStompGuideAuthenticationErrors() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat/stomp-guide")
+                .header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-stomp-guide-token-expired",
+                ApiDocsTags.CHATS,
+                STOMP_GUIDE_SUMMARY,
+                STOMP_GUIDE_DESCRIPTION,
+                STOMP_GUIDE_401));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat/stomp-guide")
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-stomp-guide-onboarding-required",
+                ApiDocsTags.CHATS,
+                STOMP_GUIDE_SUMMARY,
+                STOMP_GUIDE_DESCRIPTION,
+                STOMP_GUIDE_403));
   }
 
   /** 채팅방 목록의 실제 DB 조회·마지막 메시지 조립과 Swagger 응답 계약을 함께 검증한다. */
@@ -653,6 +726,135 @@ class ChatDocsTest {
                 MESSAGE_HISTORY_DESCRIPTION,
                 messageHistoryPathParameters(),
                 MESSAGE_HISTORY_403));
+  }
+
+  /** 삭제는 요청자 member만 숨기고 JSON 없이 204를 반환하는 실제 MySQL 동작을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 사용자별 삭제 문서화")
+  void deleteChatRoom() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    Instant sentAt = Instant.parse("2026-08-20T10:20:30.123456Z");
+    Message oldMessage =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(LANDLORD_ID)
+                .type(MessageType.TEXT)
+                .content("삭제 시점까지 숨길 메시지입니다.")
+                .clientMessageId(UUID.fromString("af3e093c-99b4-4ec8-a208-d31341f9e512"))
+                .sentAt(sentAt)
+                .build());
+    ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow();
+    chatRoomRepository.save(room.recordMessage(oldMessage.getId(), sentAt));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""))
+        .andDo(
+            document(
+                "chat-room-delete",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(ROOM_DELETE_SUMMARY)
+                    .description(ROOM_DELETE_DESCRIPTION),
+                pathParameters(roomDeletePathParameters())));
+
+    ChatRoomMember hiddenTenant =
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, TENANT_ID).orElseThrow();
+    ChatRoomMember unchangedLandlord =
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, LANDLORD_ID).orElseThrow();
+    assertThat(hiddenTenant.getRoomHiddenAt()).isNotNull();
+    assertThat(hiddenTenant.getHistoryHiddenThroughMessageId()).isEqualTo(oldMessage.getId());
+    assertThat(unchangedLandlord.getRoomHiddenAt()).isNull();
+    assertThat(unchangedLandlord.getHistoryHiddenThroughMessageId()).isZero();
+
+    // 네트워크 재시도에도 204를 반환하되 최초 삭제 기준을 연장하지 않는다.
+    Instant firstDeletedAt = hiddenTenant.getDeleteRequestedAt();
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+    ChatRoomMember repeated =
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, TENANT_ID).orElseThrow();
+    assertThat(repeated.getDeleteRequestedAt()).isEqualTo(firstDeletedAt);
+  }
+
+  /** 비참여자가 roomId를 추측해도 방 존재를 노출하지 않는 404 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 삭제 비참여자 404 문서화")
+  void deleteChatRoomAsOutsider() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    String outsiderToken = bearer(jwtTokenService.issueAccessToken(999L));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", roomId)
+                .header(HttpHeaders.AUTHORIZATION, outsiderToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("CHAT_ROOM_NOT_FOUND"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-delete-not-found",
+                ApiDocsTags.CHATS,
+                ROOM_DELETE_SUMMARY,
+                ROOM_DELETE_DESCRIPTION,
+                roomDeletePathParameters(),
+                ROOM_DELETE_404));
+  }
+
+  /** 잘못된 ID·인증 누락·온보딩 토큰 오류도 프론트가 Swagger 한곳에서 확인할 수 있게 한다. */
+  @Test
+  @DisplayName("채팅방 삭제 입력과 인증 오류 문서화")
+  void deleteChatRoomRequestErrors() throws Exception {
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", "room-id")
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-delete-malformed-room-id",
+                ApiDocsTags.CHATS,
+                ROOM_DELETE_SUMMARY,
+                ROOM_DELETE_DESCRIPTION,
+                roomDeletePathParameters(),
+                ROOM_DELETE_400));
+
+    mockMvc
+        .perform(delete("/api/v1/chat-rooms/{roomId}", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-delete-unauthenticated",
+                ApiDocsTags.CHATS,
+                ROOM_DELETE_SUMMARY,
+                ROOM_DELETE_DESCRIPTION,
+                roomDeletePathParameters(),
+                ROOM_DELETE_401));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", 556L)
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-delete-onboarding-required",
+                ApiDocsTags.CHATS,
+                ROOM_DELETE_SUMMARY,
+                ROOM_DELETE_DESCRIPTION,
+                roomDeletePathParameters(),
+                ROOM_DELETE_403));
   }
 
   /** 새 방은 201과 created=true를 반환하며 Swagger 성공 예시의 정본이 된다. */

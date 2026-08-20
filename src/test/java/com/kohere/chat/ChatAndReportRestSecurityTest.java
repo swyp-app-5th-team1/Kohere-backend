@@ -3,17 +3,20 @@ package com.kohere.chat;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatRoomDetailService;
 import com.kohere.chat.application.ChatRoomListService;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.presentation.ChatRoomController;
+import com.kohere.chat.presentation.ChatStompGuideController;
 import com.kohere.chat.presentation.InquiryController;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
@@ -47,7 +50,12 @@ import org.springframework.test.web.servlet.MockMvc;
  * "온보딩을 완료한 사용자" 조건만 검증한다.
  */
 @WebMvcTest(
-    controllers = {ChatRoomController.class, InquiryController.class, ReportController.class})
+    controllers = {
+      ChatRoomController.class,
+      ChatStompGuideController.class,
+      InquiryController.class,
+      ReportController.class
+    })
 // 공통 test 프로필은 Mongock을 끈다. MVC 보안 slice에는 Mongo 연결이 없으므로 마이그레이션 러너를 올리지 않는다.
 @ActiveProfiles("test")
 @Import({
@@ -59,6 +67,7 @@ import org.springframework.test.web.servlet.MockMvc;
 class ChatAndReportRestSecurityTest {
 
   private static final String CHAT_ROOMS_PATH = "/api/v1/chat-rooms";
+  private static final String STOMP_GUIDE_PATH = "/api/v1/chat/stomp-guide";
   private static final String INQUIRY_PATH = "/api/v1/listings/listing-id/inquiries";
   private static final String REPORT_REASONS_PATH = "/api/v1/reports/reasons";
 
@@ -75,6 +84,9 @@ class ChatAndReportRestSecurityTest {
 
   // 메시지 이력 조회도 같은 Controller 생성자에 필요하다. 참여자·커서 규칙은 전용 서비스 테스트가 담당한다.
   @MockitoBean private ChatMessageHistoryService chatMessageHistoryService;
+
+  // 사용자별 삭제 서비스의 상태 변경은 전용 테스트가 검증하고 여기서는 DELETE 경로의 ROLE_USER 경계만 확인한다.
+  @MockitoBean private ChatRoomDeletionService chatRoomDeletionService;
 
   // 신고 유스케이스 구현 여부와 무관하게 SecurityConfig의 `/reports/**` 권한만 검증하도록 서비스는 대체한다.
   @MockitoBean private ReportService reportService;
@@ -118,6 +130,64 @@ class ChatAndReportRestSecurityTest {
         .perform(get(CHAT_ROOMS_PATH).with(authentication(authenticatedUser)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
+  }
+
+  /** 채팅방 삭제는 개인 상태 변경이므로 인증되지 않은 사용자가 호출할 수 없다. */
+  @Test
+  @DisplayName("채팅방 삭제 REST: 토큰이 없으면 401")
+  void deleteChatRoom_withoutAuthentication_returnsUnauthorized() throws Exception {
+    mockMvc
+        .perform(delete("/api/v1/chat-rooms/{roomId}", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 정식 사용자만 삭제할 수 있고 성공 시 JSON 없이 204를 받는지 검증한다. */
+  @Test
+  @DisplayName("채팅방 삭제 REST: ROLE_USER는 204를 받는다")
+  void deleteChatRoom_withUserRole_reachesController() throws Exception {
+    var authenticatedUser =
+        new UsernamePasswordAuthenticationToken(
+            new AuthPrincipal(7L, true), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+    mockMvc
+        .perform(
+            delete("/api/v1/chat-rooms/{roomId}", 556L).with(authentication(authenticatedUser)))
+        .andExpect(status().isNoContent());
+  }
+
+  /** STOMP 안내도 실제 채팅 사용자용 계약이므로 인증되지 않은 호출을 401로 차단한다. */
+  @Test
+  @DisplayName("STOMP 안내 REST: 토큰이 없으면 401")
+  void stompGuide_withoutAuthentication_returnsUnauthorized() throws Exception {
+    mockMvc
+        .perform(get(STOMP_GUIDE_PATH))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 인증만 끝난 온보딩 계정이 anyRequest 규칙으로 안내 API를 실행하지 못하게 ROLE_USER 경계를 검증한다. */
+  @Test
+  @DisplayName("STOMP 안내 REST: ROLE_ONBOARDING은 403")
+  void stompGuide_withOnboardingRole_returnsForbidden() throws Exception {
+    mockMvc
+        .perform(get(STOMP_GUIDE_PATH).with(user("7").roles("ONBOARDING")))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"));
+  }
+
+  /** 온보딩을 완료한 사용자는 Swagger 안내 응답까지 정상적으로 조회할 수 있다. */
+  @Test
+  @DisplayName("STOMP 안내 REST: ROLE_USER는 컨트롤러까지 통과")
+  void stompGuide_withUserRole_reachesController() throws Exception {
+    var authenticatedUser =
+        new UsernamePasswordAuthenticationToken(
+            new AuthPrincipal(7L, true), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+    mockMvc
+        .perform(get(STOMP_GUIDE_PATH).with(authentication(authenticatedUser)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.webSocketEndpoint").value("/ws/chat"));
   }
 
   /** 문의 생성도 사용자별 채팅방을 만드는 보호 작업이므로 익명 요청을 401로 막는지 검증한다. */
