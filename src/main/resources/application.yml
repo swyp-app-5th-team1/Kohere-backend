@@ -1,3 +1,8 @@
+server:
+  # dev의 Caddy와 prod의 ALB가 HTTPS를 종료한 뒤 Spring에는 HTTP로 전달한다. Tomcat이 신뢰 가능한
+  # 내부 프록시의 X-Forwarded-*를 읽어야 외부의 원래 https Origin과 /ws/chat 요청 주소를 정확히 비교할 수 있다.
+  forward-headers-strategy: native
+
 spring:
   application:
     name: kohere
@@ -59,6 +64,17 @@ logging:
 # 인증·토큰 정책값(비밀 아님). 시크릿·환경 의존값(secret·pepper·oidc audience·datasource)은
 # 프로파일별 파일에서 주입한다 — base에는 운영-위험 기본값(시크릿 폴백·접속정보)을 두지 않는다.
 app:
+  chat:
+    websocket:
+      # 값을 비워 두면 Spring의 안전한 기본값인 같은 Origin만 허용한다. 웹과 API가 다른 Origin으로
+      # 분리되는 환경에서만 콤마로 구분한 정확한 Origin을 환경변수로 주입하며 '*'는 사용하지 않는다.
+      allowed-origins: ${APP_CHAT_WEBSOCKET_ALLOWED_ORIGINS:}
+      # Simple Broker는 통신이 없을 때 10초마다 연결 상태를 확인한다. REST polling 주기와는 무관하다.
+      heartbeat-interval: 10s
+      # WebSocket 조각을 Spring이 합친 뒤의 STOMP frame 전체 상한이다. TEXT 3,000자 제한과 별개다.
+      message-size-limit-bytes: 65536
+      # handshake만 열어 둔 익명 연결이 CONNECT 없이 자원을 계속 점유하지 못하게 한다.
+      time-to-first-message: 10s
   jwt:
     issuer: kohere
     access-ttl-seconds: 3600 # access 1시간 (ADR-0011)

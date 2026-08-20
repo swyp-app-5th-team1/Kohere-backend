@@ -125,6 +125,19 @@ class JwtAuthenticationFilterMdcTest {
     assertThat(MDC.get(LogFields.USER_ID)).isEqualTo(LogFields.ANONYMOUS);
   }
 
+  @Test
+  @DisplayName("WebSocket handshake의 HTTP Bearer는 무시하고 STOMP CONNECT 인증과 섞지 않는다")
+  void chatWebSocketHandshake_ignoresHttpBearer() throws Exception {
+    doFilter("/ws/chat", bearer(signedToken("7", Instant.now().plusSeconds(3600))));
+
+    // handshake HTTP header는 인증 정본이 아니므로 유효한 token이어도 사용자 신원을 만들지 않는다.
+    assertThat(MDC.get(LogFields.USER_ID)).isEqualTo(LogFields.ANONYMOUS);
+    assertThat(
+            org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .getAuthentication())
+        .isNull();
+  }
+
   private void doFilter(String path, String authorizationHeader) throws Exception {
     MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
     request.setRequestURI(path);

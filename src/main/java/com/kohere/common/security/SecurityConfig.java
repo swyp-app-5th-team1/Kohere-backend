@@ -74,7 +74,9 @@ public class SecurityConfig {
                     // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
                     .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login")
                     .permitAll()
-                    .requestMatchers("/actuator/health", "/swagger-ui/**")
+                    // WebSocket handshake는 통로만 만드는 HTTP upgrade 요청이다. 실제 사용자는 직후
+                    // STOMP CONNECT의 Bearer JWT로 다시 인증하므로 이 한 경로만 공개한다.
+                    .requestMatchers("/actuator/health", "/swagger-ui/**", "/ws/chat")
                     .permitAll()
                     // 도로명 주소 검색(ADR-0042)과 인근 역 검색(ADR-0044)은 등록 폼 전용이라
                     // 같은 /api/v1/listings/* 아래지만 공개하지 않는다.
@@ -159,7 +161,8 @@ public class SecurityConfig {
                     .hasRole("USER")
                     // 채팅방 목록·상세·메시지 이력 등 /chat-rooms 아래 REST는 모두 개인 대화 데이터를 다룬다.
                     // 참여자 여부는 서비스가 방마다 추가 검증하지만, 여기서는 최소 조건인 ROLE_USER를 공통 적용한다.
-                    // WebSocket handshake와 STOMP 프레임 인증은 별도 6단계 범위이므로 이 HTTP 매처에 섞지 않는다.
+                    // WebSocket handshake는 위 공개 경로에서 통로만 열고, STOMP 프레임 인증은 채팅 모듈의
+                    // ChannelInterceptor가 별도로 담당하므로 이 REST 매처에 섞지 않는다.
                     .requestMatchers("/api/v1/chat-rooms/**")
                     .hasRole("USER")
                     // 신고 사유 조회와 신고 접수에는 사용자 언어·신고자 식별자가 필요하다. 일반 사용자 신고 API 전체를

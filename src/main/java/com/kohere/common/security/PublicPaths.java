@@ -28,7 +28,10 @@ final class PublicPaths {
     "/api/v1/auth/signup",
     "/api/v1/auth/login",
     "/actuator/health",
-    "/swagger-ui/**"
+    "/swagger-ui/**",
+    // WebSocket handshake는 인증 결과를 만들지 않는 transport 진입점이다. 실수로 남은 HTTP
+    // Authorization header는 무시하고, 실제 사용자는 STOMP CONNECT header에서 다시 인증한다.
+    "/ws/chat"
   };
 
   private static final AntPathMatcher MATCHER = new AntPathMatcher();
@@ -44,12 +47,27 @@ final class PublicPaths {
    * @return 공개 티어 경로면 {@code true}
    */
   static boolean matches(HttpServletRequest request) {
-    String path = request.getRequestURI().substring(request.getContextPath().length());
+    String path = pathOf(request);
     for (String pattern : ALL) {
       if (MATCHER.match(pattern, path)) {
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * 현재 요청이 채팅 WebSocket handshake인지 확인한다.
+   *
+   * <p>다른 공개 경로는 유효한 HTTP Bearer가 있으면 선택적으로 사용자 신원을 세울 수 있지만, 채팅 handshake는 그 값을 인증 근거로 쓰면 안 된다.
+   * 브라우저가 임의 HTTP header를 안정적으로 붙일 수 없기 때문에 실제 정본은 STOMP CONNECT의 Bearer token 하나뿐이다.
+   */
+  static boolean isChatWebSocketHandshake(HttpServletRequest request) {
+    return "/ws/chat".equals(pathOf(request));
+  }
+
+  /** DispatcherServlet 전 단계에서도 같은 방식으로 비교하도록 context path를 제외한 경로를 만든다. */
+  private static String pathOf(HttpServletRequest request) {
+    return request.getRequestURI().substring(request.getContextPath().length());
   }
 }

@@ -16,7 +16,7 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 ```
 모바일 앱 ──HTTPS(443, 항상)──▶ EIP(+도메인) ──▶ EC2 1대 (docker-compose)
 임대인 웹(브라우저) ──HTTPS──────▶  (같은 도메인)      ├─ caddy:2     (TLS 종단·자동 HTTPS, ADR-0022)
-                                                  │                 ├ /api·/swagger-ui·/actuator → app
+                                                  │                 ├ /api·/ws/chat·/swagger-ui·/actuator → app
                                                   │                 └ 나머지 → /opt/kohere/web/current (SPA)
                                                   ├─ app         (Spring Boot · ${app_image})
                                                   ├─ mysql:8.0   (auth·user)        ┐ 데이터는

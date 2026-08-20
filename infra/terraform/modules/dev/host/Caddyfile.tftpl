@@ -5,9 +5,10 @@
 ${caddy_site} {
   encode zstd gzip
 
-  # ① 백엔드로 넘길 경로 — API · Swagger UI(jar 번들 정적) · actuator.
+  # ① 백엔드로 넘길 경로 — API · 채팅 WebSocket · Swagger UI(jar 번들 정적) · actuator.
   #    springdoc 을 쓰지 않아 /v3/api-docs 는 없다. handle_path(프리픽스 제거)가 아니다 — 앱이 전체 경로를 그대로 받아야 한다.
-  @backend path /api/* /swagger-ui /swagger-ui/* /actuator/*
+  #    Caddy reverse_proxy는 WebSocket Upgrade를 자동 처리하므로 /ws/chat을 같은 app upstream에 넘기기만 하면 된다.
+  @backend path /api/* /ws/chat /swagger-ui /swagger-ui/* /actuator/*
   handle @backend {
     reverse_proxy app:8080
   }

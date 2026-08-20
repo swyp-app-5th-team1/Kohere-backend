@@ -41,6 +41,9 @@ ext {
 
 dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-web'
+  // 1:1 채팅의 WebSocket handshake와 STOMP CONNECT 통로를 연다.
+  // 실제 사용자 인증은 HTTP 세션이 아니라 CONNECT native header의 JWT를 검증한다.
+  implementation 'org.springframework.boot:spring-boot-starter-websocket'
   implementation 'org.springframework.boot:spring-boot-starter-validation'
   // BookingCreatedEvent처럼 반드시 처리돼야 하는 모듈 이벤트를 MySQL에 기록한다.
   // starter-jpa가 starter-core를 포함하므로 모듈 구조 검사·기본 이벤트 기능도 그대로 유지된다.

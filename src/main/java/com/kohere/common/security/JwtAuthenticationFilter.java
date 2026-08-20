@@ -48,6 +48,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private final JwtTokenService jwtTokenService;
 
+  /**
+   * WebSocket handshake에 우연히 실린 HTTP Bearer는 아예 해석하지 않는다.
+   *
+   * <p>{@code permitAll}은 이 필터보다 뒤에서 평가된다. 따라서 여기서 명시적으로 제외하지 않으면 유효한 HTTP token이 handshake의 사용자로
+   * 먼저 등록되어, 직후 STOMP CONNECT token이라는 단일 인증 정본과 충돌할 수 있다.
+   */
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    return PublicPaths.isChatWebSocketHandshake(request);
+  }
+
   @Override
   protected void doFilterInternal(
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
