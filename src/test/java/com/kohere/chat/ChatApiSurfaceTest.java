@@ -8,6 +8,7 @@ import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.presentation.ChatRoomController;
 import com.kohere.chat.presentation.InquiryController;
+import com.kohere.common.security.AuthPrincipal;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Arrays;
@@ -32,12 +33,14 @@ class ChatApiSurfaceTest {
   void inquiryReturnsCreatedOnlyForANewRoom() {
     ChatService chatService = mock(ChatService.class);
     InquiryController controller = new InquiryController(chatService);
-    when(chatService.createInquiry("listing-id"))
+    AuthPrincipal principal = new AuthPrincipal(7L, true);
+    when(chatService.createInquiry(7L, "listing-id"))
         .thenReturn(new InquiryResponse(556L, true), new InquiryResponse(556L, false));
 
-    assertThat(controller.createInquiry("listing-id").getStatusCode())
+    assertThat(controller.createInquiry(principal, "listing-id").getStatusCode())
         .isEqualTo(HttpStatus.CREATED);
-    assertThat(controller.createInquiry("listing-id").getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(controller.createInquiry(principal, "listing-id").getStatusCode())
+        .isEqualTo(HttpStatus.OK);
   }
 
   /**

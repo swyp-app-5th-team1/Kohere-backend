@@ -9,6 +9,7 @@ const TAG_ORDER = [
   "Users",
   "Diagnosis",
   "Bookings",
+  "Chats",
   "Quiz",
   "LifeTips",
   "Listings",

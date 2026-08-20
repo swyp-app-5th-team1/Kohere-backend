@@ -75,6 +75,7 @@ public enum ErrorCode {
   BOOKING_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
   CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "채팅방을 찾을 수 없습니다."),
   CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 문의할 수 없습니다."),
+  CHAT_UNAVAILABLE(HttpStatus.FORBIDDEN, "현재 상대방과 채팅을 시작할 수 없습니다."),
   CHAT_ROOM_INACTIVE(HttpStatus.UNPROCESSABLE_ENTITY, "비활성 채팅방입니다."),
 
   // --- 커뮤니티 (community) — docs/api/specs/05-community.md ---

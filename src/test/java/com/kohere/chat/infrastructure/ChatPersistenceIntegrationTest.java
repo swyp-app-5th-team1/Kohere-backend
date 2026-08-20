@@ -101,7 +101,7 @@ class ChatPersistenceIntegrationTest {
     Message storedCard = messageRepository.findById(savedCard.getId()).orElseThrow();
 
     assertThat(storedRoom.getListingSnapshot())
-        .isEqualTo(new ListingSnapshot("Hongdae Studio", null, "Seogyo-dong, Mapo-gu"));
+        .isEqualTo(new ListingSnapshot("Hongdae Studio", "Seogyo-dong, Mapo-gu"));
     assertThat(savedMembers)
         .extracting(ChatRoomMember::getRole)
         .containsExactly(ChatParticipantRole.TENANT, ChatParticipantRole.LANDLORD);
@@ -310,7 +310,7 @@ class ChatPersistenceIntegrationTest {
         .tenantId(101L)
         .landlordId(202L)
         .category(ChatCategory.LANDLORD)
-        .listingSnapshot(new ListingSnapshot("Hongdae Studio", null, "Seogyo-dong, Mapo-gu"))
+        .listingSnapshot(new ListingSnapshot("Hongdae Studio", "Seogyo-dong, Mapo-gu"))
         .createdAt(createdAt)
         .updatedAt(createdAt)
         .build();

@@ -28,6 +28,9 @@ public final class ApiDocsTags {
   /** 매물 신청(예약) 생성·조회·삭제·차단·신고 (specs/04-booking-inquiry-chat.md). */
   public static final String BOOKINGS = "Bookings";
 
+  /** 1:1 매물 채팅방·메시지·차단·신고 (architecture/chat, specs/04-booking-inquiry-chat.md). */
+  public static final String CHATS = "Chats";
+
   /** 한국 생활 학습 퀴즈 조회·채점 (specs/06-gamification.md). */
   public static final String QUIZ = "Quiz";
 

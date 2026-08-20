@@ -67,10 +67,7 @@ class ChatContractTest {
             556L,
             ChatParticipantRole.LANDLORD,
             new ChatListingSummaryResponse(
-                "6858e2000000000000000001",
-                "Hongdae Studio share",
-                "https://cdn.example.com/listings/cover.jpg",
-                "Seogyo-dong, Mapo-gu"),
+                "6858e2000000000000000001", "Hongdae Studio share", "Seogyo-dong, Mapo-gu"),
             new ChatCounterpartResponse(7L, "Gil dong Hong"),
             new ChatLastMessageResponse(70051L, MessageType.TEXT, "안녕하세요", SENT_AT),
             false);
@@ -82,6 +79,8 @@ class ChatContractTest {
             "chatRoomId", "myRole", "listing", "counterpart", "lastMessage", "blocked");
     assertThat(json.has("category")).isFalse();
     assertThat(json.has("unreadCount")).isFalse();
+    assertThat(json.path("listing").has("thumbnailUrl")).isFalse();
+    assertThat(json.path("counterpart").has("profileImageUrl")).isFalse();
   }
 
   /** TEXT가 원문을 잃지 않은 채 현재 수신자용 번역본을 별도 객체로 제공하는지 확인한다. */

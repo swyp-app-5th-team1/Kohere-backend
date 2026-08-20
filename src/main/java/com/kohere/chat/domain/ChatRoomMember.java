@@ -12,7 +12,7 @@ import lombok.Getter;
  * 나타낸다. 일반 사용자용 Undo나 복원 API는 제공하지 않는다.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class ChatRoomMember {
 
   /** DB가 발급하는 참여자 상태 행 번호이며 신규 저장 전에는 {@code null}이다. */
@@ -44,4 +44,20 @@ public class ChatRoomMember {
 
   /** 이 사용자의 숨김·재표시 상태를 마지막으로 변경한 UTC 시각이다. */
   private final Instant updatedAt;
+
+  /**
+   * 사용자가 같은 매물에서 직접 문의해 기존 방으로 다시 들어올 때 목록에 방을 표시한다.
+   *
+   * <p>이 동작은 삭제 복원이 아니다. {@code historyHiddenThroughMessageId}와 {@code deleteRequestedAt}은 그대로 두고
+   * 현재 목록 표시 여부만 되돌린다. 이미 보이는 방이면 새 객체나 불필요한 UPDATE를 만들지 않고 자기 자신을 반환한다.
+   *
+   * @param now 방을 다시 표시한 서버 UTC 시각
+   * @return 표시 상태가 반영된 참여자 상태
+   */
+  public ChatRoomMember showAgain(Instant now) {
+    if (roomHiddenAt == null) {
+      return this;
+    }
+    return toBuilder().roomHiddenAt(null).updatedAt(now).build();
+  }
 }

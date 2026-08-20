@@ -1,5 +1,6 @@
 package com.kohere.listing.application;
 
+import com.kohere.listing.api.ChatListingView;
 import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.api.RoomOfferBookingView;
@@ -122,6 +123,20 @@ final class ListingResponseMapper {
         offer.pricing().deposit(),
         offer.pricing().monthlyRent(),
         listing.getLandlordId());
+  }
+
+  /**
+   * chat 모듈이 채팅방 참여자와 매물 표시 사본을 만들 때 사용할 공개 뷰로 변환한다.
+   *
+   * <p>채팅방의 매물 제목과 주소는 양쪽 참여자가 공유하는 사본이므로 외국인 앱의 기본 언어인 영어를 사용한다. 매물 이미지는 일반 채팅방 목록·헤더에서 사용하지 않고,
+   * 신청 카드가 별도 사본으로 보존하므로 이 뷰에 포함하지 않는다.
+   */
+  static ChatListingView toChatListingView(Listing listing) {
+    return new ChatListingView(
+        listing.getId(),
+        listing.getLandlordId(),
+        listing.getTitle().resolve(LocalizedText.DEFAULT_LANGUAGE),
+        listing.getAddress().fullAddress().resolve(LocalizedText.DEFAULT_LANGUAGE));
   }
 
   /** 지도 SDK가 개별 마커로 사용할 최소 좌표 DTO를 만든다. */

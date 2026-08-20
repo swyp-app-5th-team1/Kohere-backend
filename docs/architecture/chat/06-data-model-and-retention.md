@@ -29,7 +29,7 @@
 | `listing_id` | `VARCHAR(24) NOT NULL` | MongoDB 매물 ObjectId 문자열 |
 | `tenant_id` | `BIGINT NOT NULL` | 세입자 `users.id` 값 참조 |
 | `landlord_id` | `BIGINT NOT NULL` | 임대인 `users.id` 값 참조 |
-| `listing_snapshot` | `JSON NOT NULL` | 생성 당시 매물 제목·대표 이미지·주소 |
+| `listing_snapshot` | `JSON NOT NULL` | 생성 당시 매물 제목·주소 |
 | `last_message_id` | `BIGINT NULL` | 현재 마지막 메시지 ID, 빈 방이면 null |
 | `last_message_at` | `DATETIME(6) NULL` | 현재 마지막 메시지 시각, 빈 방이면 null |
 | `created_at`, `updated_at` | `DATETIME(6) NOT NULL` | 생성·변경 시각 |

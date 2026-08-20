@@ -60,12 +60,16 @@
 
 `POST /api/v1/listings/{listingId}/inquiries`
 
-요청 본문은 없다. 서버가 JWT에서 `tenantId`를 얻고 listing 모듈에서 `landlordId`를 찾는다.
+요청 본문은 없다. 서버가 JWT에서 `tenantId`를 얻고 listing 모듈에서 `landlordId`를 찾는다. 따라서 앱이 사용자 ID를 보내거나 상대 사용자를 직접 선택하지 않는다.
 
 ```json
 {
-  "chatRoomId": 556,
-  "created": true
+  "success": true,
+  "data": {
+    "chatRoomId": 556,
+    "created": true
+  },
+  "error": null
 }
 ```
 
@@ -75,6 +79,14 @@
 - 기존 방이면 `200 OK`, `created=false`
 - 본인 매물 문의와 차단 관계는 거부
 - 동시 요청에서도 `(listingId, tenantId, landlordId)` UNIQUE로 한 방만 생성
+
+주요 오류는 다음과 같다.
+
+- 로그인하지 않았거나 토큰이 만료됨: `401`
+- 세입자가 아닌 사용자가 호출함: `403 FORBIDDEN`
+- 두 사용자 중 어느 방향이든 차단 관계임: `403 CHAT_UNAVAILABLE`
+- 매물이 없거나 공개 상태가 아님: `404 LISTING_NOT_FOUND`
+- 본인이 소유한 매물에 문의함: `422 CHAT_SELF_INQUIRY_NOT_ALLOWED`
 
 이 endpoint는 이름이 `inquiries`이지만 실질적으로 “같은 방을 보장하고 roomId를 반환하는” 멱등 API다. 문의하기와 신청 완료 후 진입이 함께 사용한다.
 
@@ -97,7 +109,6 @@
   "listing": {
     "listingId": "6858e2000000000000000001",
     "title": "Hongdae Studio share",
-    "thumbnailUrl": "https://cdn.example.com/listings/cover.jpg",
     "address": "Seogyo-dong, Mapo-gu"
   },
   "counterpart": {
@@ -118,6 +129,8 @@
 
 `counterpart.displayName`은 user 공개 API가 제공하는 현재 표시 이름이다. `blocked=true`는 어느 방향이든 차단 관계가 있어 새 채팅을 보낼 수 없다는 뜻이며, 상대가 나를 차단했는지는 별도 필드로 노출하지 않는다.
 
+현재 user 모듈에는 프로필 이미지 계약이 없으므로 `counterpart`에는 이미지 URL을 넣지 않는다. 앱은 채팅방 목록과 헤더에서 기본 프로필 아이콘을 표시한다. `listing`에도 일반 채팅방에서 사용하지 않는 매물 대표 이미지를 넣지 않으며, 매물 이미지가 필요한 신청 카드는 `bookingCard.listing.thumbnailUrl`을 별도로 사용한다. 이 내용은 목록·단건 Swagger 응답 필드 설명에도 동일하게 명시한다.
+
 마지막 메시지가 내가 받은 메시지이고 현재 언어 번역본이 저장돼 있으면 preview는 번역본을 우선 사용한다. 내가 보낸 메시지이거나 번역본이 없으면 원문을 사용한다.
 
 마지막 메시지가 `BOOKING_CARD`이면 앱이 `myRole`에 맞는 고정 문구를 표시한다. 예를 들어 임차인은 “신청이 접수되었습니다”, 임대인은 “새로운 입주 신청이 도착했습니다”로 표시할 수 있다. 이 고정 문구는 Google 번역 결과가 아니라 앱의 `ko/en` UI 문구다.
@@ -137,7 +150,6 @@
   "listing": {
     "listingId": "6858e2000000000000000001",
     "title": "Hongdae Studio share",
-    "thumbnailUrl": "https://cdn.example.com/listings/cover.jpg",
     "address": "Seogyo-dong, Mapo-gu"
   },
   "counterpart": {

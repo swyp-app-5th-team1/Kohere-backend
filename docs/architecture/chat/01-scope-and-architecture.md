@@ -197,13 +197,13 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 
 필요한 작은 공개 interface:
 
-- `ChatListingQueryService`: `listingId`로 공개 상태·landlordId·제목·대표 이미지 조회
+- `ChatListingQueryService`: `listingId`로 공개 상태·landlordId·제목·주소 조회
 - `ChatCounterpartQueryService`: userId로 채팅 표시 이름 조회
 - `ChatReportQueryService`: 방 참여자·상대·증거 사본 조회
 - `MessageTranslationPort`: 원문과 대상 언어를 받아 번역 결과 반환
 - `BookingCardQueryService`: bookingId로 카드에 필요한 기존 신청 상세 데이터를 반환
 
-매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 표시 정보의 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 초기 방 목록에 억지로 포함하지 않는다.
+매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 제목·주소 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 채팅 API는 이미지 URL을 반환하지 않고 앱이 기본 프로필 아이콘을 표시한다. 매물 대표 이미지는 일반 방 응답이 아니라 이미지가 실제로 보이는 `BOOKING_CARD`에만 포함한다.
 
 ## 7. 외부 예제 참고 범위
 

@@ -3,9 +3,11 @@ package com.kohere.chat.presentation;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.common.response.ApiResponse;
+import com.kohere.common.security.AuthPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,13 +34,15 @@ public class InquiryController {
    * <p>신규 생성은 {@code 201 Created}, 멱등 재호출로 기존 방을 반환하면 {@code 200 OK}다. 두 경우 모두 앱은 반환된 동일한 {@code
    * chatRoomId}로 화면을 연다.
    *
+   * @param principal JWT 검증을 마친 로그인 사용자. 이 ID를 임차인으로 사용한다.
    * @param listingId 문의할 매물 식별자
    * @return 보장된 채팅방 ID와 이번 요청의 생성 여부
    */
   @PostMapping("/inquiries")
   public ResponseEntity<ApiResponse<InquiryResponse>> createInquiry(
-      @PathVariable String listingId) {
-    InquiryResponse response = chatService.createInquiry(listingId);
+      @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String listingId) {
+    // tenantId를 body나 path에서 받지 않아 다른 사용자 이름으로 채팅방을 만드는 요청 변조를 막는다.
+    InquiryResponse response = chatService.createInquiry(principal.userId(), listingId);
     HttpStatus status = response.created() ? HttpStatus.CREATED : HttpStatus.OK;
     return ResponseEntity.status(status).body(ApiResponse.success(response));
   }

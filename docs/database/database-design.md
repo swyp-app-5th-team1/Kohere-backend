@@ -847,7 +847,7 @@
 | `listing_id` | VARCHAR(24) | NOT NULL · Mongo `listings._id` ObjectId 문자열 값 참조 |
 | `tenant_id` | BIGINT | NOT NULL · 세입자 `users.id` 값 참조 |
 | `landlord_id` | BIGINT | NOT NULL · 임대인 `users.id` 값 참조 |
-| `listing_snapshot` | JSON | NOT NULL · 생성 당시 `title`·`thumbnailUrl`·`address` |
+| `listing_snapshot` | JSON | NOT NULL · 생성 당시 `title`·`address` |
 | `last_message_id` | BIGINT | NULL · 현재 마지막 `chat_messages.id`를 가리키는 조회용 포인터 |
 | `last_message_at` | DATETIME(6) | NULL · 마지막 메시지의 서버 저장 시각 |
 | `created_at` | DATETIME(6) | NOT NULL · 생성 시각(UTC) |

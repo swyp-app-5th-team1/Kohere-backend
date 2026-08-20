@@ -8,8 +8,7 @@
  * 밖이다(docs/api/specs/02-diagnosis-recommendation.md §7).
  *
  * <p>chat은 {@link com.kohere.listing.api.ChatListingQueryService}로 공개 매물의 실제 임대인과 화면 snapshot만
- * 가져간다. 클라이언트가 임대인 번호를 지정하게 하지 않고 listing 정본에서 결정하므로 다른 사람을 상대방으로 넣는 요청 변조를 막는다. 실제 조회 구현체는 채팅 기능
- * 3단계에서 연결한다.
+ * 가져간다. 클라이언트가 임대인 번호를 지정하게 하지 않고 listing 정본에서 결정하므로 다른 사람을 상대방으로 넣는 요청 변조를 막는다.
  */
 @org.springframework.modulith.NamedInterface("api")
 package com.kohere.listing.api;

@@ -1,6 +1,7 @@
 package com.kohere.chat;
 
 import static org.mockito.BDDMockito.given;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +14,7 @@ import com.kohere.chat.presentation.ChatRoomController;
 import com.kohere.chat.presentation.InquiryController;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
+import com.kohere.common.security.AuthPrincipal;
 import com.kohere.common.security.JwtAuthenticationFilter;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.common.security.RestAccessDeniedHandler;
@@ -26,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -124,10 +128,14 @@ class ChatAndReportRestSecurityTest {
   @Test
   @DisplayName("문의 REST: ROLE_USER는 컨트롤러까지 통과")
   void inquiry_withUserRole_reachesController() throws Exception {
-    given(chatService.createInquiry("listing-id")).willReturn(new InquiryResponse(101L, true));
+    given(chatService.createInquiry(7L, "listing-id")).willReturn(new InquiryResponse(101L, true));
+
+    var authenticatedUser =
+        new UsernamePasswordAuthenticationToken(
+            new AuthPrincipal(7L, true), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
 
     mockMvc
-        .perform(post(INQUIRY_PATH).with(user("7").roles("USER")))
+        .perform(post(INQUIRY_PATH).with(authentication(authenticatedUser)))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.data.chatRoomId").value(101L));
   }

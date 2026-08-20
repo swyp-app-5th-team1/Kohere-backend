@@ -8,7 +8,7 @@ import java.util.Optional;
  * <p>chat 모듈은 listing 저장소나 내부 엔티티를 직접 조회하지 않고 이 인터페이스에만 의존한다. 이렇게 하면 문의 채팅방 생성에 필요한 정보의 범위가 명확해지고,
  * MongoDB 구조가 바뀌어도 chat 모듈까지 함께 수정되는 것을 막는다.
  *
- * <p>이번 단계에서는 모듈 사이의 계약만 정의한다. 실제 listing 조회 구현체와 문의 생성 연결은 3단계에서 추가한다.
+ * <p>조회 구현은 listing 모듈이 소유하고, chat 모듈은 반환된 공개 뷰만 사용한다.
  */
 public interface ChatListingQueryService {
 
