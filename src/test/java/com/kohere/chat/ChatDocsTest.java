@@ -14,6 +14,12 @@ import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_403;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_404;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_400;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_401;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_403;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_404;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.ROOM_BLOCK_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_400;
 import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_401;
 import static com.kohere.docs.ChatDocsFields.ROOM_DELETE_403;
@@ -40,6 +46,7 @@ import static com.kohere.docs.ChatDocsFields.inquiryResponseFields;
 import static com.kohere.docs.ChatDocsFields.messageHistoryPathParameters;
 import static com.kohere.docs.ChatDocsFields.messageHistoryQueryParameters;
 import static com.kohere.docs.ChatDocsFields.messageHistoryResponseFields;
+import static com.kohere.docs.ChatDocsFields.roomBlockPathParameters;
 import static com.kohere.docs.ChatDocsFields.roomDeletePathParameters;
 import static com.kohere.docs.ChatDocsFields.roomDetailPathParameters;
 import static com.kohere.docs.ChatDocsFields.roomDetailResponseFields;
@@ -50,6 +57,7 @@ import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -855,6 +863,117 @@ class ChatDocsTest {
                 ROOM_DELETE_DESCRIPTION,
                 roomDeletePathParameters(),
                 ROOM_DELETE_403));
+  }
+
+  /** 차단 대상은 body가 아니라 실제 방 참여자에서 찾고 기존 메시지는 유지하는 동작을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 상대방 차단 문서화")
+  void blockChatRoomCounterpart() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    Instant sentAt = Instant.parse("2026-08-20T11:20:30.123456Z");
+    Message existingMessage =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(LANDLORD_ID)
+                .type(MessageType.TEXT)
+                .content("차단 전 메시지는 그대로 유지됩니다.")
+                .clientMessageId(UUID.fromString("74fb0615-8980-49a9-b6a2-29cfc832222f"))
+                .sentAt(sentAt)
+                .build());
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/block", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""))
+        .andDo(
+            document(
+                "chat-room-block",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(ROOM_BLOCK_SUMMARY)
+                    .description(ROOM_BLOCK_DESCRIPTION),
+                pathParameters(roomBlockPathParameters())));
+
+    // 프런트가 상대 userId를 보내지 않아도 서버가 방의 다른 참여자인 임대인 42번을 정확히 선택한다.
+    verify(userBlockService).block(TENANT_ID, LANDLORD_ID);
+    // 차단은 채팅방 삭제가 아니므로 차단 전에 저장된 원문을 지우지 않는다.
+    assertThat(messageRepository.findById(existingMessage.getId())).isPresent();
+  }
+
+  /** 비참여자가 roomId를 추측해도 방 존재나 실제 상대방을 알아내지 못하도록 404로 통일한다. */
+  @Test
+  @DisplayName("채팅방 차단 비참여자 404 문서화")
+  void blockChatRoomCounterpartAsOutsider() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    String outsiderToken = bearer(jwtTokenService.issueAccessToken(999L));
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/block", roomId)
+                .header(HttpHeaders.AUTHORIZATION, outsiderToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("CHAT_ROOM_NOT_FOUND"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-block-not-found",
+                ApiDocsTags.CHATS,
+                ROOM_BLOCK_SUMMARY,
+                ROOM_BLOCK_DESCRIPTION,
+                roomBlockPathParameters(),
+                ROOM_BLOCK_404));
+  }
+
+  /** 잘못된 roomId·인증 누락·온보딩 토큰 오류를 프론트가 Swagger 한곳에서 확인할 수 있게 한다. */
+  @Test
+  @DisplayName("채팅방 차단 입력과 인증 오류 문서화")
+  void blockChatRoomCounterpartRequestErrors() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/block", "room-id")
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-block-malformed-room-id",
+                ApiDocsTags.CHATS,
+                ROOM_BLOCK_SUMMARY,
+                ROOM_BLOCK_DESCRIPTION,
+                roomBlockPathParameters(),
+                ROOM_BLOCK_400));
+
+    mockMvc
+        .perform(post("/api/v1/chat-rooms/{roomId}/block", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-block-unauthenticated",
+                ApiDocsTags.CHATS,
+                ROOM_BLOCK_SUMMARY,
+                ROOM_BLOCK_DESCRIPTION,
+                roomBlockPathParameters(),
+                ROOM_BLOCK_401));
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/block", 556L)
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-block-onboarding-required",
+                ApiDocsTags.CHATS,
+                ROOM_BLOCK_SUMMARY,
+                ROOM_BLOCK_DESCRIPTION,
+                roomBlockPathParameters(),
+                ROOM_BLOCK_403));
   }
 
   /** 새 방은 201과 created=true를 반환하며 Swagger 성공 예시의 정본이 된다. */

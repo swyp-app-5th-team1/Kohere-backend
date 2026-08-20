@@ -488,6 +488,61 @@ public final class ChatDocsFields {
   public static final String[] ROOM_DELETE_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] ROOM_DELETE_404 = {"CHAT_ROOM_NOT_FOUND"};
 
+  public static final String ROOM_BLOCK_SUMMARY = "채팅방 상대방 차단";
+
+  public static final String ROOM_BLOCK_DESCRIPTION =
+      """
+      현재 채팅방의 두 참여자 중 로그인 사용자가 아닌 상대방을 차단한다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 필수. 온보딩을 완료한 사용자의 access token을 보낸다.
+
+      **프론트 요청 방법**
+
+      - 채팅방 목록 또는 상세 응답에서 받은 숫자 `chatRoomId`를 URL의 `roomId`에 넣는다.
+      - 요청 body와 상대 사용자 ID는 보내지 않는다.
+      - 서버가 실제 채팅방 참여자 두 명을 확인하고 로그인 사용자가 아닌 상대방을 찾는다.
+
+      ```http
+      POST /api/v1/chat-rooms/556/block
+      ```
+
+      **성공 응답 처리**
+
+      - 성공 status는 `204 No Content`이고 JSON 응답 본문은 없다.
+      - 프론트는 `204`를 받으면 메시지 입력창을 비활성화하고 현재 화면의 `blocked`를 true로 처리한다.
+      - 이미 차단한 상대에게 같은 요청을 다시 보내도 `204`다.
+
+      **차단의 정확한 의미**
+
+      - 채팅방 한 개가 아니라 두 사용자 사이의 전역 차단이다.
+      - 차단 이전의 채팅방과 메시지는 양쪽 모두 그대로 조회할 수 있다.
+      - 차단 후에는 어느 방향으로도 새 TEXT를 저장하거나 실시간 전달하지 않는다.
+      - 차단만으로 채팅방을 목록에서 숨기지 않는다. 숨기려면 채팅방 삭제 API를 별도로 호출한다.
+      - 차단 해제는 기존 `DELETE /api/v1/users/me/blocks/{userId}`를 사용한다.
+
+      **보안 규칙**
+
+      - 방이 없거나 요청자가 참여자가 아니면 모두 `404 CHAT_ROOM_NOT_FOUND`다.
+      - 같은 404를 사용해 제3자가 roomId 존재 여부를 알아내지 못하게 한다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `MALFORMED_REQUEST` | `roomId`가 숫자가 아님 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음 또는 비참여자 |
+      """;
+
+  public static final String[] ROOM_BLOCK_400 = {"MALFORMED_REQUEST"};
+  public static final String[] ROOM_BLOCK_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ROOM_BLOCK_403 = {"AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] ROOM_BLOCK_404 = {"CHAT_ROOM_NOT_FOUND"};
+
   private ChatDocsFields() {}
 
   /** 실제 WebSocket 처리 코드와 같은 경로가 안내 응답에 노출되는지 Swagger schema에 고정한다. */
@@ -648,6 +703,14 @@ public final class ChatDocsFields {
     return new ParameterDescriptor[] {
       parameterWithName("roomId")
           .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 숫자 chatRoomId. 현재 로그인 사용자에게만 숨김")
+    };
+  }
+
+  /** 차단할 사용자 ID가 아니라 서버가 상대방을 찾을 수 있는 채팅방 ID만 받는다는 점을 설명한다. */
+  public static ParameterDescriptor[] roomBlockPathParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("roomId")
+          .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 숫자 chatRoomId. 서버가 이 방에서 로그인 사용자가 아닌 상대방을 찾아 차단")
     };
   }
 
