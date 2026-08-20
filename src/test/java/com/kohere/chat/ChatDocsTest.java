@@ -8,19 +8,49 @@ import static com.kohere.docs.ChatDocsFields.INQUIRY_404;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_422;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_400;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_401;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_403;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_404;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.MESSAGE_HISTORY_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_401;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_403;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_404;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.ROOM_DETAIL_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.ROOM_LIST_400;
+import static com.kohere.docs.ChatDocsFields.ROOM_LIST_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.ROOM_LIST_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.inquiryPathParameters;
 import static com.kohere.docs.ChatDocsFields.inquiryResponseFields;
+import static com.kohere.docs.ChatDocsFields.messageHistoryPathParameters;
+import static com.kohere.docs.ChatDocsFields.messageHistoryQueryParameters;
+import static com.kohere.docs.ChatDocsFields.messageHistoryResponseFields;
+import static com.kohere.docs.ChatDocsFields.roomDetailPathParameters;
+import static com.kohere.docs.ChatDocsFields.roomDetailResponseFields;
+import static com.kohere.docs.ChatDocsFields.roomListQueryParameters;
+import static com.kohere.docs.ChatDocsFields.roomListResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
+import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
+import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.chat.domain.ChatRoom;
+import com.kohere.chat.domain.ChatRoomMember;
+import com.kohere.chat.domain.ChatRoomMemberRepository;
+import com.kohere.chat.domain.ChatRoomRepository;
+import com.kohere.chat.domain.Message;
+import com.kohere.chat.domain.MessageRepository;
+import com.kohere.chat.domain.MessageType;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
@@ -28,7 +58,9 @@ import com.kohere.listing.api.ChatListingQueryService;
 import com.kohere.listing.api.ChatListingView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
+import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +103,9 @@ class ChatDocsTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private JwtTokenService jwtTokenService;
+  @Autowired private ChatRoomRepository chatRoomRepository;
+  @Autowired private ChatRoomMemberRepository chatRoomMemberRepository;
+  @Autowired private MessageRepository messageRepository;
 
   @MockitoBean private ChatListingQueryService listingQueryService;
   @MockitoBean private UserAccountService userAccountService;
@@ -90,6 +125,340 @@ class ChatDocsTest {
     given(listingQueryService.findPublishedListing(LISTING_ID))
         .willReturn(Optional.of(listingView(LANDLORD_ID)));
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
+    given(userAccountService.getUserName(LANDLORD_ID)).willReturn("Hongdae landlord");
+  }
+
+  /** 채팅방 목록의 실제 DB 조회·마지막 메시지 조립과 Swagger 응답 계약을 함께 검증한다. */
+  @Test
+  @DisplayName("내 채팅방 목록 조회 문서화")
+  void listChatRooms() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow();
+    Instant sentAt = Instant.parse("2026-08-20T10:15:30.123456Z");
+    Message lastMessage =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(TENANT_ID)
+                .type(MessageType.TEXT)
+                .content("Is the room still available?")
+                .clientMessageId(UUID.fromString("b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849"))
+                .sentAt(sentAt)
+                .build());
+    chatRoomRepository.save(roomWithLastMessage(room, lastMessage));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms")
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .param("page", "0")
+                .param("size", "20"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].chatRoomId").value(roomId))
+        .andExpect(jsonPath("$.data.content[0].counterpart.userId").value(LANDLORD_ID))
+        .andExpect(jsonPath("$.data.content[0].counterpart.displayName").value("Hongdae landlord"))
+        .andExpect(
+            jsonPath("$.data.content[0].lastMessage.preview").value("Is the room still available?"))
+        .andExpect(jsonPath("$.data.page.totalElements").value(1))
+        .andDo(
+            document(
+                "chat-room-list",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(ROOM_LIST_SUMMARY)
+                    .description(ROOM_LIST_DESCRIPTION),
+                queryParameters(roomListQueryParameters()),
+                responseFields(roomListResponseFields())));
+  }
+
+  /** 잘못된 페이지 범위가 400으로 반환되는 계약도 같은 Swagger 오퍼레이션에 합친다. */
+  @Test
+  @DisplayName("내 채팅방 목록 잘못된 페이지 문서화")
+  void listChatRoomsInvalidPage() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms")
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .param("page", "-1")
+                .param("size", "20"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-list-invalid-page",
+                ApiDocsTags.CHATS,
+                ROOM_LIST_SUMMARY,
+                ROOM_LIST_DESCRIPTION,
+                ROOM_LIST_400));
+  }
+
+  /** 목록·딥링크에서 받은 roomId로 채팅방 기본 정보를 조회하는 성공 응답을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 단건 조회 문서화")
+  void getChatRoomDetail() throws Exception {
+    long roomId = createRoomThroughInquiry();
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.chatRoomId").value(roomId))
+        .andExpect(jsonPath("$.data.myRole").value("TENANT"))
+        .andExpect(jsonPath("$.data.listing.listingId").value(LISTING_ID))
+        .andExpect(jsonPath("$.data.counterpart.userId").value(LANDLORD_ID))
+        .andExpect(jsonPath("$.data.counterpart.displayName").value("Hongdae landlord"))
+        .andExpect(jsonPath("$.data.blocked").value(false))
+        .andDo(
+            document(
+                "chat-room-detail",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(ROOM_DETAIL_SUMMARY)
+                    .description(ROOM_DETAIL_DESCRIPTION),
+                pathParameters(roomDetailPathParameters()),
+                responseFields(roomDetailResponseFields())));
+  }
+
+  /** 존재하는 roomId여도 다른 사용자는 동일한 404를 받아 방 존재 여부를 알 수 없음을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 단건 비참여자 404 문서화")
+  void getChatRoomDetailAsOutsider() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    String outsiderToken = bearer(jwtTokenService.issueAccessToken(999L));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}", roomId)
+                .header(HttpHeaders.AUTHORIZATION, outsiderToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("CHAT_ROOM_NOT_FOUND"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-detail-not-found",
+                ApiDocsTags.CHATS,
+                ROOM_DETAIL_SUMMARY,
+                ROOM_DETAIL_DESCRIPTION,
+                roomDetailPathParameters(),
+                ROOM_DETAIL_404));
+  }
+
+  /** 토큰이 없는 단건 조회가 컨트롤러 전에 401로 차단되는 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 단건 인증 누락 문서화")
+  void getChatRoomDetailUnauthenticated() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/chat-rooms/{roomId}", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-detail-unauthenticated",
+                ApiDocsTags.CHATS,
+                ROOM_DETAIL_SUMMARY,
+                ROOM_DETAIL_DESCRIPTION,
+                roomDetailPathParameters(),
+                ROOM_DETAIL_401));
+  }
+
+  /** 온보딩 임시 토큰은 정식 채팅방에 접근할 수 없다는 403 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 단건 온보딩 사용자 거부 문서화")
+  void getChatRoomDetailWithOnboardingToken() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}", 556L)
+                .header(HttpHeaders.AUTHORIZATION, onboardingToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-detail-onboarding-required",
+                ApiDocsTags.CHATS,
+                ROOM_DETAIL_SUMMARY,
+                ROOM_DETAIL_DESCRIPTION,
+                roomDetailPathParameters(),
+                ROOM_DETAIL_403));
+  }
+
+  /** 최근 메시지 조회의 실제 MySQL 결과와 Swagger 커서 응답 계약을 함께 검증한다. */
+  @Test
+  @DisplayName("채팅방 최근 메시지 조회 문서화")
+  void getRecentMessages() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    Message message =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(LANDLORD_ID)
+                .type(MessageType.TEXT)
+                .content("The room is available from September 1.")
+                .clientMessageId(UUID.fromString("0c3f0261-90bb-4ba5-a429-d669f7b92222"))
+                .sentAt(Instant.parse("2026-08-20T10:20:30.123456Z"))
+                .build());
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .param("size", "30"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].messageId").value(message.getId()))
+        .andExpect(jsonPath("$.data.content[0].senderId").value(LANDLORD_ID))
+        .andExpect(jsonPath("$.data.content[0].mine").value(false))
+        .andExpect(jsonPath("$.data.content[0].type").value("TEXT"))
+        .andExpect(
+            jsonPath("$.data.content[0].originalContent")
+                .value("The room is available from September 1."))
+        .andExpect(jsonPath("$.data.content[0].bookingCard").isEmpty())
+        .andExpect(jsonPath("$.data.content[0].translation").isEmpty())
+        .andExpect(jsonPath("$.data.nextCursor").isEmpty())
+        .andExpect(jsonPath("$.data.hasNext").value(false))
+        .andDo(
+            document(
+                "chat-message-history",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(MESSAGE_HISTORY_SUMMARY)
+                    .description(MESSAGE_HISTORY_DESCRIPTION),
+                pathParameters(messageHistoryPathParameters()),
+                queryParameters(messageHistoryQueryParameters()),
+                responseFields(messageHistoryResponseFields())));
+  }
+
+  /** 채팅방 삭제 시점 이전의 메시지가 실제 HTTP 응답에서도 로그인 사용자에게 다시 노출되지 않는지 검증한다. */
+  @Test
+  @DisplayName("채팅방 메시지 개인 삭제 경계 적용")
+  void getMessagesExcludesPersonallyDeletedHistory() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    Message deletedMessage =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(LANDLORD_ID)
+                .type(MessageType.TEXT)
+                .content("This message was in the deleted history.")
+                .clientMessageId(UUID.fromString("a77330b6-b1b3-49c0-a49f-a9aa382b8988"))
+                .sentAt(Instant.parse("2026-08-20T10:20:00Z"))
+                .build());
+    Message visibleMessage =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(LANDLORD_ID)
+                .type(MessageType.TEXT)
+                .content("This message arrived after the deleted history.")
+                .clientMessageId(UUID.fromString("99da02ba-a51a-4b4a-ad8e-ce207a8794b0"))
+                .sentAt(Instant.parse("2026-08-20T10:21:00Z"))
+                .build());
+
+    ChatRoomMember tenantMember =
+        chatRoomMemberRepository.findByChatRoomIdAndUserId(roomId, TENANT_ID).orElseThrow();
+    chatRoomMemberRepository.save(
+        tenantMember.toBuilder()
+            .historyHiddenThroughMessageId(deletedMessage.getId())
+            .updatedAt(Instant.parse("2026-08-20T10:20:30Z"))
+            .build());
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(1))
+        .andExpect(jsonPath("$.data.content[0].messageId").value(visibleMessage.getId()))
+        .andExpect(
+            jsonPath("$.data.content[0].originalContent")
+                .value("This message arrived after the deleted history."));
+  }
+
+  /** 두 커서를 함께 보내 조회 방향이 모호한 요청은 400으로 거부하는 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 메시지 두 커서 동시 사용 거부 문서화")
+  void getMessagesWithTwoCursors() throws Exception {
+    long roomId = createRoomThroughInquiry();
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .param("cursor", "100")
+                .param("afterMessageId", "101"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-invalid-cursors",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_400));
+  }
+
+  /** 비참여자는 존재하는 roomId를 입력해도 메시지와 방 존재 여부를 알 수 없음을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 메시지 비참여자 404 문서화")
+  void getMessagesAsOutsider() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    String outsiderToken = bearer(jwtTokenService.issueAccessToken(999L));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", roomId)
+                .header(HttpHeaders.AUTHORIZATION, outsiderToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("CHAT_ROOM_NOT_FOUND"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-not-found",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_404));
+  }
+
+  /** 토큰이 없는 메시지 이력 조회가 컨트롤러 전에 401로 차단되는 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 메시지 인증 누락 문서화")
+  void getMessagesUnauthenticated() throws Exception {
+    mockMvc
+        .perform(get("/api/v1/chat-rooms/{roomId}/messages", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-unauthenticated",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_401));
+  }
+
+  /** 온보딩 임시 토큰으로 정식 채팅 메시지를 조회할 수 없다는 403 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 메시지 온보딩 사용자 거부 문서화")
+  void getMessagesWithOnboardingToken() throws Exception {
+    String onboardingToken = bearer(jwtTokenService.issueOnboardingToken(TENANT_ID));
+
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", 556L)
+                .header(HttpHeaders.AUTHORIZATION, onboardingToken))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-message-history-onboarding-required",
+                ApiDocsTags.CHATS,
+                MESSAGE_HISTORY_SUMMARY,
+                MESSAGE_HISTORY_DESCRIPTION,
+                messageHistoryPathParameters(),
+                MESSAGE_HISTORY_403));
   }
 
   /** 새 방은 201과 created=true를 반환하며 Swagger 성공 예시의 정본이 된다. */
@@ -219,6 +588,34 @@ class ChatDocsTest {
   /** 현재 사용자의 access token을 Bearer 헤더 값으로 만든다. */
   private String accessToken() {
     return bearer(jwtTokenService.issueAccessToken(TENANT_ID));
+  }
+
+  /** 실제 문의 endpoint로 목록 테스트용 채팅방과 참여자 두 명을 만든다. */
+  private long createRoomThroughInquiry() throws Exception {
+    String response =
+        mockMvc
+            .perform(inquiryRequest().header(HttpHeaders.AUTHORIZATION, accessToken()))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    return roomIdFromJsonLine(response);
+  }
+
+  /** 저장된 마지막 메시지를 가리키도록 채팅방의 목록용 포인터를 갱신한다. */
+  private static ChatRoom roomWithLastMessage(ChatRoom room, Message message) {
+    return ChatRoom.builder()
+        .id(room.getId())
+        .listingId(room.getListingId())
+        .tenantId(room.getTenantId())
+        .landlordId(room.getLandlordId())
+        .category(room.getCategory())
+        .listingSnapshot(room.getListingSnapshot())
+        .lastMessageId(message.getId())
+        .lastMessageAt(message.getSentAt())
+        .createdAt(room.getCreatedAt())
+        .updatedAt(message.getSentAt())
+        .build();
   }
 
   /** 모든 문의 테스트가 같은 경로 변수 선언을 사용하도록 요청 빌더를 한곳에 둔다. */

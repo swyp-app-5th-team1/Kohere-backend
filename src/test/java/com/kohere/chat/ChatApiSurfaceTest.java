@@ -61,6 +61,15 @@ class ChatApiSurfaceTest {
     assertThat(requestParameterNames(listRooms)).containsExactly("page", "size");
   }
 
+  /** 목록·알림에서 받은 roomId로 채팅방 한 건을 여는 GET 경로를 고정한다. */
+  @Test
+  void roomDetailUsesServerRoomIdPath() {
+    Method getRoom = methodNamed(ChatRoomController.class, "getRoom");
+
+    assertThat(mappedPaths(getRoom, GetMapping.class)).containsExactly("/{roomId}");
+    assertThat(requestParameterNames(getRoom)).isEmpty();
+  }
+
   /** 과거 스크롤과 재연결 누락 보충이 같은 조회 endpoint에서 명시적으로 구분되는지 확인한다. */
   @Test
   void messageHistorySupportsPastAndReconnectQueries() {

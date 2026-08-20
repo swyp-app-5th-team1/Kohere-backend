@@ -8,6 +8,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomDetailService;
+import com.kohere.chat.application.ChatRoomListService;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.presentation.ChatRoomController;
@@ -64,6 +67,15 @@ class ChatAndReportRestSecurityTest {
   // 컨트롤러 이후의 비즈니스 로직은 보안 매처 검증 대상이 아니므로 성공 응답만 정해 준다.
   @MockitoBean private ChatService chatService;
 
+  // 목록 조회는 별도 읽기 서비스가 담당하므로 보안 테스트에서는 DB 없이 성공 결과만 대체한다.
+  @MockitoBean private ChatRoomListService chatRoomListService;
+
+  // 단건 조회도 같은 Controller 생성자에 필요하지만 이 테스트는 공통 ROLE_USER 경계만 확인하므로 서비스는 대체한다.
+  @MockitoBean private ChatRoomDetailService chatRoomDetailService;
+
+  // 메시지 이력 조회도 같은 Controller 생성자에 필요하다. 참여자·커서 규칙은 전용 서비스 테스트가 담당한다.
+  @MockitoBean private ChatMessageHistoryService chatMessageHistoryService;
+
   // 신고 유스케이스 구현 여부와 무관하게 SecurityConfig의 `/reports/**` 권한만 검증하도록 서비스는 대체한다.
   @MockitoBean private ReportService reportService;
 
@@ -95,11 +107,15 @@ class ChatAndReportRestSecurityTest {
   @Test
   @DisplayName("채팅방 REST: ROLE_USER는 컨트롤러까지 통과")
   void chatRooms_withUserRole_reachesController() throws Exception {
-    given(chatService.listRooms(0, 20))
+    given(chatRoomListService.listRooms(7L, 0, 20))
         .willReturn(PageResponse.of(List.of(), new PageInfo(0, 20, 0L, 0, false)));
 
+    var authenticatedUser =
+        new UsernamePasswordAuthenticationToken(
+            new AuthPrincipal(7L, true), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
     mockMvc
-        .perform(get(CHAT_ROOMS_PATH).with(user("7").roles("USER")))
+        .perform(get(CHAT_ROOMS_PATH).with(authentication(authenticatedUser)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
   }

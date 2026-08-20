@@ -141,6 +141,9 @@
 
 딥링크, 새로고침, 재연결 때 방 헤더를 가져온다. 요청자가 참여자가 아니거나 현재 숨긴 방이면 일반 조회에서 노출하지 않는다.
 
+방이 없거나, 요청자가 참여자가 아니거나, 요청자에게 숨겨진 방이면 모두 `404 CHAT_ROOM_NOT_FOUND`를 반환한다. 제3자가 roomId를 바꿔
+보며 실제 방의 존재 여부를 구분하지 못하게 하기 위한 규칙이다.
+
 응답의 `myRole`은 앱이 신청 카드를 임차인용 또는 임대인용으로 표시할 때 사용한다.
 
 ```json
@@ -187,6 +190,16 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 ```
 
 결과가 한 페이지를 넘으면 마지막 `messageId`를 다음 cursor로 사용한다. 사용자별 삭제 경계보다 오래된 메시지는 응답하지 않는다.
+
+공통 응답의 `data`는 다음 모양이다. `content`가 실제 메시지 배열이며, `hasNext=true`일 때 `nextCursor`를 같은 조회 방향의 다음 요청에 사용한다.
+
+```json
+{
+  "content": [],
+  "nextCursor": null,
+  "hasNext": false
+}
+```
 
 메시지 응답은 `TEXT`와 `BOOKING_CARD` 두 종류다.
 
