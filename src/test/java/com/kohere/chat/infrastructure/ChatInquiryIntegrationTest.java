@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import com.kohere.chat.application.ChatRoomCreator;
+import com.kohere.chat.application.ChatRoomEnsurer;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.domain.ChatListingUnavailableException;
@@ -62,6 +63,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
   ChatRoomCreator.class,
+  ChatRoomEnsurer.class,
   ChatService.class
 })
 class ChatInquiryIntegrationTest {

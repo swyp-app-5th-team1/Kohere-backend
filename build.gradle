@@ -42,7 +42,9 @@ ext {
 dependencies {
   implementation 'org.springframework.boot:spring-boot-starter-web'
   implementation 'org.springframework.boot:spring-boot-starter-validation'
-  implementation 'org.springframework.modulith:spring-modulith-starter-core'
+  // BookingCreatedEvent처럼 반드시 처리돼야 하는 모듈 이벤트를 MySQL에 기록한다.
+  // starter-jpa가 starter-core를 포함하므로 모듈 구조 검사·기본 이벤트 기능도 그대로 유지된다.
+  implementation 'org.springframework.modulith:spring-modulith-starter-jpa'
 
   // 운영 헬스 체크 — /actuator/health (SecurityConfig permitAll, 로컬 기동 확인·M7 ALB 헬스체크용)
   implementation 'org.springframework.boot:spring-boot-starter-actuator'

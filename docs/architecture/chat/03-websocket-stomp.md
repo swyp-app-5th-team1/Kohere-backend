@@ -147,10 +147,10 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 `BOOKING_CARD`는 위 SEND destination으로 들어오지 않는다. 기존 Booking Service가 신청을 저장한 뒤 공개 `BookingCreatedEvent`를 발행하면 Chat Application이 다음 순서로 자동 처리한다.
 
 1. `(listingId, tenantId, landlordId)`로 문의하기와 동일한 채팅방을 조회하거나 생성한다.
-2. 기존 Booking 상세 데이터 조립 로직을 공개 `BookingCardView`로 재사용한다.
-3. 신청 시점의 매물·신청자·입주 조건·금액을 카드 payload로 저장한다.
+2. 이벤트에 함께 전달된 신청 시점의 매물·신청자·입주 조건·금액 사본을 사용한다.
+3. 별도의 Booking 조회 API를 호출하지 않고 해당 사본을 카드 payload로 저장한다.
 4. `(chatRoomId, bookingId)` UNIQUE로 같은 신청 카드의 중복 저장을 막는다.
-5. 신규 카드가 커밋된 경우에만 room topic으로 `BOOKING_CARD` 저장 완료 이벤트를 발행한다.
+5. 현재 구현 단계에서는 메시지 이력 REST API로 카드를 제공한다. 다음 STOMP 단계에서는 신규 카드가 커밋된 경우에만 room topic으로 `BOOKING_CARD` 저장 완료 이벤트를 발행한다.
 
 카드에는 프런트 UUID `clientMessageId`가 없고, 서버 생성 메시지이므로 `senderId`도 null이다. 임차인·임대인은 같은 카드 데이터를 받고 앱이 채팅방의 `myRole`에 따라 화면을 다르게 배치한다. 카드 데이터는 Google 번역 대상이 아니다.
 

@@ -31,6 +31,17 @@ public interface ChatRoomRepository {
   Optional<ChatRoom> findById(Long roomId);
 
   /**
+   * 새 메시지를 저장할 때 같은 방의 동시 쓰기를 한 줄로 세우기 위해 방 행을 잠가 조회한다.
+   *
+   * <p>BOOKING_CARD 중복 확인, 메시지 INSERT, 마지막 메시지 포인터 갱신이 서로 엇갈리지 않게 하는 변이 전용 메서드다. 사용자 조회 API에서는 사용하지
+   * 않는다.
+   *
+   * @param roomId 잠글 채팅방 번호
+   * @return 존재하면 잠긴 채팅방
+   */
+  Optional<ChatRoom> findByIdForUpdate(Long roomId);
+
+  /**
    * 한 목록 페이지에 포함된 채팅방들을 한 번에 조회한다.
    *
    * <p>방마다 {@link #findById(Long)}를 반복하면 20개 목록에 20번의 SQL이 추가되는 N+1 문제가 생긴다. 목록 서비스는 먼저 참여자 페이지에서

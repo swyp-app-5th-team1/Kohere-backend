@@ -48,6 +48,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
@@ -64,6 +65,7 @@ import com.kohere.listing.api.ChatListingView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -400,6 +402,15 @@ class ChatDocsTest {
   @DisplayName("채팅방 최근 메시지 조회 문서화")
   void getRecentMessages() throws Exception {
     long roomId = createRoomThroughInquiry();
+    Message bookingCard =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .type(MessageType.BOOKING_CARD)
+                .bookingId(801L)
+                .payload(bookingCardPayload())
+                .sentAt(Instant.parse("2026-08-20T10:19:30.123456Z"))
+                .build());
     Message message =
         messageRepository.save(
             Message.builder()
@@ -426,6 +437,17 @@ class ChatDocsTest {
                 .value("The room is available from September 1."))
         .andExpect(jsonPath("$.data.content[0].bookingCard").isEmpty())
         .andExpect(jsonPath("$.data.content[0].translation").isEmpty())
+        .andExpect(jsonPath("$.data.content[1].messageId").value(bookingCard.getId()))
+        .andExpect(jsonPath("$.data.content[1].type").value("BOOKING_CARD"))
+        .andExpect(jsonPath("$.data.content[1].clientMessageId").isEmpty())
+        .andExpect(jsonPath("$.data.content[1].senderId").isEmpty())
+        .andExpect(jsonPath("$.data.content[1].originalContent").isEmpty())
+        .andExpect(jsonPath("$.data.content[1].bookingCard.bookingId").value(801L))
+        .andExpect(
+            jsonPath("$.data.content[1].bookingCard.listing.thumbnailUrl")
+                .value("https://cdn.kohere.com/listings/card-thumb.jpg"))
+        .andExpect(jsonPath("$.data.content[1].bookingCard.applicant.name").value("Gil dong Hong"))
+        .andExpect(jsonPath("$.data.content[1].bookingCard.totalAmount").value(6_500_000))
         .andExpect(jsonPath("$.data.nextCursor").isEmpty())
         .andExpect(jsonPath("$.data.hasNext").value(false))
         .andDo(
@@ -438,6 +460,26 @@ class ChatDocsTest {
                 pathParameters(messageHistoryPathParameters()),
                 queryParameters(messageHistoryQueryParameters()),
                 responseFields(messageHistoryResponseFields())));
+  }
+
+  /** Swagger 성공 예시가 실제 임대인·임차인 신청 카드 UI에 필요한 모든 값을 보여 주게 하는 사본이다. */
+  private static BookingCardPayload bookingCardPayload() {
+    return new BookingCardPayload(
+        801L,
+        new BookingCardPayload.Listing(
+            LISTING_ID,
+            "https://cdn.kohere.com/listings/card-thumb.jpg",
+            "Hongdae Studio share",
+            "Seogyo-dong, Mapo-gu",
+            500_000),
+        new BookingCardPayload.Applicant(
+            TENANT_ID, "Gil dong Hong", "MALE", "MN", "Mongolia", "kohere@gmail.com"),
+        "6858e2000000000000000abc",
+        "Room A",
+        LocalDate.of(2026, 6, 15),
+        3,
+        5_000_000,
+        6_500_000);
   }
 
   /** 채팅방 삭제 시점 이전의 메시지가 실제 HTTP 응답에서도 로그인 사용자에게 다시 노출되지 않는지 검증한다. */

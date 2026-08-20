@@ -58,6 +58,7 @@ import com.kohere.docs.ApiDocsTags;
 import com.kohere.docs.BookingDocsFields;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.user.api.ApplicantProfileView;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -123,6 +124,13 @@ class BookingManagementDocsTest {
             .apply(springSecurity())
             .apply(documentationConfiguration(restDocumentation))
             .build();
+    // 관리 API 테스트가 준비용 예약을 만들 때도 신청 카드 이벤트에 필요한 신청자 사본을 제공한다.
+    given(userAccountService.getApplicantProfile(TENANT_ID)).willReturn(applicantView());
+  }
+
+  private ApplicantProfileView applicantView() {
+    return new ApplicantProfileView(
+        TENANT_ID, "Gil dong Hong", "MALE", "MN", "Mongolia", "kohere@gmail.com");
   }
 
   private String token(long userId) {

@@ -58,15 +58,44 @@ public final class BookingDocsFields {
 
   public static final String CREATE_DESCRIPTION =
       """
-      방 상품(roomOffer)에 타겟 입주일과 계약 개월수로 예약(신청)을 생성한다.
+      매물 화면 또는 채팅방에서 선택한 객실 상품에 **입주 신청을 저장**한다.
 
       **헤더**
 
       - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자**(`userType=TENANT`) 전용이다.
 
+      **프론트 요청 전에 준비할 값**
+
+      - `listingId`: `/api/v2` 매물 목록·상세에서 받은 매물 ID를 URL에 넣는다.
+      - `roomOfferId`: 같은 매물 상세의 `roomOffers[]`에서 사용자가 선택한 객실 상품 ID를 본문에 넣는다.
+      - `moveInDate`: 사용자가 고른 입주 희망일을 `YYYY-MM-DD`로 보낸다.
+      - `contractPeriod`: 희망 계약 기간을 개월 수 정수로 보낸다.
+
+      **서버에서 실제로 진행되는 과정**
+
+      1. access token에서 신청자 ID를 확인하고 세입자 계정인지 검사한다.
+      2. 매물과 객실 상품이 공개 상태인지, 실제 임대인이 누구인지, 차단 관계가 없는지 검사한다.
+      3. 예약을 MySQL에 `REQUESTED` 상태로 저장한다.
+      4. 같은 커밋에 `BookingCreatedEvent`도 기록한다. 이 기록 덕분에 서버가 중간에 종료돼도 채팅 처리를 다시 시도할 수 있다.
+      5. 백엔드가 비동기로 문의하기와 같은 1:1 채팅방을 찾거나 만들고, 신청 시점 정보를 `BOOKING_CARD` 한 장으로 저장한다.
+
+      프론트가 BOOKING_CARD를 만들거나 전송하는 API는 없다. 카드에는 `clientMessageId`도 보내지 않는다.
+
+      **201 응답 뒤 프론트 권장 흐름**
+
+      1. 이 API의 `201 Created`를 받는다.
+      2. `POST /api/v1/listings/{listingId}/inquiries`를 호출해 기존 또는 새 `chatRoomId`를 받는다.
+      3. 해당 채팅방 화면을 연다.
+      4. `GET /api/v1/chat-rooms/{chatRoomId}/messages`로 저장된 TEXT와 BOOKING_CARD를 함께 조회한다.
+
+      문의 중 신청한 경우에도 새 채팅방을 만들지 않고 이전 대화가 있던 같은 `chatRoomId`에 카드가 이어진다.
+
       **응답 주의사항**
 
       - 응답 본문은 예약 코어 내역만 담고 매물 요약·가격·성명은 상세 조회에서 내려준다.
+      - `201 Created`는 예약과 재처리 가능한 이벤트가 저장됐다는 뜻이다. 비동기 카드 저장 완료 시각과 완전히 같지는 않을 수 있다.
+      - 신청 직후 첫 메시지 이력 조회에서 카드가 아직 없다면 짧게 기다린 뒤 같은 이력 API를 한 번 다시 조회할 수 있다. 지속 polling은 필요하지 않다.
+      - 이후 STOMP 실시간 연결 단계에서는 저장 완료 BOOKING_CARD를 채팅방 구독으로 자동 수신한다.
 
       **에러 코드**
 
@@ -93,13 +122,17 @@ public final class BookingDocsFields {
 
   public static ParameterDescriptor[] createPathParameters() {
     return new ParameterDescriptor[] {
-      parameterWithName("listingId").description("예약 대상 매물 ID(ObjectId 24자리 hex)")
+      parameterWithName("listingId")
+          .description("예약 대상 매물 ID(ObjectId 24자리 hex). /api/v2 매물 목록·상세 응답에서 받은 listingId를 그대로 사용")
     };
   }
 
   public static List<FieldDescriptor> createRequestFields() {
     return List.of(
-        field("roomOfferId", JsonFieldType.STRING, "예약 대상 방 상품 ID(ObjectId 24자리 hex). 누락·공백은 400"),
+        field(
+            "roomOfferId",
+            JsonFieldType.STRING,
+            "매물 상세 roomOffers[]에서 사용자가 선택한 객실 상품 ID(ObjectId 24자리 hex). 누락·공백은 400"),
         field(
             "moveInDate",
             JsonFieldType.STRING,
@@ -113,7 +146,10 @@ public final class BookingDocsFields {
   public static List<FieldDescriptor> createResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
-        field("data.bookingId", JsonFieldType.NUMBER, "생성된 예약 식별자"),
+        field(
+            "data.bookingId",
+            JsonFieldType.NUMBER,
+            "생성된 예약 ID. 이후 예약 상세 조회에 사용하며 BOOKING_CARD 중복 저장을 막는 서버 기준값이기도 함"),
         enumField("data.status", BookingStatus.class, BOOKING_STATUS_DESCRIPTION),
         field("data.listingId", JsonFieldType.STRING, "예약 대상 매물 ID"),
         field("data.roomOfferId", JsonFieldType.STRING, "예약 대상 방 상품 ID"),

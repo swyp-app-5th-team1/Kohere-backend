@@ -1,6 +1,7 @@
 package com.kohere.chat.domain;
 
 import java.time.Instant;
+import java.util.Objects;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -14,7 +15,7 @@ import lombok.Getter;
  * 하기 위한 가장 최근 메시지 포인터만 방에 함께 보관한다. 읽음 위치와 안 읽은 개수는 후속 기능이므로 포함하지 않는다.
  */
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class ChatRoom {
 
   /** DB가 발급하고 REST에서 {@code chatRoomId}로 사용하는 방 번호다. 신규 저장 전에는 {@code null}이다. */
@@ -46,4 +47,22 @@ public class ChatRoom {
 
   /** 마지막 메시지 포인터나 방 메타데이터를 마지막으로 변경한 UTC 시각이다. */
   private final Instant updatedAt;
+
+  /**
+   * 새 메시지 저장이 끝난 뒤 방의 마지막 메시지 포인터를 같은 메시지로 이동한다.
+   *
+   * <p>메시지를 먼저 저장해 DB ID를 받은 다음 이 메서드를 호출해야 한다. 이미 가리키는 번호보다 작거나 같은 값으로 되돌리면 채팅방 목록의 preview가 과거
+   * 메시지를 가리키므로 즉시 거부한다.
+   *
+   * @param messageId 방금 저장된 chat_messages.id
+   * @param sentAt 방금 저장된 메시지의 서버 UTC 시각
+   * @return 새 마지막 메시지 포인터를 가진 채팅방
+   */
+  public ChatRoom recordMessage(long messageId, Instant sentAt) {
+    Objects.requireNonNull(sentAt, "sentAt is required");
+    if (messageId < 1 || (lastMessageId != null && messageId <= lastMessageId)) {
+      throw new IllegalArgumentException("messageId must move the room pointer forward");
+    }
+    return toBuilder().lastMessageId(messageId).lastMessageAt(sentAt).updatedAt(sentAt).build();
+  }
 }

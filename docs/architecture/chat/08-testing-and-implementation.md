@@ -297,11 +297,11 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 3. 새 채팅방이면 세입자와 임대인 참여자 두 행을 같은 트랜잭션으로 저장한다.
 4. 문의 API는 신규 `201` 또는 기존 `200`과 동일한 `roomId`를 반환한다.
 5. 채팅방 목록·단건·과거 cursor·`afterMessageId` 누락 조회를 구현한다.
-6. 기존 `BookingDetailResponse`, `LandlordBookingDetailResponse`를 만드는 조회·계산 로직을 채팅용 공개 `BookingCardView`에서 재사용한다.
-7. `BookingCreatedEvent`에 멱등 event ID, bookingId, 발생 시각과 방 생성에 필요한 참여자 정보를 포함하고 예약 저장 뒤 실제로 발행한다.
-8. Spring Modulith의 MySQL-backed event publication 저장·재처리를 구성한다.
+6. Booking Service가 예약 생성 때 이미 조회한 `RoomOfferBookingView`·`ApplicantProfileView`와 상세 조회와 같은 금액 공식을 `BookingCreatedEventFactory`에서 재사용한다.
+7. `BookingCreatedEvent`에 멱등 event ID, bookingId, 발생 시각, 참여자와 신청 시점 카드 사본을 포함하고 예약 저장 뒤 실제로 발행한다.
+8. `spring-modulith-starter-jpa`와 V25 `event_publication`으로 MySQL-backed publication을 저장하고 미완료 이벤트의 재기동 재전달을 구성한다.
 9. 신청 성공 뒤 앱이 같은 문의 API로 채팅방에 진입하도록 하고, event handler는 같은 방에 `(chatRoomId, bookingId)` 기준으로 카드를 한 번 저장한다.
-10. 신규 카드만 마지막 메시지·방 재표시·실시간 발행을 만들고 동일 bookingId 재처리는 아무 상태도 변경하지 않는다.
+10. 신규 카드만 마지막 메시지·방 재표시를 만들고 동일 bookingId 재처리는 아무 상태도 변경하지 않는다. 실시간 발행은 STOMP 단계에서 commit 이후로 연결한다.
 11. 사용자 탈퇴·익명화 이벤트가 오면 저장된 BOOKING_CARD의 신청자 PII도 ADR-0014에 맞게 익명화한다.
 
 완료 조건:

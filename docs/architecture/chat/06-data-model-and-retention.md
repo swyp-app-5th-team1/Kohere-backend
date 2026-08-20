@@ -302,16 +302,18 @@ historyHiddenThroughMessageId = max(기존 숨김 경계, 삭제 시점의 마�
 
 ## 6. `BookingCreatedEvent` publication
 
-예약 저장 후 방과 신청 카드를 신뢰성 있게 보장하려면 Spring Modulith Event Publication Registry의 MySQL 테이블을 Flyway로 관리한다.
+예약 저장 후 방과 신청 카드를 신뢰성 있게 보장하기 위해 V25의 Spring Modulith JPA `event_publication` 테이블을 Flyway로 관리한다.
 
 - booking row와 event publication을 같은 booking transaction에 저장
-- event에 `eventId`, `bookingId`, `occurredAt`, `listingId`, `tenantId`, `landlordId` 포함
-- chat listener 성공 시 publication 완료 처리
-- 실패 publication은 backoff 후 재처리
+- event에 `eventId`, `bookingId`, `occurredAt`, `listingId`, `tenantId`, `landlordId`와 신청 시점 카드 사본 포함
+- chat listener 성공 시 `completion-mode=delete`로 publication 삭제
+- listener 실패나 서버 종료로 미완료인 publication은 다음 서버 기동 때 다시 전달
 - 방 UNIQUE로 문의·신청이 같은 `roomId`에 수렴
-- 기존 Booking 상세 조립 로직을 공개 `BookingCardView`로 재사용해 카드 payload 생성
+- Booking Service가 이미 검증한 `RoomOfferBookingView`와 `ApplicantProfileView`를 `BookingCreatedEventFactory`로 조립해 처리 시점 재조회 제거
 - `(chat_room_id, booking_id)` UNIQUE로 같은 신청 카드 중복 저장 방지
 - listener 성공 조건은 방과 `BOOKING_CARD`가 모두 저장된 상태
-- 동일 event·booking 재처리는 카드, broadcast, 마지막 메시지와 방 재표시를 다시 만들지 않음
+- 동일 event·booking 재처리는 카드, 마지막 메시지와 방 재표시를 다시 만들지 않음
+- 신규 카드 INSERT, 방의 마지막 메시지 포인터, 필요한 참여자 방 재표시는 하나의 카드 저장 트랜잭션으로 처리
 
-이 업무 이벤트 내구성은 실시간 STOMP Simple Broker와 별개다.
+이 업무 이벤트 내구성은 실시간 STOMP Simple Broker와 별개다. 현재는 MySQL 메시지 이력에서 카드를 복구하며, topic 발행은 STOMP 구현 단계에서
+커밋 이후 동작으로 추가한다.

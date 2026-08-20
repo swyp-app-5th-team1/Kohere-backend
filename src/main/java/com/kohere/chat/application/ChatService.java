@@ -2,8 +2,6 @@ package com.kohere.chat.application;
 
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.domain.ChatListingUnavailableException;
-import com.kohere.chat.domain.ChatRoom;
-import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.ChatTenantOnlyException;
 import com.kohere.chat.domain.ChatUnavailableException;
 import com.kohere.chat.domain.SelfInquiryNotAllowedException;
@@ -13,7 +11,6 @@ import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,8 +23,8 @@ import org.springframework.stereotype.Service;
  * <p>TEXT 저장은 STOMP 처리 흐름의 별도 유스케이스가 담당한다. REST 전송 메서드를 이 서비스에 함께 두지 않아 같은 메시지에 두 개의 진입 경로와 서로 다른
  * 중복 처리 규칙이 생기는 것을 막는다. 읽음 처리는 이번 범위에서 제외한다.
  *
- * <p>방과 두 참여자의 생성 트랜잭션은 {@link ChatRoomCreator}가 소유한다. 이 서비스는 트랜잭션이 끝난 뒤 UNIQUE 충돌을 받아 기존 방으로
- * 수렴시키므로 실패한 JPA 트랜잭션 안에서 재조회하지 않는다.
+ * <p>문의와 신청이 동일한 방 생성 규칙을 사용하도록 실제 조회·생성·동시성 수렴은 {@link ChatRoomEnsurer}에 위임한다. 이 서비스는 문의 요청자만 수행할
+ * 역할·매물·차단 검증과 기존 방 재표시를 담당한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -35,11 +32,11 @@ public class ChatService {
 
   private static final String USER_TYPE_TENANT = "TENANT";
 
-  private final ChatRoomRepository chatRoomRepository;
   private final ChatListingQueryService listingQueryService;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
   private final ChatRoomCreator roomCreator;
+  private final ChatRoomEnsurer roomEnsurer;
 
   /**
    * 매물·세입자·임대인 조합의 채팅방을 조회하거나 하나만 생성한다.
@@ -58,12 +55,16 @@ public class ChatService {
     assertDifferentUsers(tenantId, listing.landlordId());
     assertChatAvailable(tenantId, listing.landlordId());
 
-    // 선행 조회는 대부분의 재호출을 INSERT 없이 끝내는 최적화다. 동시 요청의 최종 중복 방지는 DB UNIQUE가 맡는다.
-    return chatRoomRepository
-        .findByListingIdAndTenantIdAndLandlordId(
-            listing.listingId(), tenantId, listing.landlordId())
-        .map(room -> existingInquiry(room, tenantId))
-        .orElseGet(() -> createOrFindConcurrentRoom(tenantId, listing));
+    ChatRoomSeed seed =
+        new ChatRoomSeed(
+            listing.listingId(), listing.landlordId(), listing.title(), listing.address());
+    ChatRoomEnsurer.EnsureResult ensured = roomEnsurer.ensure(seed, tenantId, Instant.now());
+
+    // 직접 문의는 사용자의 명시적 재진입이다. 기존 방만 다시 표시하며 과거 메시지 숨김 경계는 복원하지 않는다.
+    if (!ensured.created()) {
+      roomCreator.showExistingRoomForTenant(ensured.room().getId(), tenantId, Instant.now());
+    }
+    return new InquiryResponse(ensured.room().getId(), ensured.created());
   }
 
   /** 매물 문의는 세입자 전용이다. JWT userId로 서버의 현재 사용자 역할을 다시 확인한다. */
@@ -84,31 +85,6 @@ public class ChatService {
   private void assertChatAvailable(long tenantId, long landlordId) {
     if (userBlockService.isBlockedBetween(tenantId, landlordId)) {
       throw new ChatUnavailableException();
-    }
-  }
-
-  /** 기존 방은 같은 ID를 반환하고, 직접 문의로 재진입한 임차인에게 방만 다시 표시한다. */
-  private InquiryResponse existingInquiry(ChatRoom room, long tenantId) {
-    roomCreator.showExistingRoomForTenant(room.getId(), tenantId, Instant.now());
-    return new InquiryResponse(room.getId(), false);
-  }
-
-  /**
-   * 새 방 생성을 시도하고, 동시에 먼저 생성한 요청이 있으면 그 방으로 수렴한다.
-   *
-   * <p>{@link ChatRoomCreator#create}의 트랜잭션은 이 메서드로 예외가 돌아오기 전에 이미 롤백된다. 따라서 UNIQUE 충돌 후 재조회는
-   * rollback-only 트랜잭션 밖에서 실행된다. 다른 제약 위반이라 기존 방도 찾을 수 없다면 원래 예외를 다시 던져 실제 결함을 숨기지 않는다.
-   */
-  private InquiryResponse createOrFindConcurrentRoom(long tenantId, ChatListingView listing) {
-    try {
-      ChatRoom created = roomCreator.create(listing, tenantId, Instant.now());
-      return new InquiryResponse(created.getId(), true);
-    } catch (DataIntegrityViolationException conflict) {
-      return chatRoomRepository
-          .findByListingIdAndTenantIdAndLandlordId(
-              listing.listingId(), tenantId, listing.landlordId())
-          .map(room -> new InquiryResponse(room.getId(), false))
-          .orElseThrow(() -> conflict);
     }
   }
 }

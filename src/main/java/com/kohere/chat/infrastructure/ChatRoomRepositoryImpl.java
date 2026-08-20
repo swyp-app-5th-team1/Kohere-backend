@@ -41,6 +41,13 @@ public class ChatRoomRepositoryImpl implements ChatRoomRepository {
 
   /** {@inheritDoc} */
   @Override
+  public Optional<ChatRoom> findByIdForUpdate(Long roomId) {
+    // 실제 SELECT ... FOR UPDATE는 Spring Data의 @Lock 선언이 만들고, 이 어댑터는 엔티티를 도메인으로만 변환한다.
+    return jpaRepository.findByIdForUpdate(roomId).map(ChatRoomRepositoryImpl::toDomain);
+  }
+
+  /** {@inheritDoc} */
+  @Override
   public List<ChatRoom> findByIds(Collection<Long> roomIds) {
     if (roomIds.isEmpty()) {
       return List.of();

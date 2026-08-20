@@ -57,17 +57,14 @@ sequenceDiagram
     CHAT->>DB: 같은 매물·세입자·임대인의 방 조회 또는 생성
     DB-->>CHAT: 기존 또는 새 roomId
     CHAT-->>APP: roomId
+    APP->>CHAT: 채팅방 메시지 이력 조회
+    CHAT-->>APP: 현재 저장 완료된 TEXT·BOOKING_CARD
     APP-->>U: 채팅방 화면 열기
-
-    DB-->>CHAT: 저장된 신청 완료 이벤트 전달
-    CHAT->>BOOK: 기존 신청 카드 데이터 조회
-    BOOK-->>CHAT: 매물·신청자·입주 조건·금액
-    CHAT->>DB: 같은 roomId에 BOOKING_CARD 한 번 저장
-    CHAT-->>APP: 신청 카드 실시간 전달 또는 이력 조회로 제공
-    APP-->>U: 임차인용 신청 카드 표시
 ```
 
-**쉽게 설명하면:** 먼저 기존 신청 기능이 신청 정보를 저장하고, 성공한 다음 문의하기와 같은 조건으로 채팅방을 찾는다. 이미 문의했던 방이 있으면 그 방을 그대로 사용한다. 서버는 기존 Booking 상세 조회에서 이미 만드는 데이터를 재사용해 그 방에 신청 카드를 한 번 추가한다.
+**쉽게 설명하면:** 이 그림은 앱이 해야 하는 HTTP 호출만 보여 준다. 먼저 기존 신청 API로 신청을 저장한 다음 문의하기 API로 채팅방 번호를 받는다. 이미 문의했던 방이 있으면 같은 `roomId`를 그대로 사용한다. 마지막으로 메시지 이력 API를 호출하면 현재 저장이 끝난 일반 대화와 신청 카드를 함께 받는다.
+
+신청 카드 자체는 앱이 보내지 않는다. 서버가 자동 저장하는 과정은 아래 **서버가 신청 후 채팅방과 신청 카드를 자동 보완하기** 그림에 따로 표시한다. 비동기 처리가 아직 끝나지 않아 첫 이력 조회에 카드가 없다면 짧게 기다린 뒤 이력 API를 한 번 다시 조회할 수 있다.
 
 **결과:** 신청은 기존 Booking 기능이 처리하고, 신청 완료 후 문의하기와 같은 채팅방으로 이동하며 그 안에 신청 카드가 표시된다.
 
@@ -79,7 +76,6 @@ sequenceDiagram
     participant APP as 앱
     participant BOOK as 기존 신청 API
     participant DB as MySQL
-    participant CHAT as Chat Application
 
     U->>APP: 현재 채팅방에서 신청하기 누름
     APP->>U: 기존 신청 화면 표시
@@ -88,15 +84,10 @@ sequenceDiagram
     BOOK->>DB: 신청과 신청 완료 이벤트 저장
     DB-->>BOOK: 저장 완료
     BOOK-->>APP: 신청 결과
-    DB-->>CHAT: 신청 완료 이벤트 전달
-    CHAT->>BOOK: 기존 신청 카드 데이터 조회
-    BOOK-->>CHAT: 카드 데이터
-    CHAT->>DB: 현재 방에 BOOKING_CARD 한 번 저장
-    CHAT-->>APP: 신청 카드 실시간 전달
-    APP-->>U: 현재 채팅방에 임차인용 신청 카드 표시
+    APP-->>U: 현재 채팅방 화면 유지
 ```
 
-**쉽게 설명하면:** 사용자가 이미 채팅방 안에 있으므로 새 방은 만들지 않는다. 기존 신청 API가 신청을 저장하면 서버가 현재 방에 신청 카드를 한 번 추가하고 앱은 이를 실시간으로 표시한다.
+**쉽게 설명하면:** 이 그림은 채팅방 안에서 신청하는 사용자의 HTTP 흐름만 보여 준다. 이미 채팅방을 열고 있으므로 앱은 신청 API만 호출하고 현재 화면을 유지한다. 서버가 이벤트를 처리해 같은 방에 카드를 저장하는 과정은 다음 백그라운드 그림과 같다.
 
 **결과:** 새 채팅방은 만들지 않고 현재 채팅방에 `BOOKING_CARD`만 추가한다.
 
@@ -136,11 +127,11 @@ sequenceDiagram
 sequenceDiagram
     participant BOOK as Booking Service
     participant DB as MySQL
-    participant EVENTS as 신청 완료 이벤트 저장소
+    participant EVENTS as 이벤트 저장소
     participant CHAT as Chat Application
-    participant BOOKVIEW as 기존 Booking 조회
 
-    BOOK->>DB: 신청과 재처리 가능한 완료 이벤트 저장
+    BOOK->>DB: 신청 저장
+    BOOK->>EVENTS: 같은 트랜잭션에 신청 시점 카드 사본 저장
     DB-->>BOOK: COMMIT
     EVENTS-->>CHAT: 저장된 신청 완료 이벤트 전달
     CHAT->>DB: 같은 매물·세입자·임대인의 방 존재 여부 확인
@@ -148,21 +139,21 @@ sequenceDiagram
     alt 채팅방이 없음
         CHAT->>DB: 방과 두 참여자 생성
     else 채팅방이 이미 있음
-        Note over CHAT,DB: 기존 roomId와 사용자별 숨김 상태 유지
+        Note over CHAT,DB: 기존 roomId 사용
     end
 
-    CHAT->>BOOKVIEW: bookingId로 기존 신청 상세 데이터 조회
-    BOOKVIEW-->>CHAT: 매물·신청자·입주 조건·금액
     CHAT->>DB: 같은 roomId에 bookingId 카드 저장 시도
 
     alt 같은 bookingId 카드가 없음
-        CHAT->>DB: BOOKING_CARD 저장
+        CHAT->>DB: BOOKING_CARD와 마지막 메시지 상태 함께 저장
     else 카드가 이미 있음
-        Note over CHAT,DB: 중복 저장·중복 실시간 전달 없음
+        Note over CHAT,DB: 기존 카드 반환, 다른 상태 변경 없음
     end
 ```
 
-**쉽게 설명하면:** 앱이 신청 직후 종료되거나 네트워크가 끊겨도 신청 자체는 이미 저장돼 있다. 서버는 저장된 신청 완료 이벤트를 다시 처리해 방이 없으면 만들고, 기존 Booking 데이터를 이용해 신청 카드도 한 번 저장한다. 앱이 별도 API를 반복 호출할 필요는 없다.
+**쉽게 설명하면:** 이 그림은 사용자나 앱이 호출하지 않는 백엔드 자동 작업이다. 예약과 함께 `BookingCreatedEvent`가 MySQL에 기록되고, Chat Application이 이를 받아 같은 방을 보장한 뒤 카드 한 장을 저장한다. 카드에 필요한 대표 이미지·매물·신청자·금액은 이벤트 안에 신청 시점 사본으로 이미 들어 있으므로 처리 중 Booking API를 다시 호출하지 않는다.
+
+listener가 실패하면 이벤트 행은 미완료로 남고 서버 재기동 때 다시 전달된다. 같은 이벤트가 다시 와도 `(chatRoomId, bookingId)` 중복 방지로 카드가 두 장 생기지 않는다. 현재 단계의 프론트 정본은 메시지 이력 API이며, STOMP 저장 완료 전달은 다음 실시간 단계에서 연결한다.
 
 **결과:** 신청 뒤 채팅방과 신청 카드가 누락되지 않으며, 같은 이벤트를 다시 처리해도 방이나 카드가 중복 생성되지 않는다.
 

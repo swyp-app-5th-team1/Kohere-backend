@@ -1,5 +1,6 @@
 package com.kohere.booking.application;
 
+import com.kohere.booking.BookingCreatedEvent;
 import com.kohere.booking.application.dto.BookingDetailResponse;
 import com.kohere.booking.application.dto.BookingReportResponse;
 import com.kohere.booking.application.dto.BookingResponse;
@@ -34,6 +35,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,8 +48,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code user :: api}(findBlockedUserIds)로 취득해 리포지토리 술어로 넘긴다(애플리케이션 레벨 조인 · ADR-0002). 삭제·차단·신고는
  * 삭제·차단 상태와 무관해야 하므로 비필터 조회로 참여자를 검증한다. 신규 신청은 차단 관계(양방향)면 거부한다(블랙홀 예약 방지).
  *
- * <p>매물 요약·가격·예약자 성명은 예약에 스냅샷 저장하지 않고 조회 시점에 {@code listing :: api}·{@code user :: api} 공개 쿼리로 실시간
- * 조인한다(cross-store 조인 금지 · ADR-0005). 채팅방·예약 카드·{@code BookingCreatedEvent} 발행은 후속·이연이라 수행하지 않는다.
+ * <p>예약 목록·상세의 매물 요약과 가격은 기존 계약대로 조회 시점에 {@code listing :: api}·{@code user :: api} 공개 쿼리로
+ * 조합한다(cross-store 조인 금지 · ADR-0005). 다만 채팅의 BOOKING_CARD는 신청 당시 화면을 재현해야 하므로 예약 저장 시점 값을 {@link
+ * BookingCreatedEvent}에 고정해 발행한다. booking은 chat을 직접 호출하지 않으며, chat listener가 이벤트를 비동기로 처리한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -63,7 +66,16 @@ public class BookingService {
   private final BookingListingQueryService listingQueryService;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
+  private final BookingCreatedEventFactory bookingCreatedEventFactory;
+  private final ApplicationEventPublisher eventPublisher;
 
+  /**
+   * 예약을 저장하고, 동일한 커밋에 채팅 신청 카드 작업도 빠지지 않도록 모듈 이벤트를 기록한다.
+   *
+   * <p>HTTP 응답에 채팅 카드 자체를 넣지는 않는다. 프런트는 예약 성공 뒤 기존 문의 API로 같은 채팅방을 열고 메시지 이력 API에서 서버가 만든
+   * BOOKING_CARD를 받는다. 이벤트 listener는 비동기이므로 아주 짧은 시간 동안 카드를 아직 조회하지 못할 수 있으며, 실시간 STOMP 연결 단계에서는 저장
+   * 완료 이벤트로 화면을 자동 갱신한다.
+   */
   @Transactional
   public BookingResponse createBooking(long tenantId, String listingId, BookingRequest request) {
     assertTenant(tenantId);
@@ -80,6 +92,8 @@ public class BookingService {
       throw new BookingAlreadyExistsException();
     }
 
+    // 예약과 이벤트에 같은 시각을 사용해야 카드가 어떤 신청 커밋에서 시작됐는지 일관되게 추적할 수 있다.
+    Instant createdAt = Instant.now();
     Booking saved =
         bookingRepository.save(
             Booking.builder()
@@ -90,8 +104,16 @@ public class BookingService {
                 .moveInDate(moveInDate)
                 .contractPeriod(request.contractPeriod())
                 .status(BookingStatus.REQUESTED)
-                .createdAt(Instant.now())
+                .createdAt(createdAt)
                 .build());
+
+    // 임대인 카드에 필요한 신청자 정보도 예약이 성공한 바로 이 시점에 고정한다. listener에서 다시 조회하지 않는다.
+    ApplicantProfileView applicant = userAccountService.getApplicantProfile(tenantId);
+    BookingCreatedEvent event = bookingCreatedEventFactory.create(saved, offer, applicant);
+
+    // Spring Modulith JPA가 이 publish를 가로채 예약과 같은 MySQL 트랜잭션에 EVENT_PUBLICATION 행을 기록한다.
+    // 따라서 아래 트랜잭션이 롤백되면 예약과 이벤트가 함께 사라지고, 커밋되면 chat listener가 비동기로 처리한다.
+    eventPublisher.publishEvent(event);
 
     return new BookingResponse(
         saved.getId(),

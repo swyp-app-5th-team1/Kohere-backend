@@ -7,7 +7,6 @@ import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.ListingSnapshot;
-import com.kohere.listing.api.ChatListingView;
 import java.time.Instant;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -33,22 +32,22 @@ public class ChatRoomCreator {
    * <p>방 저장이나 두 참여자 저장 중 하나라도 실패하면 {@link Transactional} 경계가 전체 작업을 롤백한다. 따라서 참여자가 한 명뿐인 불완전한 방은 남지
    * 않는다.
    *
-   * @param listing 공개 매물의 실제 임대인과 표시 정보
+   * @param seed 검증이 끝난 매물의 실제 임대인과 표시 정보
    * @param tenantId JWT에서 얻은 임차인 사용자 ID
    * @param now 방과 참여자의 공통 생성 시각
    * @return DB가 발급한 ID를 포함한 새 채팅방
    */
   @Transactional
-  public ChatRoom create(ChatListingView listing, long tenantId, Instant now) {
+  public ChatRoom create(ChatRoomSeed seed, long tenantId, Instant now) {
     ChatRoom room =
         chatRoomRepository.save(
             ChatRoom.builder()
-                .listingId(listing.listingId())
+                .listingId(seed.listingId())
                 .tenantId(tenantId)
-                .landlordId(listing.landlordId())
+                .landlordId(seed.landlordId())
                 .category(ChatCategory.LANDLORD)
                 // 매물이 나중에 비공개·삭제돼도 기존 방 제목과 주소를 표시할 수 있도록 생성 시점 값을 보존한다.
-                .listingSnapshot(new ListingSnapshot(listing.title(), listing.address()))
+                .listingSnapshot(new ListingSnapshot(seed.title(), seed.address()))
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
@@ -56,10 +55,9 @@ public class ChatRoomCreator {
     // 참여자 상태는 사용자별 숨김·삭제 경계를 독립적으로 관리해야 하므로 방 행과 별도로 정확히 두 행을 만든다.
     memberRepository.saveAll(
         List.of(
+            newMember(room.getId(), tenantId, seed.landlordId(), ChatParticipantRole.TENANT, now),
             newMember(
-                room.getId(), tenantId, listing.landlordId(), ChatParticipantRole.TENANT, now),
-            newMember(
-                room.getId(), listing.landlordId(), tenantId, ChatParticipantRole.LANDLORD, now)));
+                room.getId(), seed.landlordId(), tenantId, ChatParticipantRole.LANDLORD, now)));
     return room;
   }
 

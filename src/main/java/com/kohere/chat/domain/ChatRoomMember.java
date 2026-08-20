@@ -60,4 +60,21 @@ public class ChatRoomMember {
     }
     return toBuilder().roomHiddenAt(null).updatedAt(now).build();
   }
+
+  /**
+   * 사용자 삭제 이후에 실제로 발생한 새 메시지가 있으면 채팅방을 목록에 다시 표시한다.
+   *
+   * <p>비동기 신청 이벤트가 늦게 처리될 수 있으므로 단순히 "현재 숨김"만 보고 되살리면 안 된다. 사용자가 메시지 발생 뒤에 방을 삭제했다면 그 최신 선택을 존중하고,
+   * 메시지가 삭제 시각과 같거나 더 늦게 발생한 경우에만 방을 다시 표시한다. 과거 메시지 숨김 경계는 그대로 유지한다.
+   *
+   * @param activityOccurredAt 예약 신청 등 새 활동이 실제 발생한 시각
+   * @param now 서버가 재표시 상태를 저장하는 시각
+   * @return 재표시가 필요하면 새 참여자 상태, 아니면 현재 객체
+   */
+  public ChatRoomMember showForNewActivity(Instant activityOccurredAt, Instant now) {
+    if (roomHiddenAt == null || roomHiddenAt.isAfter(activityOccurredAt)) {
+      return this;
+    }
+    return showAgain(now);
+  }
 }

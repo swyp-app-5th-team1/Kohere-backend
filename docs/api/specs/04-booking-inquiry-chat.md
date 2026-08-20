@@ -77,6 +77,22 @@
 
 방 상품(`roomOffer`)에 타겟 입주일과 계약기간(개월수)으로 예약을 생성·저장한다. 신청 직후 상태는 `REQUESTED` 고정이다. **동일 세입자–동일 방 상품에 예약은 활성 1건만** 허용된다(UNIQUE `uq_bookings_tenant_room_offer`) — 이미 신청한 방 상품에 다시 신청하면 `409 BOOKING_ALREADY_EXISTS`다.
 
+#### 신청 후 채팅방·신청 카드 자동 처리
+
+예약이 저장되면 서버는 같은 트랜잭션에 `BookingCreatedEvent`를 기록한다. Chat Application은 이 이벤트를 비동기로 받아 문의하기와 같은
+`(listingId, tenantId, landlordId)` 채팅방을 찾거나 만들고, 신청 시점의 매물 대표 이미지·신청자·입주 조건·금액을 `BOOKING_CARD` 한 장으로
+저장한다. 프런트가 카드를 생성하거나 전송하는 별도 API는 없다.
+
+프런트 권장 호출 순서는 다음과 같다.
+
+1. 이 신청 API 호출
+2. 성공 뒤 `POST /api/v1/listings/{listingId}/inquiries`로 동일 채팅방의 `chatRoomId` 확보
+3. `GET /api/v1/chat-rooms/{chatRoomId}/messages`로 기존 TEXT와 BOOKING_CARD 조회
+
+신청 이전에 문의 대화가 있었다면 새 채팅방이 아니라 기존 `roomId`의 메시지 이력 뒤에 카드가 추가된다. 이벤트 listener는 비동기이므로 첫 이력 조회에서
+카드가 아직 없다면 짧게 기다린 뒤 같은 이력 API를 한 번 다시 조회할 수 있다. 같은 이벤트가 재처리돼도 `(chatRoomId, bookingId)` UNIQUE 때문에
+카드는 한 장만 존재한다.
+
 - **인증**: 필수. 요청자는 `ACTIVE` 상태의 세입자(`userType=TENANT`)여야 한다. **예약은 세입자 전용** — 임대인(매물 소유자)은 예약할 수 없으며(비세입자 `403 FORBIDDEN`), 세입자가 자기 소유 매물을 예약하는 상황 자체가 성립하지 않으므로 본인 매물 차단은 두지 않는다.
 - 매물·방 상품 존재·공개 여부는 `listing :: api`로 검증한다(소유자 조회 불요; cross-store 조인 금지, ADR-0005). 이 검증은 모듈 공개 쿼리라 **매물 조회 API의 v1/v2 분리와 무관**하다 — `deprecated`된 `/api/v1` 조회 스텁이 빈 결과를 주더라도 예약 생성은 실데이터로 판정한다.
 - `listingId`·`roomOfferId`는 **`/api/v2` 매물 조회 응답**(상세 `GET /api/v2/listings/{listingId}`의 `listingId`·`roomOffers[].roomOfferId`)에서 얻은 값을 그대로 보낸다([03-listings-favorites](03-listings-favorites.md)).
@@ -125,7 +141,7 @@
 }
 ```
 
-> 생성 응답은 예약 코어 내역만 담는다. 매물 요약·가격·예약자 성명은 [3. 예약 상세](#3-get-apiv1bookingsbookingid--예약-단건-상세)에서 조회 시점 조인으로 내려준다.
+> 생성 응답은 예약 코어 내역만 담는다. `201`은 예약과 재처리 가능한 이벤트가 저장됐다는 뜻이며 BOOKING_CARD 저장 완료 응답은 아니다. 매물 요약·가격·예약자 성명은 [3. 예약 상세](#3-get-apiv1bookingsbookingid--예약-단건-상세)에서 조회 시점 조인으로 내려준다.
 
 #### 발생 가능한 에러
 

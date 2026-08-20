@@ -37,6 +37,7 @@ import com.kohere.docs.ApiDocsErrors;
 import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.api.BookingListingQueryService;
 import com.kohere.listing.api.RoomOfferBookingView;
+import com.kohere.user.api.ApplicantProfileView;
 import com.kohere.user.api.UserAccountService;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -118,6 +119,12 @@ class UserBlockDocsTest {
   /** 세입자가 예약을 만들고 그 상대(임대인)를 차단한다 — 차단 상대 식별자 = LANDLORD_ID. */
   private void blockLandlordViaBooking() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
+    // 예약 생성은 이제 신청 시점의 BOOKING_CARD 사본도 함께 만든다. 이 테스트의 관심사는 차단이지만,
+    // 실제 예약 생성 경로를 통과하므로 신청자 공개 정보도 정상 값으로 준비한다.
+    given(userAccountService.getApplicantProfile(TENANT_ID))
+        .willReturn(
+            new ApplicantProfileView(
+                TENANT_ID, "테스트 세입자", "OTHER", "KR", "대한민국", "tenant@example.com"));
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
     String body =

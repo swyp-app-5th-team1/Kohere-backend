@@ -117,6 +117,14 @@ class BookingDocsTest {
             .apply(springSecurity())
             .apply(documentationConfiguration(restDocumentation))
             .build();
+    // 예약 성공 시 BOOKING_CARD 사본을 함께 만들므로 모든 성공 테스트가 동일한 신청자 공개 뷰를 사용한다.
+    given(userAccountService.getApplicantProfile(TENANT_ID)).willReturn(applicantView());
+  }
+
+  /** Swagger 예약 예시와 비동기 신청 카드가 함께 사용하는 신청자 정보다. */
+  private ApplicantProfileView applicantView() {
+    return new ApplicantProfileView(
+        TENANT_ID, "Gil dong Hong", "MALE", "MN", "Mongolia", "kohere@gmail.com");
   }
 
   private String tenantToken() {

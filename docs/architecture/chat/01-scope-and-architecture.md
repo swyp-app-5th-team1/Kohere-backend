@@ -103,7 +103,6 @@ flowchart LR
     BROKER --> LANDLORD
     REST --> BOOKING
     BOOKING -->|"BookingCreatedEvent"| CHAT
-    CHAT -->|"기존 Booking 카드 데이터 조회"| BOOKING
     REST --> REPORT
     REPORT --> CHAT
     REPORT --> USER
@@ -127,9 +126,9 @@ flowchart LR
 5. 그림의 `DB 커밋 후`는 위 내용이 모두 저장됐다는 뜻이다. 하나라도 저장에 실패하면 Broker로 메시지를 전달하지 않는다.
 6. Simple Broker는 저장이 끝난 메시지를 현재 접속해 구독 중인 앱에 전달한다. Broker가 본문을 검사하거나 기록을 장기간 보관하지는 않는다.
 7. Translation Worker는 직접 번역하지 않는다. MySQL의 번역 대기 작업을 찾아 Google API에 요청하고, Google이 만든 번역본을 저장·전달하는 백엔드 작업이다.
-8. Booking Service는 기존 입주 신청과 카드에 필요한 신청 상세 데이터를 담당한다. 신청 완료 이벤트를 받은 Chat Application은 문의하기와 같은 방을 보장하고 카드만 채팅 메시지로 저장한다. Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
+8. Booking Service는 입주 신청을 저장하면서 카드에 필요한 신청 당시 정보를 `BookingCreatedEvent`에 함께 담는다. 이벤트를 받은 Chat Application은 문의하기와 같은 채팅방을 보장하고 그 정보를 `BOOKING_CARD` 메시지로 한 번만 저장한다. Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
 
-입주 신청의 경우에는 기존 Booking Service가 이미 매물 이미지·제목·주소·객실명, 신청자 프로필, 입주일·계약 기간, 보증금·총금액을 조합한다. 이 로직을 복제하지 않고 채팅용 공개 조회 결과로 재사용해 `BOOKING_CARD` 스냅샷을 만든다. 신청 이벤트가 늦게 다시 처리돼도 `bookingId`가 같은 카드를 두 번 저장하지 않는다.
+입주 신청의 경우에는 기존 Booking Service가 신청을 만들 때 이미 조회한 매물·객실 정보와 신청자 정보를 재사용한다. 별도의 조회 API를 다시 호출하지 않고, 신청 시점의 매물 이미지·제목·주소·객실명, 신청자 정보, 입주일·계약 기간, 보증금·총금액을 이벤트에 담는다. Chat Application은 이 사본으로 `BOOKING_CARD`를 만들며, 이벤트가 늦게 다시 처리돼도 `bookingId`가 같은 카드를 두 번 저장하지 않는다.
 
 `MySQL → Translation Worker` 화살표는 MySQL이 Worker를 직접 호출한다는 뜻이 아니다. Spring 애플리케이션 안의 Worker가 MySQL에 저장된 번역 대기 작업을 조회해 처리한다.
 
@@ -160,7 +159,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 | JWT | `JwtTokenService` | REST와 STOMP CONNECT가 같은 검증 규칙 사용 |
 | 사용자 신원 | `AuthPrincipal` | userId를 API 요청자와 메시지 발신자로 사용 |
 | 신청 | 기존 Booking API·`BookingService` | chat 안에 예약 로직을 복제하지 않음 |
-| 신청 카드 데이터 | `BookingDetailResponse`, `LandlordBookingDetailResponse`를 만드는 기존 조회·계산 로직 | 채팅용 공개 `BookingCardView`로 노출해 카드 스냅샷 생성에 사용 |
+| 신청 카드 데이터 | 신청 생성 과정에서 이미 조회한 매물·객실·신청자 정보와 기존 금액 계산 방식 | `BookingCreatedEvent`에 신청 당시 사본을 함께 담아 카드 생성에 사용 |
 | 차단 | `UserBlockService`, `user_blocks` | 서버가 방의 상대를 도출해 호출 |
 | 언어 | `UserAccountService.getLanguage` | 채팅 번역 대상 언어와 신고 사유 label 결정 |
 | 공통 응답 | `ApiResponse`, `PageResponse`, `CursorResponse` | 기존 REST 응답 형식 유지 |
@@ -193,7 +192,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 - `report -> chat::api`: 방 참여자, 상대, 증거 범위 확인
 - `report -> user::api`: 로그인 사용자의 언어 확인
 - `booking -> 공개 BookingCreatedEvent`: chat에 직접 의존하지 않음
-- `chat -> booking 공개 event/API`: 신청 이벤트로 누락된 방을 보장하고 기존 Booking 데이터를 조회해 `BOOKING_CARD`를 한 번만 저장
+- `booking -> chat` 공개 이벤트: 신청 시점 카드 사본이 포함된 이벤트로 누락된 방을 보장하고 `BOOKING_CARD`를 한 번만 저장
 
 필요한 작은 공개 interface:
 
@@ -201,7 +200,6 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 - `ChatCounterpartQueryService`: userId로 채팅 표시 이름 조회
 - `ChatReportQueryService`: 방 참여자·상대·증거 사본 조회
 - `MessageTranslationPort`: 원문과 대상 언어를 받아 번역 결과 반환
-- `BookingCardQueryService`: bookingId로 카드에 필요한 기존 신청 상세 데이터를 반환
 
 매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 제목·주소 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 채팅 API는 이미지 URL을 반환하지 않고 앱이 기본 프로필 아이콘을 표시한다. 매물 대표 이미지는 일반 방 응답이 아니라 이미지가 실제로 보이는 `BOOKING_CARD`에만 포함한다.
 

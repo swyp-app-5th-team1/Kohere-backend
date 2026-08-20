@@ -185,6 +185,19 @@ public final class ChatDocsFields {
       - WebSocket 재연결 뒤: 마지막으로 연속 확인한 `messageId`를 `afterMessageId`로 보내 끊긴 동안 저장된 메시지를 보충한다.
       - 재연결 시 앱이 자동으로 한 번 이상 호출할 수 있지만, 일정 간격으로 계속 호출하는 polling API는 아니다.
 
+      **신청 완료 뒤 BOOKING_CARD를 받는 흐름**
+
+      1. 앱이 기존 `POST /api/v1/listings/{listingId}/bookings`로 신청을 저장한다.
+      2. 앱이 `POST /api/v1/listings/{listingId}/inquiries`로 같은 매물의 `chatRoomId`를 받는다.
+      3. 앱이 이 메시지 이력 API를 호출한다.
+      4. 서버가 저장한 `BOOKING_CARD`가 일반 TEXT와 같은 `content[]`에 시간순으로 함께 반환된다.
+
+      BOOKING_CARD를 "채팅방에 전달"한다는 말은 프론트가 카드 전송 API를 호출한다는 뜻이 아니다. 백엔드가 예약 이벤트를 처리해
+      `chat_messages`에 저장하고, 이 API는 이미 저장된 카드를 읽어 프론트에 반환한다. 프론트는 `type=BOOKING_CARD`를 보고 카드 UI만 그린다.
+
+      이벤트 처리는 예약 HTTP 응답 뒤 비동기로 진행된다. 신청 직후 첫 조회에 카드가 아직 없으면 짧게 기다린 뒤 이 API를 한 번 다시 조회할 수 있다.
+      지속 polling은 필요하지 않으며, STOMP 단계가 연결되면 새 카드는 실시간 메시지 이벤트로도 받게 된다.
+
       **과거 메시지를 조회하는 가장 쉬운 흐름**
 
       1. 처음에는 `cursor` 없이 요청한다.
@@ -253,7 +266,9 @@ public final class ChatDocsFields {
       **메시지 종류**
 
       - `TEXT`: 사용자가 보낸 변경되지 않은 원문을 `originalContent`로 반환한다. `clientMessageId`는 전송 시 프런트가 생성한 UUID다.
-      - `BOOKING_CARD`: 신청 완료 이벤트로 서버가 만든 카드다. `bookingCard`에 신청 시점 정보가 있고 TEXT·UUID·발신자는 null이다.
+      - `BOOKING_CARD`: 신청 완료 이벤트로 서버가 만든 카드다. `bookingCard`에 신청 시점 정보가 있고 `originalContent`·`clientMessageId`·`senderId`는 null이다.
+      - 카드의 `listing.thumbnailUrl`은 신청 카드 상단 대표 이미지다. 채팅방 목록의 프로필 이미지와는 관계없다.
+      - 카드 문구·항목명은 앱이 `myRole`과 지원 언어 `ko/en`에 맞춰 표시하고, 카드 payload 자체는 Google 자동 번역 대상이 아니다.
       - 자동 번역이 아직 저장되지 않았거나 실패한 경우에도 원문은 반환하며 `translation=null`이다.
 
       **삭제와 보안 규칙**

@@ -271,7 +271,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 }
 ```
 
-`BOOKING_CARD`는 기존 Booking 상세 조회에서 이미 조합하는 데이터를 재사용해 만든다. 프런트엔드는 `myRole=TENANT|LANDLORD`에 따라 같은 데이터를 서로 다른 카드 UI로 배치한다. 카드의 고정 라벨은 앱이 `ko/en`으로 표시하며 이 구조화 데이터는 Google 번역에 보내지 않는다.
+`BOOKING_CARD`는 신청을 저장할 때 이미 조회한 매물·객실·신청자 정보와 기존 금액 계산 방식을 재사용해 만든다. Booking 모듈은 이 정보를 `BookingCreatedEvent`에 신청 시점 사본으로 담고, Chat 모듈은 별도의 Booking 조회 API 없이 카드를 저장한다. 프런트엔드는 `myRole=TENANT|LANDLORD`에 따라 같은 데이터를 서로 다른 카드 UI로 배치한다. 카드의 고정 라벨은 앱이 `ko/en`으로 표시하며 이 구조화 데이터는 Google 번역에 보내지 않는다.
 
 ### 5.5 채팅방 삭제
 
