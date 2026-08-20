@@ -189,31 +189,31 @@ public final class ChatDocsFields {
 
       1. 처음에는 `cursor` 없이 요청한다.
 
-         ```http
-         GET /api/v1/chat-rooms/10/messages?size=3
-         ```
+          ```http
+          GET /api/v1/chat-rooms/10/messages?size=3
+          ```
 
       2. 서버가 최근 메시지와 다음 조회 위치를 반환한다. 아래 예시는 전체 응답 중 `data` 내부만 줄여서 표시한 것이다.
 
-         ```json
-         {
-           "content": [
-             { "messageId": 105 },
-             { "messageId": 104 },
-             { "messageId": 103 }
-           ],
-           "nextCursor": "103",
-           "hasNext": true
-         }
-         ```
+          ```json
+          {
+            "content": [
+              { "messageId": 105 },
+              { "messageId": 104 },
+              { "messageId": 103 }
+            ],
+            "nextCursor": "103",
+            "hasNext": true
+          }
+          ```
 
       3. 사용자가 위로 스크롤하면 `nextCursor` 값을 다음 요청의 `cursor`에 그대로 넣는다.
 
-         ```http
-         GET /api/v1/chat-rooms/10/messages?cursor=103&size=3
-         ```
+          ```http
+          GET /api/v1/chat-rooms/10/messages?cursor=103&size=3
+          ```
 
-         이 요청은 **“10번 채팅방에서 103번보다 오래된 메시지를 최대 3개 주세요”**라는 뜻이다.
+          이 요청은 **“10번 채팅방에서 103번보다 오래된 메시지를 최대 3개 주세요”**라는 뜻이다.
 
       4. `hasNext=false`가 되면 더 오래된 메시지가 없으므로 추가 요청을 멈춘다.
 
