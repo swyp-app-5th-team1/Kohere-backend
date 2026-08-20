@@ -52,7 +52,9 @@ class ChatApiSurfaceTest {
    */
   @Test
   void restMessageSendReadAndRestoreAreNotExposed() {
-    assertThat(mappedPaths(ChatRoomController.class, PostMapping.class)).isEmpty();
+    // POST는 상대 차단 한 경로만 허용한다. 메시지 전송·읽음·복원 POST가 다시 생기면 이 계약이 실패한다.
+    assertThat(mappedPaths(ChatRoomController.class, PostMapping.class))
+        .containsExactly("/{roomId}/block");
   }
 
   /** 읽음 수와 함께 이연한 category 필터가 목록 query에 다시 섞이지 않도록 보호한다. */
@@ -89,6 +91,15 @@ class ChatApiSurfaceTest {
 
     assertThat(mappedPaths(deleteRoom, DeleteMapping.class)).containsExactly("/{roomId}");
     assertThat(requestParameterNames(deleteRoom)).isEmpty();
+  }
+
+  /** 상대 userId나 body를 받지 않고 서버 roomId 한 개로 차단하는 POST 경로를 고정한다. */
+  @Test
+  void roomBlockUsesServerRoomIdAndHasNoRequestParameters() {
+    Method blockCounterpart = methodNamed(ChatRoomController.class, "blockCounterpart");
+
+    assertThat(mappedPaths(blockCounterpart, PostMapping.class)).containsExactly("/{roomId}/block");
+    assertThat(requestParameterNames(blockCounterpart)).isEmpty();
   }
 
   /** Swagger 안내용 REST가 실제 STOMP 경로 정본을 반환하고 메시지 전송 API로 오해되지 않게 GET으로만 노출되는지 확인한다. */

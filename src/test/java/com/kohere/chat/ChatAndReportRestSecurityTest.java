@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomBlockService;
 import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatRoomDetailService;
 import com.kohere.chat.application.ChatRoomListService;
@@ -88,6 +89,9 @@ class ChatAndReportRestSecurityTest {
   // 사용자별 삭제 서비스의 상태 변경은 전용 테스트가 검증하고 여기서는 DELETE 경로의 ROLE_USER 경계만 확인한다.
   @MockitoBean private ChatRoomDeletionService chatRoomDeletionService;
 
+  // 차단 대상 도출과 user 모듈 저장은 전용 테스트가 검증하고 여기서는 POST 경로의 ROLE_USER 경계만 확인한다.
+  @MockitoBean private ChatRoomBlockService chatRoomBlockService;
+
   // 신고 유스케이스 구현 여부와 무관하게 SecurityConfig의 `/reports/**` 권한만 검증하도록 서비스는 대체한다.
   @MockitoBean private ReportService reportService;
 
@@ -153,6 +157,30 @@ class ChatAndReportRestSecurityTest {
     mockMvc
         .perform(
             delete("/api/v1/chat-rooms/{roomId}", 556L).with(authentication(authenticatedUser)))
+        .andExpect(status().isNoContent());
+  }
+
+  /** 채팅방 차단은 사용자 관계를 변경하므로 인증되지 않은 요청을 컨트롤러 전에 막는다. */
+  @Test
+  @DisplayName("채팅방 차단 REST: 토큰이 없으면 401")
+  void blockCounterpart_withoutAuthentication_returnsUnauthorized() throws Exception {
+    mockMvc
+        .perform(post("/api/v1/chat-rooms/{roomId}/block", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 정식 사용자가 body 없이 roomId만 보내면 차단 컨트롤러에 도달해 204를 받는다. */
+  @Test
+  @DisplayName("채팅방 차단 REST: ROLE_USER는 204를 받는다")
+  void blockCounterpart_withUserRole_reachesController() throws Exception {
+    var authenticatedUser =
+        new UsernamePasswordAuthenticationToken(
+            new AuthPrincipal(7L, true), null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/block", 556L).with(authentication(authenticatedUser)))
         .andExpect(status().isNoContent());
   }
 

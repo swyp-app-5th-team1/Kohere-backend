@@ -1,6 +1,7 @@
 package com.kohere.chat.presentation;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomBlockService;
 import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatRoomDetailService;
 import com.kohere.chat.application.ChatRoomListService;
@@ -18,6 +19,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -44,6 +46,7 @@ public class ChatRoomController {
   private final ChatRoomDetailService chatRoomDetailService;
   private final ChatMessageHistoryService chatMessageHistoryService;
   private final ChatRoomDeletionService chatRoomDeletionService;
+  private final ChatRoomBlockService chatRoomBlockService;
 
   /**
    * 현재 사용자에게 보이는 채팅방을 최근 활동 순으로 조회한다.
@@ -122,5 +125,22 @@ public class ChatRoomController {
       @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long roomId) {
     // userId를 body나 query로 받지 않아 사용자가 상대방의 참여자 상태를 대신 삭제할 수 없게 한다.
     chatRoomDeletionService.deleteRoom(principal.userId(), roomId);
+  }
+
+  /**
+   * 현재 채팅방의 두 참여자 중 로그인 사용자가 아닌 상대방을 차단한다.
+   *
+   * <p>프런트는 상대 사용자 ID나 요청 body를 보내지 않는다. 성공해도 기존 채팅방과 과거 메시지는 그대로 유지되므로 앱은 입력창만 비활성화하면 된다. 채팅방까지
+   * 목록에서 숨기려면 삭제 API를 별도로 호출한다.
+   *
+   * @param principal 검증된 access token에서 만든 차단 요청자 정보
+   * @param roomId 목록·상세에서 받은 서버 채팅방 ID
+   */
+  @PostMapping("/{roomId}/block")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void blockCounterpart(
+      @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long roomId) {
+    // 차단 대상을 body로 받지 않고 서비스가 참여자 중 상대방을 찾도록 해 임의 사용자 차단을 막는다.
+    chatRoomBlockService.blockCounterpart(principal.userId(), roomId);
   }
 }
