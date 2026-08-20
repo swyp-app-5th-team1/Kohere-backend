@@ -1,10 +1,12 @@
 package com.kohere.chat.infrastructure;
 
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,6 +29,13 @@ interface ChatRoomMemberJpaRepository extends JpaRepository<ChatRoomMemberJpaEnt
    * @return ID 오름차순 참여자 엔티티
    */
   List<ChatRoomMemberJpaEntity> findByChatRoomIdOrderByIdAsc(Long chatRoomId);
+
+  /** 삭제·재진입처럼 사용자별 방 상태를 바꾸는 작업이 같은 두 행을 같은 순서로 잠그게 한다. */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query(
+      "SELECT member FROM ChatRoomMemberJpaEntity member "
+          + "WHERE member.chatRoomId = :chatRoomId ORDER BY member.id ASC")
+  List<ChatRoomMemberJpaEntity> findByChatRoomIdForUpdate(@Param("chatRoomId") Long chatRoomId);
 
   /**
    * 사용자별 숨김 상태는 member에서, 최근 활동 정렬값은 room에서 가져오는 목록 전용 조인 쿼리다.

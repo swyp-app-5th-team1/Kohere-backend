@@ -57,6 +57,15 @@ public class ChatRoomMemberRepositoryImpl implements ChatRoomMemberRepository {
 
   /** {@inheritDoc} */
   @Override
+  public List<ChatRoomMember> findByChatRoomIdForUpdate(Long chatRoomId) {
+    // 실제 SELECT ... FOR UPDATE는 JPA 저장소의 @Lock이 만들고 이 어댑터는 잠긴 값을 도메인으로만 바꾼다.
+    return jpaRepository.findByChatRoomIdForUpdate(chatRoomId).stream()
+        .map(ChatRoomMemberRepositoryImpl::toDomain)
+        .toList();
+  }
+
+  /** {@inheritDoc} */
+  @Override
   public ChatRoomMemberPage findVisiblePageByUserId(Long userId, int page, int size) {
     // 정렬은 JPQL에 고정되어 있으므로 Pageable에는 offset과 limit만 전달한다.
     Page<ChatRoomMemberJpaEntity> result =

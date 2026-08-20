@@ -47,6 +47,17 @@ public interface ChatRoomMemberRepository {
   List<ChatRoomMember> findByChatRoomId(Long chatRoomId);
 
   /**
+   * 채팅방 상태를 바꾸는 트랜잭션에서 두 참여자 행을 ID 순서로 잠가 조회한다.
+   *
+   * <p>삭제·직접 문의 재진입이 동시에 실행돼도 모두 {@code room -> member ID 오름차순}으로 잠그면 서로 반대 순서로 기다리는 교착을 피하고, 마지막으로
+   * 잠금을 얻은 사용자 행동이 일관되게 반영된다. 단순 조회 API에서는 사용하지 않는다.
+   *
+   * @param chatRoomId 참여자 행을 잠글 채팅방 ID
+   * @return 잠긴 참여자 상태 목록
+   */
+  List<ChatRoomMember> findByChatRoomIdForUpdate(Long chatRoomId);
+
+  /**
    * 로그인 사용자의 화면에 현재 보이는 채팅방 상태를 최근 활동 순으로 조회한다.
    *
    * <p>{@code roomHiddenAt != null}인 행은 사용자가 삭제해 목록에서 숨긴 상태이므로 제외한다. 정렬은 연결된 채팅방의 마지막 메시지 시각을 사용하고,

@@ -46,6 +46,33 @@ public class ChatRoomMember {
   private final Instant updatedAt;
 
   /**
+   * 사용자가 채팅방을 삭제했을 때 이 사용자에게만 방과 현재까지의 대화를 숨긴다.
+   *
+   * <p>공유 채팅방과 메시지를 지우지 않고 참여자 한 명의 상태만 변경한다. 이미 숨긴 방에 같은 DELETE 요청이 다시 오면 최초 삭제 시각과 경계를 연장하지 않고 현재
+   * 객체를 그대로 반환한다. 방이 다시 표시된 뒤 재삭제하는 경우에는 이전 경계와 현재 마지막 메시지 중 큰 값을 사용하므로 한 번 숨긴 과거 메시지가 다시 노출되지 않는다.
+   *
+   * @param lastMessageId 삭제 트랜잭션에서 잠근 채팅방의 현재 마지막 메시지 ID. 빈 방이면 {@code null}
+   * @param now 실제 삭제 요청을 처리한 서버 UTC 시각
+   * @return 새 숨김 상태 또는 이미 숨겨져 있으면 현재 객체
+   */
+  public ChatRoomMember hide(Long lastMessageId, Instant now) {
+    if (roomHiddenAt != null) {
+      return this;
+    }
+
+    // 빈 방은 0을 사용한다. 이전 삭제 경계보다 낮아지지 않게 해야 재진입 뒤에도 과거 이력이 복원되지 않는다.
+    long currentLastMessageId = lastMessageId == null ? 0L : lastMessageId;
+    long hiddenThrough = Math.max(historyHiddenThroughMessageId, currentLastMessageId);
+
+    return toBuilder()
+        .roomHiddenAt(now)
+        .historyHiddenThroughMessageId(hiddenThrough)
+        .deleteRequestedAt(now)
+        .updatedAt(now)
+        .build();
+  }
+
+  /**
    * 사용자가 같은 매물에서 직접 문의해 기존 방으로 다시 들어올 때 목록에 방을 표시한다.
    *
    * <p>이 동작은 삭제 복원이 아니다. {@code historyHiddenThroughMessageId}와 {@code deleteRequestedAt}은 그대로 두고

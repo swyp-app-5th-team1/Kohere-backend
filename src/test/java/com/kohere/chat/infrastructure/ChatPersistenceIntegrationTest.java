@@ -3,8 +3,12 @@ package com.kohere.chat.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomCreator;
+import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatTextMessageService;
 import com.kohere.chat.application.TextMessageSaveResult;
+import com.kohere.chat.application.dto.MessageResponse;
 import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatCategory;
 import com.kohere.chat.domain.ChatParticipantRole;
@@ -17,6 +21,7 @@ import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.common.response.CursorResponse;
 import com.kohere.user.api.UserBlockService;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -53,7 +58,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
   MessageRepositoryImpl.class,
-  ChatTextMessageService.class
+  ChatTextMessageService.class,
+  ChatRoomDeletionService.class,
+  ChatMessageHistoryService.class,
+  ChatRoomCreator.class
 })
 @Testcontainers
 class ChatPersistenceIntegrationTest {
@@ -73,6 +81,15 @@ class ChatPersistenceIntegrationTest {
 
   /** 실제 JPA 포트를 하나의 TEXT 저장 트랜잭션으로 묶는 응용 서비스다. */
   @Autowired private ChatTextMessageService textMessageService;
+
+  /** 사용자별 숨김 경계를 방·참여자 잠금 안에서 저장하는 삭제 유스케이스다. */
+  @Autowired private ChatRoomDeletionService roomDeletionService;
+
+  /** 삭제 경계가 실제 REST 메시지 응답에 적용되는지 확인할 읽기 유스케이스다. */
+  @Autowired private ChatMessageHistoryService messageHistoryService;
+
+  /** 직접 문의 재진입이 같은 방을 다시 표시하되 과거 이력은 복원하지 않는지 확인한다. */
+  @Autowired private ChatRoomCreator roomCreator;
 
   /** 이 통합 테스트는 chat 저장 원자성에 집중하므로 user 모듈의 차단 조회 경계만 대체한다. */
   @MockitoBean private UserBlockService userBlockService;
@@ -301,6 +318,101 @@ class ChatPersistenceIntegrationTest {
     assertThat(recipient.getRoomHiddenAt()).isNull();
     assertThat(recipient.getHistoryHiddenThroughMessageId()).isEqualTo(400L);
     assertThat(recipient.getDeleteRequestedAt()).isEqualTo(deletedAt);
+  }
+
+  /** 한쪽 삭제 뒤 상대 기록은 유지되고 실제 새 메시지가 올 때 요청자에게 새 메시지만 다시 보이는지 검증한다. */
+  @Test
+  void deletesOnlyRequesterAndReopensWithOnlyMessagesAfterBoundary() {
+    Instant createdAt = now();
+    ChatRoom room = chatRoomRepository.save(newRoom("64f000000000000000000015", createdAt));
+    memberRepository.saveAll(
+        List.of(
+            newMember(room.getId(), 101L, 202L, ChatParticipantRole.TENANT, createdAt),
+            newMember(room.getId(), 202L, 101L, ChatParticipantRole.LANDLORD, createdAt)));
+
+    Message oldMessage =
+        textMessageService
+            .saveText(room.getId(), 202L, UUID.randomUUID(), "삭제 전에 보낸 메시지")
+            .message();
+
+    roomDeletionService.deleteRoom(101L, room.getId());
+
+    ChatRoomMember hiddenTenant =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 101L).orElseThrow();
+    ChatRoomMember unchangedLandlord =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 202L).orElseThrow();
+    assertThat(hiddenTenant.getRoomHiddenAt()).isNotNull();
+    assertThat(hiddenTenant.getHistoryHiddenThroughMessageId()).isEqualTo(oldMessage.getId());
+    assertThat(unchangedLandlord.getRoomHiddenAt()).isNull();
+    assertThat(unchangedLandlord.getHistoryHiddenThroughMessageId()).isZero();
+
+    // 같은 숨김 상태에서 재요청해도 최초 시각과 경계를 유지한다.
+    Instant firstDeletedAt = hiddenTenant.getDeleteRequestedAt();
+    roomDeletionService.deleteRoom(101L, room.getId());
+    ChatRoomMember repeated =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 101L).orElseThrow();
+    assertThat(repeated.getDeleteRequestedAt()).isEqualTo(firstDeletedAt);
+    assertThat(repeated.getHistoryHiddenThroughMessageId()).isEqualTo(oldMessage.getId());
+
+    Message newMessage =
+        textMessageService
+            .saveText(room.getId(), 202L, UUID.randomUUID(), "삭제 후 도착한 새 메시지")
+            .message();
+
+    entityManager.flush();
+    entityManager.clear();
+
+    ChatRoomMember reopenedTenant =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 101L).orElseThrow();
+    assertThat(reopenedTenant.getRoomHiddenAt()).isNull();
+    assertThat(reopenedTenant.getHistoryHiddenThroughMessageId()).isEqualTo(oldMessage.getId());
+
+    // 실제 REST 읽기 유스케이스에서 임차인은 경계 이후 새 메시지만, 삭제하지 않은 임대인은 두 메시지 모두 본다.
+    CursorResponse<MessageResponse> tenantHistory =
+        messageHistoryService.getMessages(101L, room.getId(), null, null, 10);
+    CursorResponse<MessageResponse> landlordHistory =
+        messageHistoryService.getMessages(202L, room.getId(), null, null, 10);
+    assertThat(tenantHistory.content())
+        .extracting(MessageResponse::messageId)
+        .containsExactly(newMessage.getId());
+    assertThat(landlordHistory.content())
+        .extracting(MessageResponse::messageId)
+        .containsExactly(newMessage.getId(), oldMessage.getId());
+  }
+
+  /** 같은 매물에 직접 다시 문의하면 방만 재표시되고 삭제 이전 대화는 요청자에게 복원되지 않는다. */
+  @Test
+  void directInquiryReopensSameRoomWithoutRestoringDeletedHistory() {
+    Instant createdAt = now();
+    ChatRoom room = chatRoomRepository.save(newRoom("64f000000000000000000016", createdAt));
+    memberRepository.saveAll(
+        List.of(
+            newMember(room.getId(), 101L, 202L, ChatParticipantRole.TENANT, createdAt),
+            newMember(room.getId(), 202L, 101L, ChatParticipantRole.LANDLORD, createdAt)));
+    Message oldMessage =
+        textMessageService
+            .saveText(room.getId(), 202L, UUID.randomUUID(), "문의 재진입 전에 있던 대화")
+            .message();
+
+    roomDeletionService.deleteRoom(101L, room.getId());
+    roomCreator.showExistingRoomForTenant(room.getId(), 101L, now().plusSeconds(1));
+
+    entityManager.flush();
+    entityManager.clear();
+
+    ChatRoomMember reopenedTenant =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 101L).orElseThrow();
+    assertThat(reopenedTenant.getRoomHiddenAt()).isNull();
+    assertThat(reopenedTenant.getHistoryHiddenThroughMessageId()).isEqualTo(oldMessage.getId());
+
+    CursorResponse<MessageResponse> tenantHistory =
+        messageHistoryService.getMessages(101L, room.getId(), null, null, 10);
+    CursorResponse<MessageResponse> landlordHistory =
+        messageHistoryService.getMessages(202L, room.getId(), null, null, 10);
+    assertThat(tenantHistory.content()).isEmpty();
+    assertThat(landlordHistory.content())
+        .extracting(MessageResponse::messageId)
+        .containsExactly(oldMessage.getId());
   }
 
   /** 같은 방·bookingId의 신청 이벤트 재처리가 카드를 중복 저장하지 않는지 확인한다. */

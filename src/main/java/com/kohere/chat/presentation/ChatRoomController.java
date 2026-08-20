@@ -1,6 +1,7 @@
 package com.kohere.chat.presentation;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
+import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatRoomDetailService;
 import com.kohere.chat.application.ChatRoomListService;
 import com.kohere.chat.application.ChatService;
@@ -12,11 +13,14 @@ import com.kohere.common.response.CursorResponse;
 import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.AuthPrincipal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -39,6 +43,7 @@ public class ChatRoomController {
   private final ChatRoomListService chatRoomListService;
   private final ChatRoomDetailService chatRoomDetailService;
   private final ChatMessageHistoryService chatMessageHistoryService;
+  private final ChatRoomDeletionService chatRoomDeletionService;
 
   /**
    * 현재 사용자에게 보이는 채팅방을 최근 활동 순으로 조회한다.
@@ -100,5 +105,22 @@ public class ChatRoomController {
     return ApiResponse.success(
         chatMessageHistoryService.getMessages(
             principal.userId(), roomId, cursor, afterMessageId, size));
+  }
+
+  /**
+   * 요청한 사용자에게만 채팅방과 삭제 시점까지의 메시지를 숨긴다.
+   *
+   * <p>상대방의 채팅방과 과거 대화는 그대로 유지한다. 성공하면 앱은 응답 JSON을 기다리지 않고 해당 채팅방을 목록에서 제거하면 된다. 이미 숨긴 방에 같은 요청이 다시
+   * 와도 같은 {@code 204 No Content}로 성공한다.
+   *
+   * @param principal 검증된 access token에서 만든 삭제 요청자 정보
+   * @param roomId 목록·상세에서 받은 서버 채팅방 ID
+   */
+  @DeleteMapping("/{roomId}")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void deleteRoom(
+      @AuthenticationPrincipal AuthPrincipal principal, @PathVariable Long roomId) {
+    // userId를 body나 query로 받지 않아 사용자가 상대방의 참여자 상태를 대신 삭제할 수 없게 한다.
+    chatRoomDeletionService.deleteRoom(principal.userId(), roomId);
   }
 }
