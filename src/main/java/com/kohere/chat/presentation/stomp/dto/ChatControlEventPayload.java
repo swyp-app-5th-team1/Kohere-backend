@@ -18,4 +18,37 @@ public record ChatControlEventPayload(
     /** 준비가 끝난 채팅방 ID. PONG처럼 특정 방과 무관한 이벤트에는 null일 수 있다. */
     Long roomId,
     /** 구독 준비 시점에 DB에 저장된 마지막 메시지 ID. 빈 방이거나 PONG이면 null이다. */
-    Long highWatermark) {}
+    Long highWatermark) {
+
+  public static final int CURRENT_VERSION = 1;
+
+  /**
+   * 개인 control queue 구독이 준비됐음을 원래 ping에 답한다.
+   *
+   * <p>PONG에는 roomId와 highWatermark가 들어가지 않는다. 호출부가 null 위치를 직접 외우지 않게 이 이름 있는 생성 메서드를 사용한다.
+   */
+  public static ChatControlEventPayload pong(UUID requestId) {
+    if (requestId == null) {
+      throw new IllegalArgumentException("requestId is required for PONG");
+    }
+    return new ChatControlEventPayload(
+        CURRENT_VERSION, ChatStompEventType.PONG, requestId, null, null);
+  }
+
+  /**
+   * 특정 채팅방 topic이 실제 broker에 등록된 뒤 REST 누락 조회의 상한을 알려 준다.
+   *
+   * <p>빈 방이거나 사용자에게 보이는 메시지가 없으면 highWatermark는 {@code null}이다. 이 이벤트는 ping 응답이 아니므로 requestId를 넣지
+   * 않는다.
+   */
+  public static ChatControlEventPayload subscriptionReady(long roomId, Long highWatermark) {
+    if (roomId < 1) {
+      throw new IllegalArgumentException("roomId must be positive");
+    }
+    if (highWatermark != null && highWatermark < 1) {
+      throw new IllegalArgumentException("highWatermark must be positive when present");
+    }
+    return new ChatControlEventPayload(
+        CURRENT_VERSION, ChatStompEventType.SUBSCRIPTION_READY, null, roomId, highWatermark);
+  }
+}
