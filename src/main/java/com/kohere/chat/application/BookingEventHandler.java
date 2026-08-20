@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Propagation;
 public class BookingEventHandler {
 
   private final BookingCardService bookingCardService;
+  private final BookingCardRealtimePublisher realtimePublisher;
 
   /**
    * 예약 이벤트를 비동기로 처리한다.
@@ -31,6 +32,12 @@ public class BookingEventHandler {
       propagation = Propagation.NOT_SUPPORTED)
   public void onBookingCreated(BookingCreatedEvent event) {
     BookingCardService.ProcessResult result = bookingCardService.process(event);
+
+    // cardWriter의 @Transactional 메서드가 반환된 뒤이므로 여기서는 MySQL 커밋이 끝난 상태다. 중복 이벤트에는 실시간 재발행을 하지 않는다.
+    if (result.cardCreated()) {
+      realtimePublisher.publishNewCard(result);
+    }
+
     // 신청자 이름·이메일·카드 JSON은 로그에 남기지 않고 추적에 필요한 식별자와 중복 여부만 기록한다.
     log.info(
         "BookingCreatedEvent 처리 완료: eventId={}, bookingId={}, chatRoomId={}, roomCreated={}, cardCreated={}",

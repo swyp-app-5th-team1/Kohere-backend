@@ -1,6 +1,8 @@
 package com.kohere.chat.application;
 
 import com.kohere.booking.BookingCreatedEvent;
+import com.kohere.chat.domain.Message;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -27,10 +29,30 @@ public class BookingCardService {
         roomEnsurer.ensure(seed, event.tenantId(), event.occurredAt());
     BookingCardWriter.WriteResult card = cardWriter.saveIfAbsent(room.room().getId(), event);
 
-    return new ProcessResult(room.room().getId(), room.created(), card.messageId(), card.created());
+    return new ProcessResult(
+        room.room().getId(),
+        room.created(),
+        card.message(),
+        card.created(),
+        card.memberActivities());
   }
 
-  /** 운영 로그와 통합 테스트에서 방·카드가 새로 생성됐는지 구분하기 위한 내부 처리 결과다. */
+  /** 운영 로그·통합 테스트·실시간 발행기가 카드 처리 결과를 함께 사용하는 내부 결과다. */
   public record ProcessResult(
-      Long chatRoomId, boolean roomCreated, Long messageId, boolean cardCreated) {}
+      Long chatRoomId,
+      boolean roomCreated,
+      Message message,
+      boolean cardCreated,
+      List<BookingCardWriter.MemberActivityResult> memberActivities) {
+
+    /** 처리 결과에 포함한 참여자 목록을 외부에서 변경할 수 없도록 복사한다. */
+    public ProcessResult {
+      memberActivities = List.copyOf(memberActivities);
+    }
+
+    /** 운영 로그와 기존 테스트에서 사용하는 최종 서버 messageId다. */
+    public Long messageId() {
+      return message.getId();
+    }
+  }
 }

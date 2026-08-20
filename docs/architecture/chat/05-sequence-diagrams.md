@@ -129,6 +129,8 @@ sequenceDiagram
     participant DB as MySQL
     participant EVENTS as 이벤트 저장소
     participant CHAT as Chat Application
+    participant BROKER as STOMP Broker
+    participant APP as 두 참여자 앱
 
     BOOK->>DB: 신청 저장
     BOOK->>EVENTS: 같은 트랜잭션에 신청 시점 카드 사본 저장
@@ -146,16 +148,19 @@ sequenceDiagram
 
     alt 같은 bookingId 카드가 없음
         CHAT->>DB: BOOKING_CARD와 마지막 메시지 상태 함께 저장
+        DB-->>CHAT: COMMIT
+        CHAT->>BROKER: 신규 BOOKING_CARD 발행
+        BROKER-->>APP: 열어 둔 같은 채팅방에 카드 표시
     else 카드가 이미 있음
-        Note over CHAT,DB: 기존 카드 반환, 다른 상태 변경 없음
+        Note over CHAT,BROKER: 기존 카드 반환<br/>다른 상태 변경·실시간 재발행 없음
     end
 ```
 
 **쉽게 설명하면:** 이 그림은 사용자나 앱이 호출하지 않는 백엔드 자동 작업이다. 예약과 함께 `BookingCreatedEvent`가 MySQL에 기록되고, Chat Application이 이를 받아 같은 방을 보장한 뒤 카드 한 장을 저장한다. 카드에 필요한 대표 이미지·매물·신청자·금액은 이벤트 안에 신청 시점 사본으로 이미 들어 있으므로 처리 중 Booking API를 다시 호출하지 않는다.
 
-listener가 실패하면 이벤트 행은 미완료로 남고 서버 재기동 때 다시 전달된다. 같은 이벤트가 다시 와도 `(chatRoomId, bookingId)` 중복 방지로 카드가 두 장 생기지 않는다. 현재 단계의 프론트 정본은 메시지 이력 API이며, STOMP 저장 완료 전달은 다음 실시간 단계에서 연결한다.
+listener가 실패하면 이벤트 행은 미완료로 남고 서버 재기동 때 다시 전달된다. 같은 이벤트가 다시 와도 `(chatRoomId, bookingId)` 중복 방지로 카드가 두 장 생기지 않는다. 신규 카드 저장이 커밋되면 서버가 같은 채팅방 topic으로 카드를 즉시 보내므로, 채팅방을 열어 둔 앱은 화면을 새로고침하지 않아도 카드를 표시할 수 있다. 실시간 이벤트를 놓친 앱은 메시지 이력 API로 저장된 카드를 다시 받는다.
 
-**결과:** 신청 뒤 채팅방과 신청 카드가 누락되지 않으며, 같은 이벤트를 다시 처리해도 방이나 카드가 중복 생성되지 않는다.
+**결과:** 신청 뒤 채팅방과 신청 카드가 누락되지 않고 신규 카드는 실시간으로 표시된다. 같은 이벤트를 다시 처리해도 방·카드·실시간 이벤트가 중복 생성되지 않는다.
 
 ## 2. WebSocket 연결과 메시지
 

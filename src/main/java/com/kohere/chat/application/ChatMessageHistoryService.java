@@ -1,10 +1,7 @@
 package com.kohere.chat.application;
 
-import com.kohere.chat.application.dto.BookingCardApplicantResponse;
-import com.kohere.chat.application.dto.BookingCardListingResponse;
 import com.kohere.chat.application.dto.BookingCardResponse;
 import com.kohere.chat.application.dto.MessageResponse;
-import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomNotFoundException;
@@ -165,7 +162,9 @@ public class ChatMessageHistoryService {
     boolean mine =
         message.getType() == MessageType.TEXT && message.getSenderId().longValue() == userId;
     BookingCardResponse bookingCard =
-        message.getType() == MessageType.BOOKING_CARD ? toBookingCard(message.getPayload()) : null;
+        message.getType() == MessageType.BOOKING_CARD
+            ? BookingCardResponseMapper.toResponse(message.getPayload())
+            : null;
 
     return new MessageResponse(
         message.getId(),
@@ -178,33 +177,5 @@ public class ChatMessageHistoryService {
         bookingCard,
         null, // 자동 번역 저장소는 후속 단계에서 연결한다. 현재는 원문을 항상 반환한다.
         message.getSentAt());
-  }
-
-  /** DB JSON에 저장된 신청 카드 사본을 API 응답 DTO로 옮긴다. */
-  private static BookingCardResponse toBookingCard(BookingCardPayload payload) {
-    BookingCardPayload.Listing listing = payload.listing();
-    BookingCardPayload.Applicant applicant = payload.applicant();
-
-    return new BookingCardResponse(
-        payload.bookingId(),
-        new BookingCardListingResponse(
-            listing.listingId(),
-            listing.thumbnailUrl(),
-            listing.title(),
-            listing.address(),
-            listing.monthlyRent()),
-        new BookingCardApplicantResponse(
-            applicant.userId(),
-            applicant.name(),
-            applicant.gender(),
-            applicant.country(),
-            applicant.countryName(),
-            applicant.email()),
-        payload.roomOfferId(),
-        payload.roomOfferName(),
-        payload.moveInDate(),
-        payload.contractPeriod(),
-        payload.deposit(),
-        payload.totalAmount());
   }
 }

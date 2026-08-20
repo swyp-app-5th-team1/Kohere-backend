@@ -10,6 +10,7 @@ import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -34,7 +35,7 @@ public class BookingCardWriter {
    *
    * @param roomId 카드를 추가할 동일 매물 채팅방 ID
    * @param event 예약 저장 시점 사본을 가진 이벤트
-   * @return 최종 messageId와 신규 생성 여부
+   * @return 최종 메시지와 신규 생성 여부, 신규 활동을 반영한 참여자별 목록 표시 결과
    */
   @Transactional
   public WriteResult saveIfAbsent(long roomId, BookingCreatedEvent event) {
@@ -49,7 +50,8 @@ public class BookingCardWriter {
     Message existing =
         messageRepository.findByChatRoomIdAndBookingId(roomId, event.bookingId()).orElse(null);
     if (existing != null) {
-      return new WriteResult(existing.getId(), false);
+      // 중복 이벤트에서는 실시간 발행도 하지 않으므로 참여자 목록 결과가 필요하지 않다.
+      return new WriteResult(existing, false, List.of());
     }
 
     Instant storedAt = Instant.now();
@@ -71,14 +73,22 @@ public class BookingCardWriter {
     if (members.size() != 2) {
       throw new IllegalStateException("1:1 채팅방에는 참여자가 정확히 두 명이어야 합니다.");
     }
+
+    List<MemberActivityResult> memberActivities = new ArrayList<>(members.size());
     for (ChatRoomMember member : members) {
       ChatRoomMember visible = member.showForNewActivity(event.occurredAt(), storedAt);
+      boolean reopened = visible != member;
       if (visible != member) {
         memberRepository.save(visible);
       }
+
+      // 지연 이벤트보다 나중에 사용자가 방을 삭제했다면 hidden 상태가 유지된다. 그 사용자에게 목록 갱신 이벤트를 보내지 않도록 최종 상태도 반환한다.
+      memberActivities.add(
+          new MemberActivityResult(
+              visible.getUserId(), visible.getRoomHiddenAt() == null, reopened));
     }
 
-    return new WriteResult(saved.getId(), true);
+    return new WriteResult(saved, true, memberActivities);
   }
 
   /** 이벤트가 조회된 방과 동일한 매물·두 참여자를 가리키는지 방어적으로 확인한다. */
@@ -121,6 +131,21 @@ public class BookingCardWriter {
         card.totalAmount());
   }
 
-  /** listener 로그와 테스트가 중복 처리 여부를 확인할 수 있게 하는 내부 저장 결과다. */
-  public record WriteResult(Long messageId, boolean created) {}
+  /** listener와 실시간 발행기가 신규 저장 결과를 다시 조회하지 않고 사용할 수 있게 하는 내부 결과다. */
+  public record WriteResult(
+      Message message, boolean created, List<MemberActivityResult> memberActivities) {
+
+    /** 호출자가 전달한 변경 가능한 목록이 트랜잭션 밖에서 바뀌지 않도록 복사한다. */
+    public WriteResult {
+      memberActivities = List.copyOf(memberActivities);
+    }
+
+    /** 기존 로그와 테스트가 최종 서버 messageId를 간단히 읽을 수 있도록 제공한다. */
+    public Long messageId() {
+      return message.getId();
+    }
+  }
+
+  /** 카드 저장 뒤 각 참여자의 채팅방 목록 표시 상태다. */
+  public record MemberActivityResult(long userId, boolean roomVisible, boolean roomReopened) {}
 }

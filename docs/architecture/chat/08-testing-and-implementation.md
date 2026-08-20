@@ -365,7 +365,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 1. **연결·인증 기반(완료)**: `/ws/chat` handshake, CONNECT JWT, ACTIVE 계정, Origin, heartbeat, 64 KiB, token 만료 close를 구현했다.
 2. **구독 권한·누락 보충(완료)**: 정확한 개인 queue와 참여자의 보이는 room topic만 허용하고, PING/PONG 및 실제 broker 등록 뒤 `SUBSCRIPTION_READY`를 구현했다. 앱은 기존 REST `afterMessageId` 조회로 누락분을 자동 보충하며 주기 polling은 하지 않는다.
 3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문은 commit 뒤 room topic으로 보내고, 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장·방송하지 않는다.
-4. **BOOKING_CARD 실시간 연결**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다.
+4. **BOOKING_CARD 실시간 연결(완료)**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다. 새 방은 `ROOM_CREATED`, 기존 방은 `ROOM_UPDATED`, 숨긴 방이 실제 신청 활동으로 다시 표시되면 `ROOM_REOPENED` 목록 신호를 보낸다.
 
 1. 연결 단계에는 WebSocket 의존성을 추가한다. destination 권한은 JWT interceptor 뒤에 실행되는 채팅 전용 allowlist interceptor에서 정확한 경로와 DB 참여 상태로 검사한다. 현재 HTTP 보안과 충돌하는 기본 CONNECT CSRF를 켜지 않기 위해 `@EnableWebSocketSecurity`는 사용하지 않는다.
 2. `/ws/chat`, Spring Simple Broker, 64 KiB transport 제한과 heartbeat를 설정한다.

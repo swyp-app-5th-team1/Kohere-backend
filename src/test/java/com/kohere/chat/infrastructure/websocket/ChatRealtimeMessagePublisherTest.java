@@ -8,7 +8,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.kohere.chat.application.BookingCardService;
+import com.kohere.chat.application.BookingCardWriter;
 import com.kohere.chat.application.TextMessageSaveResult;
+import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
@@ -17,6 +20,8 @@ import com.kohere.chat.presentation.stomp.dto.ChatMessageCreatedPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatRoomEventPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatStompEventType;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -98,6 +103,84 @@ class ChatRealtimeMessagePublisherTest {
     assertThat(ack.getValue().duplicate()).isTrue();
   }
 
+  /** 서버가 저장한 신청 카드는 원문 TEXT와 같은 시간축으로 발행하되 카드 payload를 별도 필드에 담는다. */
+  @Test
+  @DisplayName("신규 BOOKING_CARD는 room 메시지와 참여자별 목록 이벤트를 발행한다")
+  void publishesBookingCardAndParticipantRoomEvents() {
+    Message card = bookingCardMessage();
+    BookingCardService.ProcessResult result =
+        new BookingCardService.ProcessResult(
+            card.getChatRoomId(),
+            false,
+            card,
+            true,
+            List.of(
+                new BookingCardWriter.MemberActivityResult(SENDER_ID, true, false),
+                new BookingCardWriter.MemberActivityResult(RECIPIENT_ID, true, true)));
+
+    publisher.publishNewCard(result);
+
+    ArgumentCaptor<ChatMessageCreatedPayload> roomPayload =
+        ArgumentCaptor.forClass(ChatMessageCreatedPayload.class);
+    verify(messagingTemplate)
+        .convertAndSend(eq(ChatStompDestinations.roomTopic(10L)), roomPayload.capture());
+
+    ArgumentCaptor<ChatRoomEventPayload> senderEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(SENDER_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            senderEvent.capture());
+
+    ArgumentCaptor<ChatRoomEventPayload> recipientEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(RECIPIENT_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            recipientEvent.capture());
+
+    ChatMessageCreatedPayload payload = roomPayload.getValue();
+    assertThat(payload.type()).isEqualTo(MessageType.BOOKING_CARD);
+    assertThat(payload.clientMessageId()).isNull();
+    assertThat(payload.senderId()).isNull();
+    assertThat(payload.originalContent()).isNull();
+    assertThat(payload.bookingCard().bookingId()).isEqualTo(9001L);
+    assertThat(payload.bookingCard().listing().thumbnailUrl())
+        .isEqualTo("https://cdn.kohere.com/room.jpg");
+    assertThat(senderEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_UPDATED);
+    assertThat(recipientEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_REOPENED);
+    verifyNoInteractions(sessionMessageSender);
+  }
+
+  /** 신청으로 처음 생긴 채팅방은 두 참여자 목록에 새 항목으로 추가되므로 ROOM_CREATED를 보낸다. */
+  @Test
+  @DisplayName("신청이 새 채팅방을 만들면 참여자에게 ROOM_CREATED를 발행한다")
+  void publishesRoomCreatedForNewConversation() {
+    Message card = bookingCardMessage();
+    BookingCardService.ProcessResult result =
+        new BookingCardService.ProcessResult(
+            card.getChatRoomId(),
+            true,
+            card,
+            true,
+            List.of(
+                new BookingCardWriter.MemberActivityResult(SENDER_ID, true, false),
+                new BookingCardWriter.MemberActivityResult(RECIPIENT_ID, true, false)));
+
+    publisher.publishNewCard(result);
+
+    ArgumentCaptor<ChatRoomEventPayload> senderEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(SENDER_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            senderEvent.capture());
+    assertThat(senderEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
+  }
+
   /** MySQL에서 이미 ID와 저장 시각을 받은 TEXT 정본 fixture다. */
   private static Message message() {
     return Message.builder()
@@ -108,6 +191,36 @@ class ChatRealtimeMessagePublisherTest {
         .content("안녕하세요")
         .clientMessageId(UUID.fromString("b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849"))
         .sentAt(Instant.parse("2026-08-21T10:15:30Z"))
+        .build();
+  }
+
+  /** MySQL에 저장이 끝난 서버 생성 BOOKING_CARD fixture다. */
+  private static Message bookingCardMessage() {
+    BookingCardPayload payload =
+        new BookingCardPayload(
+            9001L,
+            new BookingCardPayload.Listing(
+                "listing-1",
+                "https://cdn.kohere.com/room.jpg",
+                "Hongdae Studio share",
+                "Seogyo-dong, Mapo-gu",
+                420_000),
+            new BookingCardPayload.Applicant(
+                SENDER_ID, "Gil dong Hong", "MALE", "MN", "Mongolia", "tenant@example.com"),
+            "offer-1",
+            "Room A",
+            LocalDate.of(2026, 6, 15),
+            3,
+            0,
+            1_260_000);
+
+    return Message.builder()
+        .id(601L)
+        .chatRoomId(10L)
+        .type(MessageType.BOOKING_CARD)
+        .bookingId(payload.bookingId())
+        .payload(payload)
+        .sentAt(Instant.parse("2026-08-21T10:16:30Z"))
         .build();
   }
 }

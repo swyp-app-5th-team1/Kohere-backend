@@ -9,8 +9,11 @@ import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.chat.application.BookingCardService;
+import com.kohere.chat.application.BookingCardWriter;
 import com.kohere.chat.application.ChatTextMessageService;
 import com.kohere.chat.application.TextMessageSaveResult;
+import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatClientMessageConflictException;
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
@@ -33,6 +36,8 @@ import java.lang.reflect.Type;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -100,6 +105,7 @@ class ChatWebSocketAuthenticationIntegrationTest {
   @Autowired private SubProtocolWebSocketHandler subProtocolWebSocketHandler;
   @Autowired private SimpleBrokerMessageHandler simpleBrokerMessageHandler;
   @Autowired private ObjectMapper objectMapper;
+  @Autowired private ChatRealtimeMessagePublisher realtimeMessagePublisher;
 
   @Autowired
   @Qualifier("chatWebSocketTaskScheduler")
@@ -455,6 +461,46 @@ class ChatWebSocketAuthenticationIntegrationTest {
     session.disconnect();
   }
 
+  /** 신규 BOOKING_CARD가 실제 Simple Broker를 지나 두 참여자의 socket에 같은 구조로 도착하는지 검증한다. */
+  @Test
+  @DisplayName("실제 STOMP BOOKING_CARD: 두 참여자는 서버 생성 신청 카드를 실시간으로 받는다")
+  void sendsBookingCardToBothParticipants() throws Exception {
+    long roomId = 563L;
+    prepareVisibleRoomAccess(roomId, USER_ID, RECIPIENT_ID);
+
+    StompSession tenantSession =
+        connect("http://allowed.test", "Bearer " + jwtTokenService.issueAccessToken(USER_ID));
+    StompSession landlordSession =
+        connect("http://allowed.test", "Bearer " + jwtTokenService.issueAccessToken(RECIPIENT_ID));
+    LinkedBlockingQueue<ChatMessageCreatedPayload> tenantMessages =
+        subscribeReadyRoom(tenantSession, roomId);
+    LinkedBlockingQueue<ChatMessageCreatedPayload> landlordMessages =
+        subscribeReadyRoom(landlordSession, roomId);
+
+    Message card = bookingCardMessage(roomId);
+    realtimeMessagePublisher.publishNewCard(
+        new BookingCardService.ProcessResult(
+            roomId,
+            false,
+            card,
+            true,
+            List.of(
+                new BookingCardWriter.MemberActivityResult(USER_ID, true, false),
+                new BookingCardWriter.MemberActivityResult(RECIPIENT_ID, true, false))));
+
+    ChatMessageCreatedPayload tenantCard = tenantMessages.poll(2, TimeUnit.SECONDS);
+    ChatMessageCreatedPayload landlordCard = landlordMessages.poll(2, TimeUnit.SECONDS);
+    assertThat(tenantCard).isNotNull();
+    assertThat(landlordCard).isNotNull();
+    assertThat(tenantCard.type()).isEqualTo(MessageType.BOOKING_CARD);
+    assertThat(tenantCard.originalContent()).isNull();
+    assertThat(tenantCard.bookingCard().bookingId()).isEqualTo(9001L);
+    assertThat(landlordCard.bookingCard()).isEqualTo(tenantCard.bookingCard());
+
+    tenantSession.disconnect();
+    landlordSession.disconnect();
+  }
+
   /** 같은 UUID의 본문 충돌은 socket을 닫지 않고 발신 session 오류 queue로만 전달한다. */
   @Test
   @DisplayName("실제 STOMP TEXT: 멱등 본문 충돌은 개인 오류 이벤트로 응답한다")
@@ -609,6 +655,36 @@ class ChatWebSocketAuthenticationIntegrationTest {
         .content(content)
         .clientMessageId(clientMessageId)
         .sentAt(sentAt)
+        .build();
+  }
+
+  /** 실제 STOMP 변환에서 JSON 카드 구조를 확인하기 위한 서버 저장 완료 메시지다. */
+  private static Message bookingCardMessage(long roomId) {
+    BookingCardPayload payload =
+        new BookingCardPayload(
+            9001L,
+            new BookingCardPayload.Listing(
+                "listing-1",
+                "https://cdn.kohere.com/room.jpg",
+                "Hongdae Studio share",
+                "Seogyo-dong, Mapo-gu",
+                420_000),
+            new BookingCardPayload.Applicant(
+                USER_ID, "Gil dong Hong", "MALE", "MN", "Mongolia", "tenant@example.com"),
+            "offer-1",
+            "Room A",
+            LocalDate.of(2026, 6, 15),
+            3,
+            0,
+            1_260_000);
+
+    return Message.builder()
+        .id(703L)
+        .chatRoomId(roomId)
+        .type(MessageType.BOOKING_CARD)
+        .bookingId(payload.bookingId())
+        .payload(payload)
+        .sentAt(Instant.parse("2026-08-21T10:17:30Z"))
         .build();
   }
 

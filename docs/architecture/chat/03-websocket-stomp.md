@@ -2,7 +2,7 @@
 
 이 문서는 실시간 연결, 인증, 구독, 메시지 전송, 재연결 동기화의 정본이다. REST endpoint는 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
-> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충 준비와 TEXT 실시간 저장·전송까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. TEXT는 MySQL 커밋 뒤 room topic으로 전달하고 발신 session에는 ACK를 보낸다. BOOKING_CARD 실시간 발행과 자동 번역은 다음 단계다.
+> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충, TEXT와 서버 생성 BOOKING_CARD의 실시간 전달까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. TEXT와 신규 BOOKING_CARD는 MySQL 커밋 뒤 room topic으로 전달한다. 사용자별 자동 번역은 다음 단계다.
 
 ## 1. 기본 원칙
 
@@ -159,7 +159,9 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 2. 이벤트에 함께 전달된 신청 시점의 매물·신청자·입주 조건·금액 사본을 사용한다.
 3. 별도의 Booking 조회 API를 호출하지 않고 해당 사본을 카드 payload로 저장한다.
 4. `(chatRoomId, bookingId)` UNIQUE로 같은 신청 카드의 중복 저장을 막는다.
-5. 현재 구현 단계에서는 메시지 이력 REST API로 카드를 제공한다. 다음 STOMP 단계에서는 신규 카드가 커밋된 경우에만 room topic으로 `BOOKING_CARD` 저장 완료 이벤트를 발행한다.
+5. 신규 카드가 커밋된 경우에만 room topic으로 `BOOKING_CARD` 저장 완료 이벤트를 발행한다.
+6. 같은 예약 이벤트가 다시 전달되면 기존 카드를 반환하고 room topic에는 다시 발행하지 않는다.
+7. 앱이 실시간 이벤트를 놓치더라도 메시지 이력 REST API에서 저장된 카드를 다시 조회할 수 있다.
 
 카드에는 프런트 UUID `clientMessageId`가 없고, 서버 생성 메시지이므로 `senderId`도 null이다. 임차인·임대인은 같은 카드 데이터를 받고 앱이 채팅방의 `myRole`에 따라 화면을 다르게 배치한다. 카드 데이터는 Google 번역 대상이 아니다.
 

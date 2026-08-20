@@ -1,7 +1,12 @@
 package com.kohere.chat.infrastructure.websocket;
 
+import com.kohere.chat.application.BookingCardRealtimePublisher;
+import com.kohere.chat.application.BookingCardResponseMapper;
+import com.kohere.chat.application.BookingCardService;
+import com.kohere.chat.application.BookingCardWriter;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.domain.Message;
+import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageAckPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageCreatedPayload;
@@ -20,7 +25,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-public class ChatRealtimeMessagePublisher {
+public class ChatRealtimeMessagePublisher implements BookingCardRealtimePublisher {
 
   private static final int PAYLOAD_VERSION = 1;
 
@@ -53,8 +58,39 @@ public class ChatRealtimeMessagePublisher {
     sendAck(senderSessionId, message, result.duplicate());
   }
 
-  /** 두 참여자가 공통으로 병합할 수 있는 원문 저장 완료 이벤트를 room topic에 보낸다. */
+  /**
+   * 신청 이벤트로 새로 커밋된 BOOKING_CARD를 두 참여자의 room topic과 현재 보이는 채팅방 목록에 반영한다.
+   *
+   * <p>서버가 만든 카드에는 프런트 임시 말풍선이나 {@code clientMessageId}가 없으므로 ACK를 보내지 않는다. 중복 예약 이벤트는 {@link
+   * com.kohere.chat.application.BookingEventHandler}에서 이 메서드 자체를 호출하지 않는다.
+   */
+  @Override
+  public void publishNewCard(BookingCardService.ProcessResult result) {
+    Message message = result.message();
+    publishRoomMessage(message);
+
+    for (BookingCardWriter.MemberActivityResult member : result.memberActivities()) {
+      // 삭제 상태가 그대로 유지된 사용자는 목록에 방이 없으므로 갱신 신호도 보내지 않는다.
+      if (!member.roomVisible()) {
+        continue;
+      }
+
+      ChatStompEventType eventType = roomEventType(result.roomCreated(), member.roomReopened());
+      publishRoomListEvent(member.userId(), message, eventType);
+    }
+  }
+
+  /** 신규 방·숨긴 방 재표시·일반 목록 갱신 중 프런트가 처리할 한 종류를 선택한다. */
+  private static ChatStompEventType roomEventType(boolean roomCreated, boolean roomReopened) {
+    if (roomCreated) {
+      return ChatStompEventType.ROOM_CREATED;
+    }
+    return roomReopened ? ChatStompEventType.ROOM_REOPENED : ChatStompEventType.ROOM_UPDATED;
+  }
+
+  /** 두 참여자가 공통으로 병합할 수 있는 TEXT 또는 BOOKING_CARD 저장 완료 이벤트를 room topic에 보낸다. */
   private void publishRoomMessage(Message message) {
+    boolean bookingCard = message.getType() == MessageType.BOOKING_CARD;
     ChatMessageCreatedPayload payload =
         new ChatMessageCreatedPayload(
             PAYLOAD_VERSION,
@@ -65,7 +101,7 @@ public class ChatRealtimeMessagePublisher {
             message.getSenderId(),
             message.getType(),
             message.getContent(),
-            null,
+            bookingCard ? BookingCardResponseMapper.toResponse(message.getPayload()) : null,
             message.getSentAt());
 
     try {
