@@ -24,7 +24,6 @@ import com.kohere.chat.domain.TranslationProvider;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatControlEventPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageSendPayload;
-import com.kohere.chat.presentation.stomp.dto.ChatStompEventType;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -183,12 +182,14 @@ class ChatContractTest {
   @Test
   void stompDestinationAndControlEventContractsAreFixed() {
     assertThat(ChatStompDestinations.MESSAGE_SEND).isEqualTo("/app/chat-rooms/{roomId}/messages");
+    assertThat(ChatStompDestinations.messageSend(556L)).isEqualTo("/app/chat-rooms/556/messages");
     assertThat(ChatStompDestinations.ROOM_TOPIC).isEqualTo("/topic/chat-rooms/{roomId}");
+    assertThat(ChatStompDestinations.roomTopic(556L)).isEqualTo("/topic/chat-rooms/556");
+    assertThat(ChatStompDestinations.CONTROL_SEND).isEqualTo("/app/chat/control/ping");
+    assertThat(ChatStompDestinations.CONTROL_QUEUE).isEqualTo("/user/queue/chat-control");
 
     JsonNode json =
-        objectMapper.valueToTree(
-            new ChatControlEventPayload(
-                1, ChatStompEventType.SUBSCRIPTION_READY, null, 556L, 70052L));
+        objectMapper.valueToTree(ChatControlEventPayload.subscriptionReady(556L, 70052L));
 
     assertThat(fieldNames(json))
         .containsExactly("version", "eventType", "requestId", "roomId", "highWatermark");

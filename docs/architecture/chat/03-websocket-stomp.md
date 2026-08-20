@@ -2,6 +2,8 @@
 
 이 문서는 실시간 연결, 인증, 구독, 메시지 전송, 재연결 동기화의 정본이다. REST endpoint는 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
+> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충 준비와 TEXT 실시간 저장·전송까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. TEXT는 MySQL 커밋 뒤 room topic으로 전달하고 발신 session에는 ACK를 보낸다. BOOKING_CARD 실시간 발행과 자동 번역은 다음 단계다.
+
 ## 1. 기본 원칙
 
 - WebSocket은 연결을 유지하는 통로다.
@@ -38,7 +40,7 @@
 | `CONNECT` | 유효한 access token과 `ROLE_USER` |
 | `SUBSCRIBE` room topic | 정확한 경로이며 현재 사용자가 방 참여자 |
 | `SUBSCRIBE` user queue | 위 다섯 개의 정확한 본인 queue만 허용 |
-| `SEND` message | 정확한 메시지 destination만 허용 |
+| `SEND` message | 정확한 `/app/chat-rooms/{양의 roomId}/messages`이며 현재 보이는 방의 참여자 |
 | `SEND` control | 정확한 control ping만 허용 |
 | `DISCONNECT`, `UNSUBSCRIBE`, heartbeat | 인증 session의 lifecycle frame |
 | 그 밖의 MESSAGE·SUBSCRIBE | 거부 |
@@ -84,21 +86,26 @@ JWT 인증 interceptor는 메시지 authorization interceptor보다 먼저 실�
 Simple Broker가 room SUBSCRIBE를 직접 처리하므로 일반 controller만으로는 권한을 검사할 수 없다. inbound interceptor가 다음을 확인한다.
 
 1. destination이 `/topic/chat-rooms/{양의 Long}` 형식인가
-2. session이 `ROLE_USER`인가
-3. 방이 존재하는가
-4. 사용자가 tenant 또는 landlord 참여자인가
+2. STOMP subscription `id`가 있고 같은 session에서 중복되지 않는가
+3. session이 `ROLE_USER`인가
+4. 방이 존재하는가
+5. 사용자가 tenant 또는 landlord 참여자이며 현재 그 방을 숨기지 않았는가
+
+한 session은 최대 16개 구독만 유지하며 subscription `id`는 최대 128자다. 같은 session에서 같은 destination을 여러 번 구독하는 것도 거부한다. 앱에 필요한 다섯 개인 queue와 현재 채팅방 topic을 충분히 담으면서, 잘못된 클라이언트가 구독을 무한히 늘리는 것을 막기 위한 제한이다.
 
 Spring Simple Broker의 STOMP `RECEIPT`에 의존하지 않는다. SUBSCRIBE frame을 전송한 시점과 실제 구독 등록 시점 사이의 누락 구간을 막기 위해 application-level barrier를 사용한다.
 
 1. 클라이언트가 `/user/queue/chat-control`을 구독한다.
 2. UUID `requestId`가 포함된 `/app/chat/control/ping`을 보내 같은 ID의 `PONG`이 올 때까지 재시도한다.
 3. room topic을 SUBSCRIBE한다.
-4. 서버가 해당 session의 `SessionSubscribeEvent`를 확인한다.
-5. 서버가 DB의 `room.lastMessageId`를 high-watermark로 읽는다.
+4. 서버가 Simple Broker의 구독 처리가 실제로 끝난 것을 `ExecutorChannelInterceptor.afterMessageHandled`에서 확인한다.
+5. 서버가 현재 사용자에게 보이는 마지막 `messageId`를 high-watermark로 읽는다.
 6. 원래 session에 `SUBSCRIPTION_READY`를 보낸다.
 7. 클라이언트가 high-watermark까지 REST catch-up을 한 번 자동 실행한다.
 
 이 REST catch-up은 채팅방 구독 준비 직후와 재연결 직후의 누락 구간만 메우는 절차다. 연결 중에는 STOMP로 새 메시지를 받으며 일정 간격의 polling은 하지 않는다.
+
+서버가 구독 등록 뒤 high-watermark를 만들지 못하면 반쪽 구독을 남기지 않고 해당 socket을 닫는다. 앱도 `SUBSCRIPTION_READY`가 5초 안에 오지 않으면 같은 socket에 SUBSCRIBE를 계속 추가하지 말고 연결을 닫은 뒤 재연결한다.
 
 제어 이벤트 예시:
 
@@ -111,7 +118,7 @@ Spring Simple Broker의 STOMP `RECEIPT`에 의존하지 않는다. SUBSCRIBE fra
 }
 ```
 
-빈 방이면 `highWatermark`는 `null`이다.
+빈 방이거나 사용자의 삭제 경계 이후에 보이는 메시지가 없으면 `highWatermark`는 `null`이다.
 
 ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-api-contracts.md#65-구독-준비-제어-이벤트)를 따른다.
 
@@ -130,17 +137,19 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 
 1. session Principal과 token 만료 확인
 2. destination 형식과 roomId 확인
-3. UUID와 본문 형식·3,000자·rate limit 검사
-4. 트랜잭션에서 방 존재·참여자 재검증
-5. 채팅방 참여 상태와 양방향 차단 재검증
-6. MySQL UNIQUE 기반 원자적 insert/upsert로 신규·중복 판정
-7. 신규이면 원문 메시지와 수신자별 번역 작업을 함께 저장
-8. 신규이면 방의 마지막 메시지와 양 참여자의 재노출 상태 갱신
+3. UUID와 공백이 아닌 본문·Unicode code point 3,000자 제한 검사
+4. 트랜잭션에서 방을 잠그고 방 존재·참여자·발신자 표시 상태 재검증
+5. 양방향 차단 재검증
+6. `(roomId, senderId, clientMessageId)`로 신규·중복 판정
+7. 신규이면 TEXT 원문을 `chat_messages`에 저장
+8. 신규이면 방의 마지막 메시지 포인터를 갱신하고, 숨겼던 수신자의 방만 다시 표시
 9. 트랜잭션 커밋
-10. 신규 TEXT 원문만 room topic에 발행
-11. 발신 session에 애플리케이션 저장 결과 전송
+10. 신규 TEXT 원문을 room topic에 발행하고 두 참여자에게 방 목록 갱신 신호 전송
+11. 발신 session에 애플리케이션 저장 결과 ACK 전송
 
-커밋 전에는 broker에 발행하지 않는다. 중복 재시도는 기존 결과만 다시 보내고 두 번째 broadcast를 만들지 않는다.
+커밋 전에는 broker에 발행하지 않는다. 중복 재시도는 기존 결과 ACK만 다시 보내고 두 번째 broadcast·방 재표시·마지막 메시지 갱신을 만들지 않는다. 사용자가 숨긴 방에서 오래된 화면으로 SEND하면 직접 문의로 방을 다시 표시하기 전까지 `CHAT_ROOM_NOT_FOUND`로 거부한다.
+
+자동 번역 단계에서는 7번 트랜잭션에 수신자용 `PENDING` 번역 작업 저장을 추가한다. 현재 TEXT 실시간 단계는 원문 저장과 전달만 담당하며 Google API를 호출하지 않는다.
 
 ### 서버가 만드는 BOOKING_CARD
 

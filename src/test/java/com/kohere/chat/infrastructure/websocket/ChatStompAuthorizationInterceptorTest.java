@@ -22,7 +22,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-/** 허용한 개인 queue·room topic만 열리고 아직 미구현인 TEXT SEND는 닫혀 있는지 검증한다. */
+/** 공개한 개인 queue·room topic·TEXT SEND만 열리고 그 밖의 destination은 닫혀 있는지 검증한다. */
 class ChatStompAuthorizationInterceptorTest {
 
   private static final long USER_ID = 42L;
@@ -163,10 +163,10 @@ class ChatStompAuthorizationInterceptorTest {
         .doesNotThrowAnyException();
   }
 
-  /** 현재 단계는 제어 ping만 SEND 가능하고 TEXT·broker 직접 발행은 다음 단계까지 닫는다. */
+  /** 제어 ping과 정확한 TEXT 경로만 SEND할 수 있고 broker 직접 발행은 계속 막는다. */
   @Test
-  @DisplayName("control ping만 SEND하고 TEXT와 broker 직접 SEND는 거부한다")
-  void allowsOnlyControlPingSend() {
+  @DisplayName("control ping과 참여자의 정확한 TEXT 경로만 SEND할 수 있다")
+  void allowsControlPingAndExactTextSend() {
     assertThatCode(
             () ->
                 intercept(
@@ -174,8 +174,18 @@ class ChatStompAuthorizationInterceptorTest {
                         StompCommand.SEND, ChatStompDestinations.CONTROL_SEND, null)))
         .doesNotThrowAnyException();
 
+    given(accessService.authorizeAndGetVisibleHighWatermark(USER_ID, ROOM_ID)).willReturn(700L);
+    assertThatCode(
+            () ->
+                intercept(
+                    authenticatedFrame(
+                        StompCommand.SEND, ChatStompDestinations.messageSend(ROOM_ID), null)))
+        .doesNotThrowAnyException();
+    verify(accessService).authorizeAndGetVisibleHighWatermark(USER_ID, ROOM_ID);
+
     List.of(
-            "/app/chat-rooms/556/messages",
+            "/app/chat-rooms/0/messages",
+            "/app/chat-rooms/556/messages/extra",
             "/topic/chat-rooms/556",
             "/queue/chat-control",
             "/user/queue/chat-control")

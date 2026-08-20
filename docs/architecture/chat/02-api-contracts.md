@@ -489,7 +489,8 @@ code는 언어와 관계없이 같고 label만 사용자의 `ko/en` 설정에 �
 }
 ```
 
-방 topic 구독이 준비되면 다음 이벤트를 반환한다. 빈 방은 `highWatermark=null`이다.
+방 topic이 Simple Broker에 실제 등록되면 다음 이벤트를 반환한다. 빈 방이거나 사용자가 삭제한 과거 범위 밖에 새 메시지가 없으면
+`highWatermark=null`이다. 즉 이 값은 채팅방 전체가 아니라 **현재 로그인 사용자에게 보이는 마지막 메시지 번호**다.
 
 ```json
 {

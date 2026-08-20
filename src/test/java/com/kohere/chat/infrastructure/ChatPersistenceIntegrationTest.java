@@ -3,6 +3,8 @@ package com.kohere.chat.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.kohere.chat.application.ChatTextMessageService;
+import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatCategory;
 import com.kohere.chat.domain.ChatParticipantRole;
@@ -15,6 +17,7 @@ import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.user.api.UserBlockService;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,6 +34,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -48,7 +52,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Import({
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
-  MessageRepositoryImpl.class
+  MessageRepositoryImpl.class,
+  ChatTextMessageService.class
 })
 @Testcontainers
 class ChatPersistenceIntegrationTest {
@@ -65,6 +70,12 @@ class ChatPersistenceIntegrationTest {
 
   /** TEXT와 BOOKING_CARD 정본을 저장·범위 조회하는 포트다. */
   @Autowired private MessageRepository messageRepository;
+
+  /** 실제 JPA 포트를 하나의 TEXT 저장 트랜잭션으로 묶는 응용 서비스다. */
+  @Autowired private ChatTextMessageService textMessageService;
+
+  /** 이 통합 테스트는 chat 저장 원자성에 집중하므로 user 모듈의 차단 조회 경계만 대체한다. */
+  @MockitoBean private UserBlockService userBlockService;
 
   /** CHECK 제약을 의도적으로 위반하는 SQL과 물리 타입 확인에만 사용하는 테스트 도구다. */
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -245,6 +256,51 @@ class ChatPersistenceIntegrationTest {
                 messageRepository.save(
                     newText(room.getId(), 101L, clientMessageId, "different", now())))
         .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  /** 실제 MySQL 트랜잭션에서 신규·중복 재시도가 한 행으로 수렴하고 사용자별 숨김 경계가 유지되는지 확인한다. */
+  @Test
+  void savesTextExactlyOnceAndReopensOnlyRecipientVisibility() {
+    Instant createdAt = now();
+    ChatRoom room = chatRoomRepository.save(newRoom("64f000000000000000000014", createdAt));
+    memberRepository.save(
+        newMember(room.getId(), 101L, 202L, ChatParticipantRole.TENANT, createdAt));
+
+    // 실제 시나리오처럼 삭제가 먼저 일어나고 그 뒤 서비스가 새 메시지 시각을 만들도록 과거 시각을 사용한다.
+    Instant deletedAt = createdAt.minusSeconds(1);
+    ChatRoomMember hiddenRecipient =
+        newMember(room.getId(), 202L, 101L, ChatParticipantRole.LANDLORD, createdAt).toBuilder()
+            .roomHiddenAt(deletedAt)
+            .historyHiddenThroughMessageId(400L)
+            .deleteRequestedAt(deletedAt)
+            .updatedAt(deletedAt)
+            .build();
+    memberRepository.save(hiddenRecipient);
+
+    UUID clientMessageId = UUID.randomUUID();
+    TextMessageSaveResult first =
+        textMessageService.saveText(room.getId(), 101L, clientMessageId, "new message");
+    TextMessageSaveResult retry =
+        textMessageService.saveText(room.getId(), 101L, clientMessageId, "new message");
+
+    entityManager.flush();
+    entityManager.clear();
+
+    assertThat(first.duplicate()).isFalse();
+    assertThat(first.recipientRoomReopened()).isTrue();
+    assertThat(retry.duplicate()).isTrue();
+    assertThat(retry.message().getId()).isEqualTo(first.message().getId());
+    assertThat(messageRepository.findBefore(room.getId(), null, 10))
+        .extracting(Message::getId)
+        .containsExactly(first.message().getId());
+    assertThat(chatRoomRepository.findById(room.getId()).orElseThrow().getLastMessageId())
+        .isEqualTo(first.message().getId());
+
+    ChatRoomMember recipient =
+        memberRepository.findByChatRoomIdAndUserId(room.getId(), 202L).orElseThrow();
+    assertThat(recipient.getRoomHiddenAt()).isNull();
+    assertThat(recipient.getHistoryHiddenThroughMessageId()).isEqualTo(400L);
+    assertThat(recipient.getDeleteRequestedAt()).isEqualTo(deletedAt);
   }
 
   /** 같은 방·bookingId의 신청 이벤트 재처리가 카드를 중복 저장하지 않는지 확인한다. */

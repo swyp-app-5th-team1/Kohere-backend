@@ -22,6 +22,8 @@
 
 SUBSCRIBE frame을 보낸 시점만으로 구독이 준비됐다고 가정하지 않는다. 같은 메시지가 REST와 topic 양쪽에서 도착하는 것은 정상이며 ID로 제거한다. 이 REST catch-up은 앱이 진입·재연결 때 한 번 자동 실행하며 주기적인 polling으로 사용하지 않는다.
 
+`SUBSCRIPTION_READY`가 5초 안에 오지 않으면 같은 연결에서 구독 요청을 반복해 쌓지 않는다. socket을 닫고 재연결한 뒤 위 순서를 처음부터 다시 실행한다. 서버도 준비 이벤트를 만드는 중 DB·broker 오류가 나면 해당 socket을 닫아 반쪽 구독을 정리한다.
+
 ### 1.2 재연결
 
 1. 지수 backoff와 jitter로 재연결한다.
@@ -132,6 +134,8 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 중복 retry는 결과만 받고 room broadcast 한 번
 - 64 KiB transport와 3,000 code point 경계
 - control ping/pong과 `SUBSCRIPTION_READY` barrier
+- 중복 destination·128자 초과 ID·session당 16개 초과 구독 거부
+- 준비 이벤트 생성 실패나 5초 timeout 뒤 socket 종료·재연결
 - 최초 구독과 REST 조회 사이 race 복구
 - 중간 publish 실패를 연속 DB checkpoint가 복구
 - 10초 heartbeat, 연결 손실, 서버 재시작 후 reconnect
@@ -356,7 +360,14 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 쉽게 말하면 5단계에서 완성한 메시지 저장 기능을 WebSocket·STOMP에 연결해 상대방 화면에 즉시 전달한다.
 
-1. WebSocket과 Spring Security Messaging 의존성을 추가한다.
+한 번에 전부 열지 않고 다음처럼 나눠 구현한다.
+
+1. **연결·인증 기반(완료)**: `/ws/chat` handshake, CONNECT JWT, ACTIVE 계정, Origin, heartbeat, 64 KiB, token 만료 close를 구현했다.
+2. **구독 권한·누락 보충(완료)**: 정확한 개인 queue와 참여자의 보이는 room topic만 허용하고, PING/PONG 및 실제 broker 등록 뒤 `SUBSCRIPTION_READY`를 구현했다. 앱은 기존 REST `afterMessageId` 조회로 누락분을 자동 보충하며 주기 polling은 하지 않는다.
+3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문은 commit 뒤 room topic으로 보내고, 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장·방송하지 않는다.
+4. **BOOKING_CARD 실시간 연결**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다.
+
+1. 연결 단계에는 WebSocket 의존성을 추가한다. destination 권한은 JWT interceptor 뒤에 실행되는 채팅 전용 allowlist interceptor에서 정확한 경로와 DB 참여 상태로 검사한다. 현재 HTTP 보안과 충돌하는 기본 CONNECT CSRF를 켜지 않기 위해 `@EnableWebSocketSecurity`는 사용하지 않는다.
 2. `/ws/chat`, Spring Simple Broker, 64 KiB transport 제한과 heartbeat를 설정한다.
 3. `/ws/chat` HTTP handshake는 transport 진입만 허용하고, 실제 사용자 인증은 STOMP CONNECT의 Bearer token을 `ChannelInterceptor`에서 수행한다.
 4. 기존 `JwtTokenService`로 검증한 사용자와 만료시각을 WebSocket session Principal에 저장한다.

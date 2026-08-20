@@ -77,6 +77,8 @@ public enum ErrorCode {
   CHAT_SELF_INQUIRY_NOT_ALLOWED(HttpStatus.UNPROCESSABLE_ENTITY, "본인 소유 매물에는 문의할 수 없습니다."),
   CHAT_UNAVAILABLE(HttpStatus.FORBIDDEN, "현재 상대방과 채팅을 시작할 수 없습니다."),
   CHAT_ROOM_INACTIVE(HttpStatus.UNPROCESSABLE_ENTITY, "비활성 채팅방입니다."),
+  CHAT_MESSAGE_TOO_LONG(HttpStatus.BAD_REQUEST, "메시지는 3,000자 이하여야 합니다."),
+  CHAT_CLIENT_MESSAGE_CONFLICT(HttpStatus.CONFLICT, "같은 메시지 ID를 다른 본문에 사용할 수 없습니다."),
 
   // --- 커뮤니티 (community) — docs/api/specs/05-community.md ---
   POST_NOT_FOUND(HttpStatus.NOT_FOUND, "게시글을 찾을 수 없습니다."),

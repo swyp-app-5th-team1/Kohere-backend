@@ -11,9 +11,8 @@ import org.springframework.stereotype.Component;
 /**
  * 인증된 사용자의 STOMP command와 destination을 허용 목록 방식으로 검사한다.
  *
- * <p>기본값은 거부이며, 현재 구현을 완료한 개인 queue·채팅방 topic·control ping만 연다. 특히 클라이언트가 broker용 {@code /topic},
- * {@code /queue}, {@code /user}로 직접 SEND하거나 임의 queue를 구독하는 것은 허용하지 않는다. TEXT SEND는 저장 유스케이스를 연결하는
- * 다음 단계 전까지 계속 닫아 둔다.
+ * <p>기본값은 거부이며, 공개한 개인 queue·채팅방 topic·control ping·정확한 TEXT 전송 경로만 연다. 특히 클라이언트가 broker용 {@code
+ * /topic}, {@code /queue}, {@code /user}로 직접 SEND하거나 임의 queue를 구독하는 것은 허용하지 않는다.
  */
 @Component
 public class ChatStompAuthorizationInterceptor implements ChannelInterceptor {
@@ -70,7 +69,7 @@ public class ChatStompAuthorizationInterceptor implements ChannelInterceptor {
     }
 
     if (command == StompCommand.SEND) {
-      authorizeSend(accessor.getDestination());
+      authorizeSend(accessor.getDestination(), userId);
       return message;
     }
 
@@ -111,9 +110,19 @@ public class ChatStompAuthorizationInterceptor implements ChannelInterceptor {
     throw forbidden();
   }
 
-  /** 현재 단계에서는 개인 queue 준비를 확인하는 control ping만 SEND할 수 있다. */
-  private void authorizeSend(String destination) {
+  /** control ping과 참여 중이며 현재 보이는 채팅방의 TEXT 전송 경로만 허용한다. */
+  private void authorizeSend(String destination, long userId) {
     if (destinationResolver.isControlSend(destination)) {
+      return;
+    }
+
+    var roomId = destinationResolver.resolveMessageSend(destination);
+    if (roomId.isPresent()) {
+      /*
+       * interceptor 검사는 잘못된 frame을 handler 전에 빠르게 거르는 1차 방어다. 이 검사 뒤 차단이나 삭제가 발생할 수 있으므로
+       * 실제 저장 서비스도 같은 참여자·가시성·차단 조건을 트랜잭션 안에서 다시 확인한다.
+       */
+      accessService.authorizeAndGetVisibleHighWatermark(userId, roomId.getAsLong());
       return;
     }
     throw forbidden();
