@@ -55,6 +55,23 @@ topic과 queue는 데이터를 저장하는 장소가 아니다. 채팅 기록�
 Authorization: Bearer <accessToken>
 ```
 
+### REST 공통 응답 형태
+
+채팅 REST API는 삭제·차단의 `204 No Content`를 제외하면 다음 공통 형태로 응답한다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `success` | 요청 성공 여부. 성공하면 true, 실패하면 false |
+| `data` | 성공 결과. 실패하면 null이며 실제 내부 필드는 각 API 표에서 설명 |
+| `error` | 실패 정보. 성공하면 null |
+| `error.code` | 프론트 분기 처리에 사용하는 안정적인 오류 코드 |
+| `error.message` | 사용자에게 표시할 수 있는 현지화된 오류 문구 |
+| `error.errors` | 입력값별 오류 목록. 필드 오류가 없으면 빈 배열 |
+| `error.errors[].field` | 잘못된 요청 필드 이름 |
+| `error.errors[].reason` | 해당 필드가 잘못된 이유 |
+
+프론트 로직은 바뀔 수 있는 `error.message` 문구가 아니라 `error.code`를 기준으로 처리한다.
+
 ## 3. 문의 채팅방 열기
 
 매물 상세 화면에서 사용자가 `문의하기`를 눌렀을 때 호출한다.
@@ -141,14 +158,25 @@ Authorization: Bearer <accessToken>
 
 | 필드 | 프론트에서 사용하는 곳 |
 | --- | --- |
-| `content` | 화면에 표시할 채팅방 배열 |
-| `chatRoomId` | 채팅방 선택 후 상세·메시지 조회와 STOMP 구독에 사용 |
-| `myRole` | `TENANT` 또는 `LANDLORD`. BOOKING_CARD의 역할별 UI를 고를 때 사용 |
-| `listing` | 채팅 대상 매물의 제목과 주소 표시 |
-| `counterpart` | 상대 사용자 ID와 화면 표시 이름. 프로필 이미지는 아직 없으므로 기본 아이콘 사용 |
-| `lastMessage` | 목록의 마지막 메시지 문구와 시각. 메시지가 없으면 null |
-| `blocked` | 어느 방향이든 차단 관계가 있어 새 TEXT를 보낼 수 없으면 true |
-| `page.hasNext` | 다음 채팅방 페이지가 더 있으면 true |
+| `data.content` | 화면에 표시할 채팅방 배열. 방이 없으면 빈 배열 |
+| `data.content[].chatRoomId` | 채팅방 선택 후 상세·메시지 조회와 STOMP 구독에 사용할 서버 채팅방 ID |
+| `data.content[].myRole` | `TENANT` 또는 `LANDLORD`. BOOKING_CARD의 역할별 UI를 고를 때 사용 |
+| `data.content[].listing.listingId` | 이 채팅이 어떤 매물에 관한 것인지 나타내는 매물 ID |
+| `data.content[].listing.title` | 채팅 목록에 표시할 매물 제목 |
+| `data.content[].listing.address` | 채팅 목록에 표시할 매물 주소 |
+| `data.content[].counterpart.userId` | 상대방의 서버 사용자 ID |
+| `data.content[].counterpart.displayName` | 목록에 표시할 상대방 이름. 프로필 이미지는 아직 없으므로 기본 아이콘 사용 |
+| `data.content[].lastMessage` | 현재 사용자에게 보이는 마지막 메시지. 메시지가 없으면 null |
+| `data.content[].lastMessage.messageId` | 마지막 메시지의 서버 ID. 정렬·중복 제거 기준 |
+| `data.content[].lastMessage.type` | 마지막 메시지 종류. `TEXT` 또는 `BOOKING_CARD` |
+| `data.content[].lastMessage.preview` | 목록 두 번째 줄에 표시할 TEXT 원문. BOOKING_CARD이면 null일 수 있음 |
+| `data.content[].lastMessage.sentAt` | 마지막 메시지가 저장된 시각 |
+| `data.content[].blocked` | 어느 방향이든 차단 관계가 있어 새 TEXT를 보낼 수 없으면 true |
+| `data.page.number` | 현재 페이지 번호. 첫 페이지는 0 |
+| `data.page.size` | 한 페이지에 요청한 최대 채팅방 수 |
+| `data.page.totalElements` | 현재 사용자에게 보이는 전체 채팅방 수 |
+| `data.page.totalPages` | 전체 페이지 수. 채팅방이 없으면 0 |
+| `data.page.hasNext` | 다음 채팅방 페이지가 더 있으면 true |
 
 `lastMessage.type=BOOKING_CARD`이면 `preview`는 null일 수 있다. 이때 프론트가 `myRole`에 맞게 “신청이 접수되었습니다” 또는 “새로운 입주 신청이 도착했습니다” 같은 고정 문구를 `ko/en`으로 표시한다.
 
@@ -181,6 +209,17 @@ Authorization: Bearer <accessToken>
   "error": null
 }
 ```
+
+| 필드 | 의미 |
+| --- | --- |
+| `data.chatRoomId` | 현재 연 채팅방 ID. 메시지 조회와 STOMP 구독에 사용 |
+| `data.myRole` | 현재 사용자의 역할. `TENANT`=임차인, `LANDLORD`=임대인 |
+| `data.listing.listingId` | 이 채팅이 어떤 매물에 관한 것인지 나타내는 매물 ID |
+| `data.listing.title` | 채팅방 상단에 표시할 매물 제목 |
+| `data.listing.address` | 채팅방 상단에 표시할 매물 주소 |
+| `data.counterpart.userId` | 현재 대화 상대의 `users.id` |
+| `data.counterpart.displayName` | 채팅방 상단에 표시할 상대방 이름 |
+| `data.blocked` | 어느 방향이든 차단 관계가 있어 새 TEXT를 보낼 수 없으면 true |
 
 - `listing`은 방을 만들 때 저장한 표시용 정보다. 매물이 나중에 비공개돼도 기존 채팅방에서 어떤 매물에 관한 대화인지 보여 줄 수 있다.
 - `counterpart.userId`는 상대방의 `users.id`다. 차단 해제처럼 상대 ID가 필요한 기존 user API에서 사용할 수 있다.
@@ -272,6 +311,14 @@ WebSocket 연결
   "highWatermark": null
 }
 ```
+
+| 필드 | 의미 |
+| --- | --- |
+| `version` | payload 형식 버전. 현재 1 |
+| `eventType` | 개인 queue 준비 확인 응답인 `PONG` |
+| `requestId` | PING에서 프론트가 보낸 UUID. 어떤 PING의 결과인지 연결할 때 사용 |
+| `roomId` | 방 구독 응답이 아니므로 null |
+| `highWatermark` | 방 구독 응답이 아니므로 null |
 
 ## 11. 채팅방 topic 구독
 
@@ -383,11 +430,19 @@ TEXT 한 건이 포함된 응답 예시는 다음과 같다.
 | `content` | 화면에 추가할 메시지 배열 |
 | `messageId` | 서버가 만든 최종 메시지 ID. REST·STOMP 결과를 합칠 때 중복 제거 기준 |
 | `clientMessageId` | TEXT 전송 때 발신 프론트가 만든 UUID. BOOKING_CARD는 null |
+| `chatRoomId` | 메시지가 속한 서버 채팅방 ID |
+| `senderId` | TEXT를 보낸 사용자의 서버 ID. BOOKING_CARD는 null |
 | `mine` | 현재 로그인 사용자가 보낸 TEXT이면 true |
 | `type` | `TEXT` 또는 `BOOKING_CARD` |
 | `originalContent` | 수정하지 않은 TEXT 원문. BOOKING_CARD는 null |
 | `translation` | 현재 사용자를 위한 최종 번역 결과. 없거나 아직 처리 중이면 null |
-| `bookingCard` | 서버가 저장한 신청 카드. TEXT는 null |
+| `translation.status` | `SUCCEEDED`, `NOT_REQUIRED`, `FAILED` 중 최종 번역 상태 |
+| `translation.content` | 번역 성공 시 표시할 번역문. 그 외 상태는 null |
+| `translation.sourceLanguage` | 번역 API가 감지한 원문 언어 코드 |
+| `translation.targetLanguage` | 현재 사용자의 대상 언어인 `ko` 또는 `en` |
+| `translation.provider` | 번역 제공자. 현재 `GOOGLE_CLOUD_TRANSLATION` |
+| `bookingCard` | 서버가 저장한 신청 카드. TEXT는 null이며 내부 필드는 15절의 표와 동일 |
+| `sentAt` | 메시지가 서버에 저장된 시각 |
 | `nextCursor` | 다음 페이지가 있을 때 다음 요청에 그대로 넣을 메시지 ID |
 | `hasNext` | 같은 방향으로 조회할 다음 페이지가 있으면 true |
 
@@ -511,6 +566,41 @@ TEXT 번역 작업이 끝나면 수신자의 `/user/queue/chat-translations`로 
 }
 ```
 
+다음 표는 room topic의 실시간 이벤트와 메시지 이력 REST 응답의 `bookingCard`에서 공통으로 사용하는 값이다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `version` | 실시간 payload 형식 버전. 현재 1 |
+| `eventType` | 새 저장 메시지 이벤트인 `MESSAGE_CREATED` |
+| `messageId` | MySQL이 발급한 BOOKING_CARD의 최종 메시지 ID |
+| `clientMessageId` | 서버가 만든 카드이므로 null |
+| `chatRoomId` | 카드가 저장된 채팅방 ID |
+| `senderId` | 사용자가 직접 보낸 메시지가 아니므로 null |
+| `type` | 신청 카드임을 나타내는 `BOOKING_CARD` |
+| `originalContent` | TEXT 원문이 없으므로 null |
+| `bookingCard` | 신청 카드 UI를 그리는 전체 데이터 객체 |
+| `bookingCard.bookingId` | 이 카드가 나타내는 입주 신청 ID |
+| `bookingCard.listing` | 신청 당시 매물 표시 정보를 묶은 객체 |
+| `bookingCard.listing.listingId` | 신청 대상 매물 ID |
+| `bookingCard.listing.thumbnailUrl` | 신청 카드 대표 이미지 URL. 이미지가 없으면 null |
+| `bookingCard.listing.title` | 신청 당시 매물 제목 |
+| `bookingCard.listing.address` | 신청 당시 매물 주소 |
+| `bookingCard.listing.monthlyRent` | 신청 당시 월 임대료(KRW) |
+| `bookingCard.applicant` | 임대인용 카드에 표시할 신청자 정보를 묶은 객체 |
+| `bookingCard.applicant.userId` | 신청자의 서버 사용자 ID |
+| `bookingCard.applicant.name` | 신청 당시 신청자 이름 |
+| `bookingCard.applicant.gender` | 신청자 성별 코드 |
+| `bookingCard.applicant.country` | 신청자 국가 코드 |
+| `bookingCard.applicant.countryName` | 신청자 국가 표시 이름 |
+| `bookingCard.applicant.email` | 신청 당시 신청자 이메일 |
+| `bookingCard.roomOfferId` | 신청한 객실 상품 ID |
+| `bookingCard.roomOfferName` | 신청한 객실 표시 이름 |
+| `bookingCard.moveInDate` | 입주 희망일(`YYYY-MM-DD`) |
+| `bookingCard.contractPeriod` | 계약 희망 기간(개월) |
+| `bookingCard.deposit` | 보증금(KRW) |
+| `bookingCard.totalAmount` | 총 초기 비용(KRW) |
+| `sentAt` | BOOKING_CARD가 서버에 저장된 시각 |
+
 임차인과 임대인은 같은 카드 payload를 받는다. 앱은 채팅방 상세 응답의 `myRole`을 보고 역할별 문구와 UI를 다르게 표시한다. `BOOKING_CARD`에는 프론트 임시 말풍선과 ACK가 없다.
 
 실시간 이벤트를 놓쳐도 `GET /api/v1/chat-rooms/{roomId}/messages` 응답에서 저장된 카드를 다시 받을 수 있다.
@@ -564,6 +654,7 @@ ACK는 STOMP protocol의 수신 확인이 아니라 **내가 보낸 TEXT가 MySQ
 
 | 필드 | 의미 |
 | --- | --- |
+| `version` | 오류 payload 형식 버전. 현재 1 |
 | `clientMessageId` | 실패한 임시 말풍선을 찾는 UUID. JSON 자체를 해석하지 못하면 null일 수 있음 |
 | `code` | 앱의 분기 처리에 사용하는 안정적인 오류 코드 |
 | `message` | 사용자에게 보여 줄 수 있는 현지화 문구 |
@@ -595,6 +686,14 @@ CONNECT 인증 실패는 STOMP `ERROR` frame 뒤 연결이 종료된다.
   "occurredAt": "2026-08-19T10:15:30.123456Z"
 }
 ```
+
+| 필드 | 의미 |
+| --- | --- |
+| `version` | payload 형식 버전. 현재 1 |
+| `eventType` | 목록 변경 종류. 아래 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나 |
+| `roomId` | 변경된 채팅방 ID |
+| `lastMessageId` | 이벤트 시점의 마지막 메시지 ID. 빈 방이면 null |
+| `occurredAt` | 채팅방 목록 변경이 서버에 확정된 시각 |
 
 | `eventType` | 의미 |
 | --- | --- |
