@@ -2,7 +2,7 @@
 
 이 문서는 실시간 연결, 인증, 구독, 메시지 전송, 재연결 동기화의 정본이다. REST endpoint는 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
-> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충, TEXT와 서버 생성 BOOKING_CARD의 실시간 전달까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. TEXT와 신규 BOOKING_CARD는 MySQL 커밋 뒤 room topic으로 전달한다. 사용자별 자동 번역은 다음 단계다.
+> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충, TEXT 자동 번역과 서버 생성 BOOKING_CARD의 실시간 전달까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. 신규 TEXT는 발신자에게 저장 ACK를 즉시 보내고, 수신자에게는 번역 최종 상태가 정해진 뒤 원문과 번역본을 개인 queue의 한 이벤트로 전달한다. 신규 BOOKING_CARD는 room topic으로 전달한다.
 
 ## 1. 기본 원칙
 
@@ -11,7 +11,7 @@
 - MySQL이 기록의 정본이고 broker는 저장 완료 메시지를 실시간 전달한다.
 - 클라이언트가 보낸 메시지를 broker로 바로 보내지 않는다.
 - 애플리케이션이 인증·참여자·차단·본문·중복을 검사하고 MySQL 커밋을 마친 뒤 발행한다.
-- 공용 room topic은 저장 완료된 `TEXT` 원문과 서버 생성 `BOOKING_CARD`를 전달하고, 사용자별 TEXT 번역 결과는 개인 queue로 분리한다.
+- 공용 room topic은 서버 생성 `BOOKING_CARD`를 전달한다. 받은 `TEXT`는 원문과 사용자별 최종 번역 결과를 개인 queue의 한 이벤트로 전달한다.
 - 번역은 원문 커밋 후 비동기로 처리하며 실패해도 메시지 저장 성공을 바꾸지 않는다.
 - 실시간 수신을 놓치면 REST 메시지 조회로 보충한다.
 
@@ -141,15 +141,16 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 4. 트랜잭션에서 방을 잠그고 방 존재·참여자·발신자 표시 상태 재검증
 5. 양방향 차단 재검증
 6. `(roomId, senderId, clientMessageId)`로 신규·중복 판정
-7. 신규이면 TEXT 원문을 `chat_messages`에 저장
+7. 신규이면 TEXT 원문과 수신자용 `PENDING` 번역 작업을 함께 저장
 8. 신규이면 방의 마지막 메시지 포인터를 갱신하고, 숨겼던 수신자의 방만 다시 표시
 9. 트랜잭션 커밋
-10. 신규 TEXT 원문을 room topic에 발행하고 두 참여자에게 방 목록 갱신 신호 전송
+10. 두 참여자에게 방 목록 갱신 신호 전송
 11. 발신 session에 애플리케이션 저장 결과 ACK 전송
+12. 번역 Worker를 즉시 깨우고, 최종 결과를 수신자 개인 queue로 전달
 
 커밋 전에는 broker에 발행하지 않는다. 중복 재시도는 기존 결과 ACK만 다시 보내고 두 번째 broadcast·방 재표시·마지막 메시지 갱신을 만들지 않는다. 사용자가 숨긴 방에서 오래된 화면으로 SEND하면 직접 문의로 방을 다시 표시하기 전까지 `CHAT_ROOM_NOT_FOUND`로 거부한다.
 
-자동 번역 단계에서는 7번 트랜잭션에 수신자용 `PENDING` 번역 작업 저장을 추가한다. 현재 TEXT 실시간 단계는 원문 저장과 전달만 담당하며 Google API를 호출하지 않는다.
+Google API는 7번 저장 트랜잭션 안에서 호출하지 않는다. 원문과 번역 작업이 모두 커밋된 뒤 별도 Worker가 호출하므로 Google 장애가 원문 저장 성공을 되돌리지 않는다.
 
 ### 서버가 만드는 BOOKING_CARD
 
@@ -170,11 +171,11 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 Google 번역 호출은 메시지 저장 transaction 안에서 실행하지 않는다. 애플리케이션이 원문 커밋 후 DB-backed worker에서 Google Cloud Translation Advanced v3의 NMT 번역을 호출한다.
 
 ```text
-원문 검증·저장 → MySQL COMMIT → 원문 실시간 전달
+원문·PENDING 저장 → MySQL COMMIT → 발신자 ACK
                                   ↓
                          사용자 언어별 비동기 번역
                                   ↓
-                         번역 저장 → 개인 queue 전달
+                  번역 저장 → 수신자에게 원문+번역 한 번에 전달
 ```
 
 처리 순서:
@@ -183,17 +184,17 @@ Google 번역 호출은 메시지 저장 transaction 안에서 실행하지 않�
 2. 대상 언어는 수신자의 `users.lang`에서 읽고 클라이언트 값은 받지 않는다.
 3. worker가 커밋된 작업을 가져와 `text/plain`으로 Google 번역을 호출한다.
 4. 원문 언어는 사용자 설정으로 추정하지 않고 provider의 자동 감지를 사용한다.
-5. 성공하면 사용자별 번역본을 저장하고 `/user/queue/chat-translations`로 최종 결과를 보낸다.
+5. 성공하면 사용자별 번역본을 저장하고 `/user/queue/chat-translations`로 원문과 번역본을 한 payload에 담아 보낸다.
 6. 같은 언어면 `NOT_REQUIRED`로 끝낸다.
 7. 재시도 가능한 오류는 한 작업 안에서 짧은 간격으로 Google 호출을 최대 5회 시도하고 계속 실패하면 `FAILED`로 끝낸다.
 
-다섯 번은 최초 요청을 포함한 총 호출 횟수다. 같은 Worker 실행 안에서 호출 사이에 예를 들어 0.5초, 1초, 2초, 4초의 짧고 설정 가능한 backoff를 둔다. 별도의 다음 재시도 시각은 저장하지 않는다. timeout·연결 오류·429·5xx만 재시도하고 잘못된 요청이나 인증·설정 오류는 5회를 채우지 않고 바로 `FAILED`로 끝낼 수 있다.
+다섯 번은 최초 요청을 포함한 총 호출 횟수다. 같은 Worker 실행 안에서 기본 0.2초부터 짧고 설정 가능한 backoff를 두되, 전체 전달 기한 기본 5초를 넘겨 새 호출을 시작하지 않는다. 별도의 다음 재시도 시각은 저장하지 않는다. timeout·연결 오류·429·5xx만 재시도하고 잘못된 요청이나 인증·설정 오류는 5회를 채우지 않고 바로 `FAILED`로 끝낼 수 있다.
 
-`PENDING`은 내부 작업 상태일 뿐 `번역 중`이라는 화면 문구를 백엔드가 만들거나 보내지 않는다. 외부 payload는 [API 계약의 번역 결과 이벤트](02-api-contracts.md#64-번역-결과-이벤트)를 따른다.
+`PENDING`과 `PROCESSING`은 내부 작업 상태일 뿐 `번역 중`이라는 화면 문구를 백엔드가 만들거나 보내지 않는다. 외부 payload는 [API 계약의 받은 TEXT 원문·번역 결합 이벤트](02-api-contracts.md#64-받은-text-원문번역-결합-이벤트)를 따른다.
 
-번역 실패는 원문 SEND 실패가 아니므로 `/user/queue/chat-errors`로 보내지 않는다. 원문 저장 결과와 ACK는 그대로 유지하며 프런트엔드가 원문을 사용할 수 있다.
+번역 실패는 원문 SEND 실패가 아니므로 `/user/queue/chat-errors`로 보내지 않는다. `FAILED` 최종 이벤트에도 원문을 함께 넣으므로 수신자는 원문을 표시할 수 있고, 발신자의 저장 ACK도 그대로 유지한다.
 
-번역 이벤트는 공용 room topic이 아닌 대상 사용자의 개인 queue로만 보낸다. 서로 다른 destination의 도착 순서는 보장하지 않으므로, 번역 이벤트가 원문 이벤트보다 먼저 오면 프런트엔드는 `messageId`로 임시 보관한 뒤 합친다.
+받은 TEXT 이벤트는 공용 room topic이 아닌 대상 사용자의 개인 queue로만 보낸다. 원문과 번역 결과가 같은 payload에 있으므로 프런트엔드가 두 이벤트의 도착 순서를 조정하거나 나중에 합칠 필요가 없다.
 
 Simple Broker는 번역 이벤트를 재생하지 않는다. 연결 중 놓친 번역본은 다음 REST 메시지 이력 조회에서 MySQL 결과로 복구한다.
 
@@ -254,7 +255,7 @@ CONNECT 인증 실패는 STOMP ERROR 후 연결을 종료한다. 개별 SEND 오
 
 `eventType`은 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나다. `ROOM_REOPENED`는 직접 문의나 실제 새 메시지로 숨긴 채팅방이 목록에 다시 나타났다는 뜻이며, 삭제한 과거 메시지를 복원했다는 뜻이 아니다. 이 이벤트는 목록을 즉시 갱신하기 위한 신호일 뿐 정본이 아니며, 오프라인에서 놓치면 다음 REST 채팅방 목록 조회로 보충한다.
 
-사용자 TEXT의 room topic 메시지와 ACK 도착 순서는 보장하지 않는다. 프런트엔드는 topic payload의 `clientMessageId`로 임시 말풍선을 먼저 합치고 `messageId`로 최종 중복 제거한다. 서버 생성 `BOOKING_CARD`에는 ACK가 없으며 `messageId`와 `bookingCard.bookingId`로 중복을 제거한다.
+사용자가 보낸 TEXT는 원래 발신 session의 ACK로 임시 말풍선을 확정한다. 다른 사용자가 보낸 TEXT는 개인 translation queue의 결합 이벤트를 `messageId`로 중복 제거한다. 서버 생성 `BOOKING_CARD`에는 ACK가 없으며 room topic 이벤트의 `messageId`와 `bookingCard.bookingId`로 중복을 제거한다.
 
 ## 10. 재연결과 누락 복구
 
@@ -266,7 +267,7 @@ Simple Broker는 끊긴 session에 메시지를 재생하지 않는다. 재연�
 4. 마지막 연속 DB 동기화 checkpoint를 `afterMessageId`로 REST 조회
 5. high-watermark까지 모든 page 조회
 6. 완료한 뒤에만 checkpoint를 high-watermark로 전진
-7. 같은 기간의 live topic 이벤트와 `messageId`로 병합
+7. 같은 기간의 live room topic·translation queue 이벤트와 `messageId`로 병합
 
 topic에서 받은 가장 큰 ID를 DB checkpoint로 사용하면 안 된다. 예를 들어 DB 101번 발행은 실패하고 102번만 topic에서 받았을 때 checkpoint를 102로 올리면 101번을 영구히 놓친다. 화면은 102번을 즉시 표시할 수 있지만 **연속 DB 범위 확인 checkpoint는 REST catch-up이 끝날 때만 전진**한다.
 

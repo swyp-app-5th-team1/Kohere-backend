@@ -40,7 +40,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 - 전송 직전 프런트엔드가 `clientMessageId`를 생성한다.
 - 저장 결과 전에는 `sending` 상태로 표시할 수 있다.
-- topic 또는 저장 결과가 오면 같은 `clientMessageId`를 서버 `messageId`와 합친다.
+- 발신 ACK가 오면 같은 `clientMessageId`의 임시 말풍선을 서버 `messageId`와 합친다.
 - timeout이면 `failed` 또는 retry 상태로 바꾼다.
 - retry는 같은 `clientMessageId`를 사용한다.
 - 백엔드는 임시 말풍선 자체를 저장하지 않는다.
@@ -50,9 +50,8 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 내가 보낸 메시지는 원문을 기본 표시한다.
 - 받은 메시지는 `translation`이 있으면 번역본을 기본 표시하고 `원문 보기`를 제공한다.
 - 원문 보기와 번역문 보기 전환은 프런트엔드의 메시지별 화면 상태다.
-- 번역본이 아직 없거나 실패했을 때 대기 문구·원문 표시 시점은 프런트엔드가 결정한다.
+- 수신자는 원문과 최종 번역 상태를 개인 queue의 한 이벤트로 받는다. `FAILED` 또는 `NOT_REQUIRED`면 원문을 표시한다.
 - 백엔드는 `번역 중` 같은 표시 문자열을 만들지 않는다.
-- 개인 translation 이벤트가 원문보다 먼저 오면 `messageId`로 잠시 보관해 나중에 합친다.
 - translation 이벤트를 놓치면 다음 REST 메시지 이력의 저장된 번역본으로 복구한다.
 - 자동 번역 결과에는 Google 표시 요구사항에 맞는 출처 안내를 붙인다.
 
@@ -126,7 +125,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 타 user queue, raw queue, wildcard destination 거부
 - 허용하지 않은 destination deny-all
 - DB commit 이전 broadcast 0회
-- 두 참여자가 저장 완료 room topic 수신
+- 발신 session은 저장 ACK를 받고 수신자는 원문·번역 결합 개인 이벤트 수신
 - 두 참여자가 서버 생성 BOOKING_CARD를 실시간 수신하고 제3자는 수신하지 못함
 - 클라이언트의 type·bookingId·bookingCard·payload 직접 SEND 거부
 - 카드 실시간 이벤트를 놓쳐도 REST 이력에서 복구
@@ -170,7 +169,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 차단·비참여·길이 초과 본문은 Google 호출 0회
 - BOOKING_CARD는 번역 행과 Google 호출 0회
 - translation 이벤트 유실 후 REST 이력으로 복구
-- 번역 결과가 원문보다 먼저 도착해도 `messageId`로 병합
+- 수신자 이벤트 한 건에 원문과 최종 번역 상태가 함께 포함됨
 - 번역 완료가 방 재노출·마지막 메시지·삭제 경계를 변경하지 않음
 - 방을 숨겨도 원문과 번역 행은 물리 삭제되지 않음
 - 신고 evidence와 hash가 번역 여부와 관계없이 원문 기준
@@ -364,7 +363,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 1. **연결·인증 기반(완료)**: `/ws/chat` handshake, CONNECT JWT, ACTIVE 계정, Origin, heartbeat, 64 KiB, token 만료 close를 구현했다.
 2. **구독 권한·누락 보충(완료)**: 정확한 개인 queue와 참여자의 보이는 room topic만 허용하고, PING/PONG 및 실제 broker 등록 뒤 `SUBSCRIPTION_READY`를 구현했다. 앱은 기존 REST `afterMessageId` 조회로 누락분을 자동 보충하며 주기 polling은 하지 않는다.
-3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문은 commit 뒤 room topic으로 보내고, 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장·방송하지 않는다.
+3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문 commit 뒤 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장하거나 번역 작업을 만들지 않는다.
 4. **BOOKING_CARD 실시간 연결(완료)**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다. 새 방은 `ROOM_CREATED`, 기존 방은 `ROOM_UPDATED`, 숨긴 방이 실제 신청 활동으로 다시 표시되면 `ROOM_REOPENED` 목록 신호를 보낸다.
 
 1. 연결 단계에는 WebSocket 의존성을 추가한다. destination 권한은 JWT interceptor 뒤에 실행되는 채팅 전용 allowlist interceptor에서 정확한 경로와 DB 참여 상태로 검사한다. 현재 HTTP 보안과 충돌하는 기본 CONNECT CSRF를 켜지 않기 위해 `@EnableWebSocketSecurity`는 사용하지 않는다.
@@ -375,32 +374,32 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 6. JWT 인증 interceptor가 destination 인가보다 먼저 실행되도록 순서를 고정한다.
 7. SEND·SUBSCRIBE와 개인 queue를 exact allowlist로 제한하고 그 밖의 destination은 deny-all한다.
 8. STOMP handler는 5단계의 동일한 메시지 저장 유스케이스를 호출한다.
-9. MySQL commit 뒤에만 room topic과 발신 session 저장 결과를 보낸다.
+9. MySQL commit 뒤에만 발신 session ACK와 방 목록 갱신 신호를 보낸다. 수신자 TEXT는 번역 최종 상태 뒤 개인 queue로 보낸다.
 10. control barrier, `SUBSCRIPTION_READY`, high-watermark와 REST catch-up을 구현한다.
 11. 서버 생성 `BOOKING_CARD`도 신규 커밋 뒤 room topic으로 전달하고 놓친 카드는 REST 이력으로 복구한다.
 
 완료 조건:
 
-- 정상 사용자 두 명은 원문 메시지를 실시간 송수신하고 제3자는 구독·전송하지 못한다.
+- 정상 발신자는 저장 ACK를 받고 수신자는 원문·번역 결합 메시지를 실시간 수신하며 제3자는 구독·전송하지 못한다.
 - 클라이언트는 BOOKING_CARD를 SEND하지 못하고 서버가 만든 카드만 두 참여자가 수신한다.
 - 차단 관계에서 room broadcast는 0건이다.
 - Swagger 없이도 `WebSocketStompClient` 통합 테스트로 CONNECT·SUBSCRIBE·SEND를 자동 검증한다.
 - 간단한 수동 smoke test는 Postman raw WebSocket 또는 테스트 앱으로 확인한다.
 - 연결 종료·서버 재시작 뒤 REST catch-up이 놓친 메시지를 복구한다.
 
-#### 7단계: 받은 새 메시지 자동 번역하기
+#### 7단계: 받은 새 메시지 자동 번역하기(완료)
 
-쉽게 말하면 원문은 먼저 정상 저장·전달하고, 그 뒤 Google API로 번역한 결과를 수신자에게 추가로 전달한다.
+쉽게 말하면 원문은 먼저 정상 저장해 발신자에게 ACK를 보내고, 수신자에게는 Google 처리 뒤 원문과 최종 번역 결과를 한 이벤트로 함께 전달한다.
 
 1. `chat_message_translations`와 worker 조회 인덱스를 Flyway로 추가한다.
 2. 신규 TEXT 원문과 수신자별 `PENDING` 번역 작업을 같은 트랜잭션에 저장한다. BOOKING_CARD에는 번역 작업을 만들지 않는다.
-3. provider 독립 `MessageTranslationPort`, Google Cloud Translation Advanced v3 adapter와 로컬·테스트용 stub을 구현한다.
+3. provider 독립 `ChatTranslationClient`, Google Cloud Translation Advanced v3 adapter와 번역 비활성 환경용 구현을 둔다.
 4. 번역 대상은 수신자의 `users.lang`에서 정한다. `ko`는 한국어, 그 밖의 값이나 미설정 값은 현재 지원 범위의 `en`으로 정규화하고 원문 언어는 provider가 자동 감지한다.
 5. Translation Worker는 commit 직후 작업을 깨우고, 놓친 작업은 기본 60초의 설정 가능한 복구 조회로 다시 찾는다. 이 조회는 일반 번역 지연이나 재시도 시각을 만드는 polling이 아니라 신호 유실·재시작의 안전망이다.
-6. worker는 timeout·연결 오류·429·5xx에 예를 들어 0.5초, 1초, 2초, 4초의 짧고 설정 가능한 backoff를 적용하고 최초 요청 포함 최대 5회 뒤 `SUCCEEDED`, `NOT_REQUIRED`, `FAILED`로 저장한다.
+6. worker는 timeout·연결 오류·429·5xx에 기본 0.2초부터 짧고 설정 가능한 backoff를 적용한다. 최초 요청 포함 최대 5회와 전체 기본 5초 전달 기한 안에서 `SUCCEEDED`, `NOT_REQUIRED`, `FAILED`로 저장한다.
 7. provider 호출 직전에 `attempt_count`를 증가시키며, 다음 재시도 시각은 저장하지 않고 상태와 crash 복구용 lease만 저장한다. 재시작 뒤에는 남은 횟수만 이어서 처리한다.
-8. 성공 결과는 수신자 개인 queue로만 전달하고 REST 이력에도 원문과 번역본을 함께 반환한다.
-9. 번역 실패·지연은 원문 저장·실시간 전달 성공을 변경하지 않는다.
+8. 최종 결과는 수신자 개인 queue로만 전달한다. `SUCCEEDED`는 원문+번역본, `NOT_REQUIRED`·`FAILED`는 원문+상태를 한 payload로 보내며 REST 이력도 같은 저장 결과를 복구한다.
+9. 재시도 가능한 오류는 최초 포함 최대 5회, 전체 기본 5초 기한 안에서 처리한다. 번역 실패·지연은 원문 저장과 발신자 ACK 성공을 변경하지 않는다.
 10. 기능 도입 전 과거 메시지는 일괄 번역하지 않고 도입 후 신규 메시지만 처리한다.
 
 Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQL의 작업 상태와 lease가 정본이므로 프로세스가 재시작돼도 미완료 작업을 다시 찾을 수 있어야 한다.

@@ -1,6 +1,6 @@
 # MySQL 데이터 모델과 현재 저장 흐름
 
-이 문서는 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 현재 `V24`는 `chat_rooms`·`chat_room_members`·`chat_messages`, `V26`은 `chat_reports`·`chat_report_evidence`를 물리화한다. 자동 번역 구조는 해당 기능 단계의 별도 migration으로 추가한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
+이 문서는 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 현재 `V24`는 `chat_rooms`·`chat_room_members`·`chat_messages`, `V26`은 `chat_reports`·`chat_report_evidence`, `V27`은 `chat_message_translations`를 물리화한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
 관리자 신고 처리, 삭제 후 3개월 만료 확정, 메시지·방의 물리 삭제는 현재 migration과 batch 범위에 포함하지 않는다. 해당 설계는 [후속 고도화 문서](future/README.md)로 분리한다.
 
@@ -181,7 +181,6 @@ INDEX idx_chat_messages_room_id_desc (chat_room_id, id DESC)
 
 ```sql
 UNIQUE (message_id, recipient_user_id, target_language)
-INDEX (status, id)
 INDEX (status, lease_until, id)
 INDEX (recipient_user_id, message_id)
 ```
@@ -194,14 +193,14 @@ INDEX (recipient_user_id, message_id)
 2. `PENDING`은 **원문 전송 대기**가 아니라 **번역 처리 대기**라는 뜻이다. 이때 `translated_content`는 null이다.
 3. 원문 커밋 뒤 Translation Worker가 짧은 트랜잭션으로 작업을 `PROCESSING` 상태로 확보한다.
 4. DB lock을 풀고 Google Cloud Translation에 원문과 대상 언어를 보낸다.
-5. 성공하면 번역본과 감지 언어를 저장하고 수신자 개인 STOMP queue에 결과를 보낸다.
+5. 성공하면 번역본과 감지 언어를 저장하고 수신자 개인 STOMP queue에 원문과 번역본을 한 이벤트로 보낸다.
 6. 원문과 대상 언어가 같으면 `NOT_REQUIRED`로 끝낸다.
 7. provider 호출 직전에 `attempt_count`를 증가시켜 커밋한다.
-8. timeout·연결 오류·429·5xx는 같은 Worker 작업 안에서 예를 들어 0.5초, 1초, 2초, 4초의 짧은 간격을 두고 최초 요청을 포함해 최대 5회 호출한다.
-9. 별도의 다음 재시도 시각은 저장하지 않으며 5회 모두 실패하면 `FAILED`로 끝낸다. 잘못된 요청이나 인증·설정 오류는 즉시 `FAILED`로 끝낼 수 있다.
+8. timeout·연결 오류·429·5xx는 같은 Worker 작업 안에서 기본 0.2초부터 짧게 기다리며 최초 요청을 포함해 최대 5회 호출한다. 전체 기본 5초 전달 기한을 넘겨 새 호출을 시작하지 않는다.
+9. 별도의 다음 재시도 시각은 저장하지 않으며 5회 또는 전달 기한까지 성공하지 못하면 `FAILED`로 끝낸다. 잘못된 요청이나 인증·설정 오류는 즉시 `FAILED`로 끝낼 수 있다.
 10. Worker가 중단되면 `lease_until`이 지난 `PROCESSING` 작업을 다시 가져와 `5 - attempt_count`의 남은 횟수만 이어서 처리한다.
 
-Worker는 Google을 대신해 번역하는 구성 요소가 아니다. 번역할 작업을 찾고, Google API를 호출하고, 결과 저장·재시도·수신자 전달을 관리하는 백엔드 컴포넌트다. 작업은 커밋 직후 바로 깨운다. 기본 60초의 복구 조회는 신호 유실이나 서버 재시작 뒤 남은 `PENDING`·lease 만료 작업을 찾는 안전망일 뿐, 일반 재시도 시각을 관리하는 polling이 아니다.
+Worker는 Google을 대신해 번역하는 구성 요소가 아니다. 번역할 작업을 찾고, Google API를 호출하고, 결과 저장·재시도·수신자 전달을 관리하는 백엔드 컴포넌트다. 작업은 커밋 직후 바로 깨운다. 기본 60초의 복구 조회는 신호 유실이나 서버 재시작 뒤 남은 `PENDING`·lease 만료 작업을 찾는 안전망일 뿐, 일반 재시도 시각을 관리하는 polling이 아니다. 원문을 공용 topic으로 먼저 보내지 않으므로 수신자는 최종 상태가 정해진 뒤 원문과 번역 결과를 한 payload로 받는다. 실패 상태에도 원문이 포함된다.
 
 번역 완료·재시도·실패는 다음 값을 변경하지 않는다.
 

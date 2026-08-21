@@ -33,11 +33,11 @@
 | --- | --- | --- |
 | WebSocket 연결 | `/ws/chat` | 실시간 연결 시작 |
 | 메시지 전송 | `/app/chat-rooms/{roomId}/messages` | 텍스트를 애플리케이션 서버에 전송 |
-| 방 메시지 구독 | `/topic/chat-rooms/{roomId}` | 저장 완료된 새 메시지 수신 |
+| 방 메시지 구독 | `/topic/chat-rooms/{roomId}` | 서버가 만든 새 BOOKING_CARD 수신 |
 | 저장 결과 | `/user/queue/chat-acks` | 내가 보낸 메시지의 DB 저장 결과 |
 | 오류 | `/user/queue/chat-errors` | 권한·차단·본문 검증 오류 |
 | 방 목록 이벤트 | `/user/queue/chat-room-events` | 새 방·목록 갱신·방 재노출 알림 |
-| 번역 결과 | `/user/queue/chat-translations` | 받은 메시지의 사용자 언어별 번역 결과 |
+| 받은 TEXT | `/user/queue/chat-translations` | 원문과 사용자 언어별 최종 번역 결과를 함께 수신 |
 | 동기화 제어 | `/app/chat/control/ping` | 구독 준비 확인 요청 |
 | 동기화 제어 | `/user/queue/chat-control` | pong과 `SUBSCRIPTION_READY` 수신 |
 
@@ -215,6 +215,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
   "originalContent": "Is the room still available?",
   "bookingCard": null,
   "translation": {
+    "status": "SUCCEEDED",
     "content": "아직 방을 구할 수 있나요?",
     "sourceLanguage": "en",
     "targetLanguage": "ko",
@@ -226,7 +227,8 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 - 내가 보낸 메시지는 `translation=null`로 반환하고 원문을 기본 표시한다.
 - 받은 메시지는 번역본이 있으면 번역본을 기본 표시하고 원문 보기 기능을 제공한다.
-- 번역본이 아직 없거나 생성에 실패했으면 `translation=null`이며, 이때의 화면 표시는 프런트엔드가 결정한다.
+- 아직 처리 중이면 `translation=null`이다. `FAILED` 또는 `NOT_REQUIRED`가 확정되면 `translation.status`를 반환하고 `content`는 null이다.
+- `FAILED`와 `NOT_REQUIRED`에서는 함께 반환된 `originalContent`를 표시한다.
 - 백엔드는 `번역 중` 같은 사용자 표시 문구를 반환하지 않는다.
 
 신청 카드 응답 예시:
@@ -347,26 +349,21 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 클라이언트는 `type`이나 `bookingCard`를 SEND할 수 없다. STOMP SEND는 사용자 `TEXT` 전용이고 `BOOKING_CARD`는 신청 저장 후 서버만 생성한다.
 
-### 6.2 TEXT 원문 저장 완료 이벤트
+### 6.2 TEXT 저장 ACK
 
-공용 room topic에는 모든 참여자에게 동일한 원문 저장 결과만 발행한다.
+원문이 MySQL에 저장되면 SEND를 실행한 원래 session의 `/user/queue/chat-acks`로 즉시 ACK를 보낸다. ACK는 상대방 수신 확인이 아니라 서버 저장 성공을 뜻한다.
 
 ```json
 {
   "version": 1,
-  "eventType": "MESSAGE_CREATED",
-  "messageId": 70051,
   "clientMessageId": "b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849",
-  "chatRoomId": 556,
-  "senderId": 7,
-  "type": "TEXT",
-  "originalContent": "안녕하세요. 이번 주 토요일에 방문할 수 있을까요?",
-  "bookingCard": null,
-  "sentAt": "2026-08-19T10:15:30.123456Z"
+  "messageId": 70051,
+  "sentAt": "2026-08-19T10:15:30.123456Z",
+  "duplicate": false
 }
 ```
 
-같은 `(roomId, senderId, clientMessageId)`가 재전송되면 기존 저장 결과만 돌려주고 새 DB 행과 두 번째 room broadcast를 만들지 않는다. 같은 ID에 다른 본문이 오면 충돌로 거부한다.
+발신 앱은 `clientMessageId`가 같은 임시 말풍선을 찾아 서버 `messageId`와 연결한다. 같은 `(roomId, senderId, clientMessageId)`가 재전송되면 기존 저장 결과를 `duplicate=true`로 돌려주고 새 DB 행과 번역 작업을 만들지 않는다. 같은 ID에 다른 본문이 오면 충돌로 거부한다.
 
 ### 6.3 서버가 만든 신청 카드 이벤트
 
@@ -412,21 +409,25 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 서버는 `(chatRoomId, bookingId)`를 유일하게 저장해 같은 신청 이벤트가 재처리돼도 카드와 broadcast를 두 번 만들지 않는다.
 
-### 6.4 번역 결과 이벤트
+### 6.4 받은 TEXT 원문·번역 결합 이벤트
 
-원문 저장 후 수신자 언어 번역이 끝나면 해당 수신자의 `/user/queue/chat-translations`에만 결과를 보낸다.
+원문 저장 후 수신자 언어 번역이 최종 상태가 되면 해당 수신자의 `/user/queue/chat-translations`에만 보낸다. 공용 room topic으로 원문을 먼저 보내지 않으며, **원문과 번역 결과가 아래 한 이벤트에 함께 도착한다.**
 
 ```json
 {
   "version": 1,
   "eventType": "MESSAGE_TRANSLATION_UPDATED",
   "messageId": 70051,
+  "clientMessageId": "b6506eb7-bf2d-47c8-a8d2-5f75cdb6d849",
   "chatRoomId": 556,
+  "senderId": 7,
+  "originalContent": "안녕하세요. 이번 주 토요일에 방문할 수 있을까요?",
   "status": "SUCCEEDED",
   "sourceLanguage": "ko",
   "targetLanguage": "en",
   "translatedContent": "Hello. Could I visit this Saturday?",
   "provider": "GOOGLE_CLOUD_TRANSLATION",
+  "sentAt": "2026-08-19T10:15:30.123456Z",
   "translatedAt": "2026-08-19T10:15:30.523456Z"
 }
 ```
@@ -437,9 +438,9 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 | --- | --- | --- |
 | `SUCCEEDED` | 번역 완료 | 필수 |
 | `NOT_REQUIRED` | 원문과 대상 언어가 같아 번역 불필요 | null |
-| `FAILED` | 재시도 가능한 오류를 포함해 최대 5회 호출 후 번역 실패 | null |
+| `FAILED` | 영구 오류 또는 재시도 가능한 오류를 최대 5회 호출한 뒤 실패 | null |
 
-내부 작업 상태인 `PENDING`은 사용자 표시 문구가 아니며 클라이언트에 보내지 않는다. 프런트엔드는 `messageId`로 원문 이벤트와 번역 이벤트를 합치고, 번역본이 있으면 받은 메시지에 우선 표시한다.
+내부 작업 상태인 `PENDING`과 `PROCESSING`은 클라이언트에 보내지 않는다. `SUCCEEDED`면 `translatedContent`를 기본 표시하고 원문 보기에서 `originalContent`로 전환한다. `NOT_REQUIRED` 또는 `FAILED`면 `originalContent`를 표시한다. 번역 실패에도 원문은 사라지지 않는다.
 
 ### 6.5 구독 준비 제어 이벤트
 

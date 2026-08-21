@@ -207,7 +207,7 @@ sequenceDiagram
 
 **결과:** 마지막 동기화 이후부터 구독 기준 시점까지 빠진 메시지도 MySQL에서 보충한다.
 
-### 새 메시지를 저장하고 실시간 전달하기
+### 새 메시지를 저장하고 발신자에게 ACK 보내기
 
 ```mermaid
 sequenceDiagram
@@ -215,8 +215,6 @@ sequenceDiagram
     participant APP as 발신자 앱
     participant CHAT as 채팅 서버
     participant DB as MySQL
-    participant BR as Simple Broker
-    participant OTHER as 수신자 앱
 
     S->>APP: 텍스트 전송
     APP->>APP: clientMessageId 생성
@@ -224,15 +222,12 @@ sequenceDiagram
     CHAT->>CHAT: JWT 사용자·방 참여·차단·3,000자 검사
     CHAT->>DB: 원문과 사용자별 번역 대기 작업 저장
     DB-->>CHAT: COMMIT + messageId
-    CHAT->>BR: 저장 완료된 원문 발행
-    BR-->>APP: 원문 메시지
-    BR-->>OTHER: 원문 메시지
-    CHAT-->>APP: 저장 성공 결과
+    CHAT-->>APP: 저장 성공 ACK
 ```
 
-**쉽게 설명하면:** 프런트엔드가 UUID 형태의 `clientMessageId`를 먼저 만들고 서버는 이를 재전송 중복을 판별하는 값으로 사용한다. 서버는 원문, `번역 대기(PENDING)` 행, 방의 마지막 메시지 정보를 함께 저장한다. 필요하면 수신자가 숨긴 방을 다시 표시하는 상태도 같은 트랜잭션에서 바꾼다. `PENDING`은 원문 메시지가 아니라 번역만 아직 처리되지 않았다는 뜻이며, 모든 DB 저장이 성공해 `messageId`가 만들어진 뒤에만 Broker가 메시지를 전달한다.
+**쉽게 설명하면:** 프런트엔드가 UUID 형태의 `clientMessageId`를 먼저 만들고 서버는 이를 재전송 중복을 판별하는 값으로 사용한다. 서버는 원문, `번역 대기(PENDING)` 행, 방의 마지막 메시지 정보를 함께 저장한다. 필요하면 수신자가 숨긴 방을 다시 표시하는 상태도 같은 트랜잭션에서 바꾼다. `PENDING`은 원문 메시지가 아니라 번역만 아직 처리되지 않았다는 뜻이다. 저장이 끝나면 발신 앱은 ACK로 임시 말풍선을 전송 완료 상태로 바꾼다.
 
-**결과:** 원문 저장과 전달은 Google 번역 완료를 기다리지 않는다.
+**결과:** 발신자는 Google 번역을 기다리지 않고 원문 저장 성공을 즉시 확인한다. 수신자 전달은 다음 시나리오에서 처리한다.
 
 ### 저장된 메시지를 자동 번역하기
 
@@ -250,14 +245,14 @@ sequenceDiagram
     WORKER->>GOOGLE: 원문을 수신 언어로 번역 요청
     GOOGLE-->>WORKER: 번역 결과
     WORKER->>DB: 번역본 저장
-    WORKER->>BR: 수신자 전용 번역 결과 발행
-    BR-->>APP: 번역 결과
+    WORKER->>BR: 수신자 전용 원문+번역 결과 발행
+    BR-->>APP: 원문과 번역본이 한 이벤트로 도착
     APP->>APP: 번역본 우선 표시<br/>원문 보기 제공
 ```
 
-**쉽게 설명하면:** `Translation Worker`는 직접 번역하는 프로그램이 아니라 번역 작업을 관리하는 Spring 백그라운드 컴포넌트다. DB에서 `PENDING` 작업을 찾아 Google API에 원문을 보내고, Google이 만든 번역본을 DB에 저장한 뒤 수신자에게 전달한다. 원문은 수정하지 않는다.
+**쉽게 설명하면:** `Translation Worker`는 직접 번역하는 프로그램이 아니라 번역 작업을 관리하는 Spring 백그라운드 컴포넌트다. DB에서 `PENDING` 작업을 찾아 Google API에 원문을 보내고, Google이 만든 번역본을 DB에 저장한다. 그다음 수신자에게 원문과 번역본을 한 번에 전달한다. 원문이 먼저 나타난 뒤 번역 말풍선으로 바뀌는 방식이 아니며, 저장된 원문도 수정하지 않는다.
 
-**결과:** 저장된 원문은 바꾸지 않고 수신자용 번역본만 추가한다.
+**결과:** 수신자는 같은 이벤트에서 번역본을 기본 표시하고 필요할 때 원문을 볼 수 있다.
 
 ### 자동 번역이 최종 실패한 경우
 
@@ -266,6 +261,7 @@ sequenceDiagram
     participant WORKER as Translation Worker
     participant DB as MySQL
     participant GOOGLE as Google Translation
+    participant APP as 수신자 앱
 
     WORKER->>DB: 번역 대기 작업 조회
     DB-->>WORKER: 원문·수신 언어
@@ -273,14 +269,16 @@ sequenceDiagram
         WORKER->>DB: 호출 직전 attempt_count 증가
         WORKER->>GOOGLE: 번역 요청
         GOOGLE-->>WORKER: 재시도 가능한 오류 또는 시간 초과
-        Note over WORKER,GOOGLE: 예: 0.5초 → 1초 → 2초 → 4초의 짧은 간격
+        Note over WORKER,GOOGLE: 기본 0.2초부터 짧게 대기<br/>전체 기본 5초 기한 안에서만 재시도
     end
     WORKER->>DB: 최종 실패 상태 저장
+    WORKER-->>APP: FAILED + 원문을 한 이벤트로 전달
+    APP->>APP: 원문 표시
 ```
 
-**쉽게 설명하면:** Google API의 일시 오류나 시간 초과가 발생하면 Worker가 같은 작업 안에서 아주 짧게 기다렸다가 최초 요청을 포함해 최대 5번 호출한다. 다음 시도 일정을 DB에 예약하는 방식은 아니다. 서버가 중간에 꺼지면 저장된 시도 횟수를 보고 남은 횟수만 이어서 처리한다. 계속 실패하면 번역 작업만 `FAILED`가 되고, 원문 메시지는 이미 정상 저장된 데이터이므로 사라지지 않는다.
+**쉽게 설명하면:** Google API의 일시 오류나 시간 초과가 발생하면 Worker가 같은 작업 안에서 아주 짧게 기다렸다가 최초 요청을 포함해 최대 5번 호출한다. 다만 수신을 오래 기다리지 않게 전체 기본 5초 기한을 넘겨 새 요청을 시작하지 않는다. 다음 시도 일정을 DB에 예약하는 방식은 아니다. 서버가 중간에 꺼지면 저장된 시도 횟수를 보고 남은 횟수만 이어서 처리한다. 계속 실패하면 `FAILED`와 원문을 함께 보내므로 수신자는 원문을 볼 수 있다.
 
-**결과:** 번역에 실패해도 이미 저장·전달된 원문 메시지는 그대로 유지한다.
+**결과:** 번역 실패에도 원문 메시지는 그대로 저장되고 수신자 화면에는 원문이 표시된다.
 
 ### 네트워크 오류로 같은 메시지를 다시 보낸 경우
 
