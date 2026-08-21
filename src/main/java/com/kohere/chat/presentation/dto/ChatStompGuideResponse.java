@@ -23,7 +23,7 @@ public record ChatStompGuideResponse(
     String connectHeaderValueFormat,
     /** 개인 queue 수신 여부를 PING/PONG으로 확인하는 SEND 경로. */
     String controlSendDestination,
-    /** 특정 채팅방의 TEXT와 BOOKING_CARD를 실시간 수신하는 구독 경로 형식. */
+    /** 특정 채팅방의 서버 생성 BOOKING_CARD를 실시간 수신하는 구독 경로 형식. */
     String roomSubscribeDestination,
     /** 특정 채팅방에 사용자 TEXT를 보내는 SEND 경로 형식. */
     String messageSendDestination,
@@ -35,7 +35,7 @@ public record ChatStompGuideResponse(
     String errorQueue,
     /** 채팅방 생성·갱신·재표시 신호를 받는 개인 queue. */
     String roomEventQueue,
-    /** 자동 번역이 구현된 뒤 사용자별 번역 결과를 받을 예약 queue. */
+    /** 받은 TEXT의 원문과 최종 번역 결과를 한 이벤트로 함께 받는 개인 queue. */
     String translationQueue,
     /** 사용자 TEXT 한 건에 허용되는 최대 Unicode 문자 수. */
     int maxTextCodePoints,

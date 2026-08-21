@@ -11,7 +11,10 @@ import com.kohere.chat.domain.ChatUnavailableException;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
 import java.util.List;
@@ -33,6 +36,8 @@ public class ChatTextMessageService {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageTranslationRepository translationRepository;
+  private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
 
   /**
@@ -88,7 +93,7 @@ public class ChatTextMessageService {
     if (existing != null) {
       assertSameOriginal(existing, content);
       // 중복 재시도는 lastMessageId·가시성·후속 번역 작업을 절대 다시 변경하지 않는다.
-      return new TextMessageSaveResult(existing, true, recipient.getUserId(), false);
+      return new TextMessageSaveResult(existing, true, recipient.getUserId(), false, null);
     }
 
     Instant sentAt = Instant.now();
@@ -103,6 +108,17 @@ public class ChatTextMessageService {
                 .sentAt(sentAt)
                 .build());
 
+    /*
+     * 수신 언어는 프런트 입력을 믿지 않고 users.lang에서 읽는다. 이 PENDING 행까지 같은 트랜잭션에 넣어야
+     * 원문만 커밋되고 번역 작업이 사라지는 부분 성공을 막을 수 있다.
+     */
+    String targetLanguage =
+        supportedTargetLanguage(userAccountService.getLanguage(recipient.getUserId()));
+    ChatMessageTranslation translation =
+        translationRepository.save(
+            ChatMessageTranslation.pending(
+                saved.getId(), recipient.getUserId(), targetLanguage, sentAt));
+
     // INSERT가 성공한 최종 messageId만 채팅방 목록의 마지막 메시지 포인터로 기록한다.
     chatRoomRepository.save(room.recordMessage(saved.getId(), sentAt));
 
@@ -116,7 +132,8 @@ public class ChatTextMessageService {
       memberRepository.save(visibleRecipient);
     }
 
-    return new TextMessageSaveResult(saved, false, recipient.getUserId(), reopened);
+    return new TextMessageSaveResult(
+        saved, false, recipient.getUserId(), reopened, translation.getId());
   }
 
   /** 외부 입력의 필수값과 Unicode code point 3,000자 제한을 도메인 객체 생성 전에 명확한 오류 code로 바꾼다. */
@@ -151,5 +168,10 @@ public class ChatTextMessageService {
         .filter(member -> member.getUserId() != senderId)
         .findFirst()
         .orElse(null);
+  }
+
+  /** 현재 채팅 지원 언어 ko/en만 유지하고 미설정·미지원 값은 기존 사용자 정책대로 영어로 폴백한다. */
+  private static String supportedTargetLanguage(String language) {
+    return "ko".equalsIgnoreCase(language) ? "ko" : "en";
   }
 }

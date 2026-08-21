@@ -33,6 +33,8 @@ ext {
   set('springModulithVersion', '1.4.1')
   set('swaggerUiVersion', '5.18.2')
   set('awsSdkVersion', '2.31.78')
+  // Google Cloud Java 라이브러리는 공통 BOM으로 맞춰 gRPC·protobuf·auth 전이 버전 충돌을 막는다.
+  set('googleCloudLibrariesBomVersion', '26.86.0')
   // SOLAPI SDK 1.1.0은 Kotlin 2.3.0으로 빌드됨(SDK build.gradle.kts: kotlin("jvm") 2.3.0). Boot 3.5.8 관리
   // kotlin 1.9.25로는 런타임 NoSuchMethodError(kotlin.time.Clock.getSystemClock)로 SMS 발송이 500 실패(ADR-0034).
   // stdlib/reflect만 우리 classpath를 쓰고(kotlinx-serialization은 SDK가 shadowJar로 relocate 번들) → 버전만 맞추면 된다.
@@ -89,6 +91,10 @@ dependencies {
   // 구조화 로깅 — MDC·StructuredArguments를 1줄 JSON으로 인코딩(ADR-0038). 로그 내용과 전송 경로를 직교로 두어
   // 로깅 자체는 AWS SDK를 타지 않는다 — CloudWatch 반출은 Agent(dev)·awslogs 드라이버(prod)가 맡는다.
   implementation 'net.logstash.logback:logstash-logback-encoder:8.0'
+
+  // 채팅 TEXT 자동 번역 — Advanced v3 client가 ADC를 사용하므로 로컬 ADC와 EC2 WIF가 같은 코드를 공유한다.
+  implementation platform("com.google.cloud:libraries-bom:${googleCloudLibrariesBomVersion}")
+  implementation 'com.google.cloud:google-cloud-translate'
 
   // 매물 사진 업로드 — S3(로컬은 endpoint만 바꿔 MinIO, ADR-0041). apache-client는 이 한 경로에 과하고
   // 전이 의존이 넓어 url-connection-client로 대체한다(동기 PutObject/DeleteObjects만 쓴다).

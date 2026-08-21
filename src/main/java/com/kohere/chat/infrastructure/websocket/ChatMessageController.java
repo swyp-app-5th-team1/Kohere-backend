@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kohere.chat.application.ChatTextMessageService;
 import com.kohere.chat.application.TextMessageSaveResult;
+import com.kohere.chat.application.translation.ChatTranslationWorker;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageSendPayload;
 import com.kohere.common.exception.BusinessException;
@@ -21,8 +22,9 @@ import org.springframework.stereotype.Controller;
 /**
  * 프런트의 STOMP TEXT SEND를 안전한 MySQL 저장 유스케이스에 연결하는 진입점이다.
  *
- * <p>HTTP Controller와 달리 응답 body를 바로 반환하지 않는다. 저장 성공 뒤 room topic에는 공통 원문 이벤트를, 원래 발신 session에는
- * ACK를 각각 보낸다. 개별 메시지 오류는 socket 전체를 닫지 않고 발신 session의 오류 queue로만 전달한다.
+ * <p>HTTP Controller와 달리 응답 body를 바로 반환하지 않는다. 저장 성공 뒤 원래 발신 session에는 ACK를 즉시 보내고, 수신자에게는 번역
+ * Worker가 원문과 최종 번역 결과를 개인 queue의 한 이벤트로 보낸다. 개별 메시지 오류는 socket 전체를 닫지 않고 발신 session의 오류 queue로만
+ * 전달한다.
  */
 @Slf4j
 @Controller
@@ -30,22 +32,25 @@ public class ChatMessageController {
 
   private final ChatTextMessageService textMessageService;
   private final ChatRealtimeMessagePublisher realtimePublisher;
+  private final ChatTranslationWorker translationWorker;
   private final ChatStompErrorSender errorSender;
   private final ObjectMapper objectMapper;
 
   public ChatMessageController(
       ChatTextMessageService textMessageService,
       ChatRealtimeMessagePublisher realtimePublisher,
+      ChatTranslationWorker translationWorker,
       ChatStompErrorSender errorSender,
       ObjectMapper objectMapper) {
     this.textMessageService = textMessageService;
     this.realtimePublisher = realtimePublisher;
+    this.translationWorker = translationWorker;
     this.errorSender = errorSender;
     this.objectMapper = objectMapper;
   }
 
   /**
-   * {@code /app/chat-rooms/{roomId}/messages}의 TEXT를 저장하고 커밋된 결과를 실시간으로 발행한다.
+   * {@code /app/chat-rooms/{roomId}/messages}의 TEXT와 번역 작업을 저장하고 후속 실시간 전달을 시작한다.
    *
    * @param roomId payload가 아니라 destination에서 서버가 해석한 채팅방 ID
    * @param payload 프런트 UUID와 원문만 가진 TEXT 요청
@@ -69,6 +74,10 @@ public class ChatMessageController {
           textMessageService.saveText(
               roomId, senderId, clientMessageId, payload == null ? null : payload.content());
       realtimePublisher.publishTextResult(sessionId, result);
+      if (!result.duplicate() && result.translationId() != null) {
+        // saveText 프록시가 반환된 시점에는 원문과 PENDING이 모두 COMMIT됐다. 이제 외부 호출을 별도 thread에서 시작한다.
+        translationWorker.submit(result.translationId());
+      }
     } catch (BusinessException failure) {
       // 예상 가능한 입력·권한·중복 충돌은 연결을 유지하고 안정적인 code로 실패한 임시 말풍선에만 돌려준다.
       sendKnownError(senderId, sessionId, clientMessageId, failure.getErrorCode());

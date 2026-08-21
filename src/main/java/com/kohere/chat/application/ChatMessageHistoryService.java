@@ -2,6 +2,7 @@ package com.kohere.chat.application;
 
 import com.kohere.chat.application.dto.BookingCardResponse;
 import com.kohere.chat.application.dto.MessageResponse;
+import com.kohere.chat.application.dto.MessageTranslationResponse;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomNotFoundException;
@@ -9,9 +10,15 @@ import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.CursorResponse;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +42,7 @@ public class ChatMessageHistoryService {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageTranslationRepository translationRepository;
 
   /**
    * 로그인 사용자에게 보이는 메시지를 커서 방식으로 반환한다.
@@ -139,12 +147,27 @@ public class ChatMessageHistoryService {
   }
 
   /** size+1 조회 결과를 실제 응답 크기로 자르고 다음 요청에 사용할 커서를 계산한다. */
-  private static CursorResponse<MessageResponse> toPage(
+  private CursorResponse<MessageResponse> toPage(
       long userId, List<Message> candidates, int requestedSize) {
     boolean hasNext = candidates.size() > requestedSize;
     List<Message> pageMessages = candidates.stream().limit(requestedSize).toList();
+    Map<Long, ChatMessageTranslation> translationsByMessageId =
+        translationRepository
+            .findByMessageIdsAndRecipientUserId(
+                pageMessages.stream().map(Message::getId).toList(), userId)
+            .stream()
+            .filter(ChatMessageTranslation::isTerminal)
+            .collect(
+                Collectors.toMap(
+                    ChatMessageTranslation::getMessageId,
+                    Function.identity(),
+                    (first, ignored) -> first));
     List<MessageResponse> content =
-        pageMessages.stream().map(message -> toResponse(userId, message)).toList();
+        pageMessages.stream()
+            .map(
+                message ->
+                    toResponse(userId, message, translationsByMessageId.get(message.getId())))
+            .toList();
 
     // 다음 페이지가 있을 때만 마지막 messageId를 보낸다. 앱은 이 문자열을 같은 query에 그대로 다시 사용한다.
     String nextCursor =
@@ -158,7 +181,8 @@ public class ChatMessageHistoryService {
   }
 
   /** 도메인 메시지를 프런트엔드가 TEXT와 BOOKING_CARD로 구분해 그릴 수 있는 응답으로 바꾼다. */
-  private static MessageResponse toResponse(long userId, Message message) {
+  private static MessageResponse toResponse(
+      long userId, Message message, ChatMessageTranslation translation) {
     boolean mine =
         message.getType() == MessageType.TEXT && message.getSenderId().longValue() == userId;
     BookingCardResponse bookingCard =
@@ -175,7 +199,21 @@ public class ChatMessageHistoryService {
         message.getType(),
         message.getContent(),
         bookingCard,
-        null, // 자동 번역 저장소는 후속 단계에서 연결한다. 현재는 원문을 항상 반환한다.
+        toTranslationResponse(translation),
         message.getSentAt());
+  }
+
+  /** 내부 작업 상태는 노출하지 않고 완료된 사용자별 번역 결과만 REST DTO로 바꾼다. */
+  private static MessageTranslationResponse toTranslationResponse(
+      ChatMessageTranslation translation) {
+    if (translation == null || !translation.isTerminal()) {
+      return null;
+    }
+    return new MessageTranslationResponse(
+        TranslationResultStatus.valueOf(translation.getStatus().name()),
+        translation.getTranslatedContent(),
+        translation.getDetectedSourceLanguage(),
+        translation.getTargetLanguage(),
+        translation.getProvider());
   }
 }

@@ -17,7 +17,7 @@ public final class ChatStompDestinations {
   /** {@code @MessageMapping}이 application prefix를 제거한 뒤 사용하는 TEXT handler 경로. */
   public static final String MESSAGE_APPLICATION_DESTINATION = "/chat-rooms/{roomId}/messages";
 
-  /** MySQL 저장을 마친 원문 또는 서버 생성 카드를 방 참여자에게 알리는 topic. */
+  /** 서버 생성 BOOKING_CARD를 방 참여자에게 알리는 topic. 수신자용 TEXT는 개인 번역 queue로 결합 전달한다. */
   public static final String ROOM_TOPIC = "/topic/chat-rooms/{roomId}";
 
   /** 원래 TEXT SEND를 보낸 session만 구독하는 애플리케이션 저장 결과 queue. */
@@ -38,7 +38,7 @@ public final class ChatStompDestinations {
   /** 서버가 {@link #ROOM_EVENT_QUEUE} 구독자에게 값을 보낼 때 사용하는 user destination. */
   public static final String ROOM_EVENT_USER_DESTINATION = "/queue/chat-room-events";
 
-  /** 원문과 분리된 사용자별 번역 최종 결과를 수신자에게만 보내는 개인 queue. */
+  /** 받은 TEXT의 원문과 사용자별 최종 번역 결과를 한 번에 수신자에게 보내는 개인 queue. */
   public static final String TRANSLATION_QUEUE = "/user/queue/chat-translations";
 
   /** 서버가 {@link #TRANSLATION_QUEUE} 구독자에게 값을 보낼 때 사용하는 user destination. */

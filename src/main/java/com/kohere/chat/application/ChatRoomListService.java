@@ -12,6 +12,9 @@ import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
+import com.kohere.chat.domain.translation.ChatTranslationStatus;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageInfo;
 import com.kohere.common.response.PageResponse;
@@ -47,6 +50,7 @@ public class ChatRoomListService {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageTranslationRepository translationRepository;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
 
@@ -76,6 +80,15 @@ public class ChatRoomListService {
     Collection<Long> visibleLastMessageIds = visibleLastMessageIds(memberPage.content(), roomsById);
     Map<Long, Message> messagesById =
         indexById(messageRepository.findByIds(visibleLastMessageIds), Message::getId);
+    Map<Long, ChatMessageTranslation> translationsByMessageId =
+        translationRepository
+            .findByMessageIdsAndRecipientUserId(visibleLastMessageIds, userId)
+            .stream()
+            .collect(
+                Collectors.toMap(
+                    ChatMessageTranslation::getMessageId,
+                    Function.identity(),
+                    (first, ignored) -> first));
 
     Map<Long, String> counterpartNames = new HashMap<>();
     Map<Long, Boolean> blockedRelationships = new HashMap<>();
@@ -88,6 +101,7 @@ public class ChatRoomListService {
                         member,
                         requiredRoom(roomsById, member.getChatRoomId()),
                         messagesById,
+                        translationsByMessageId,
                         counterpartNames,
                         blockedRelationships))
             .toList();
@@ -137,6 +151,7 @@ public class ChatRoomListService {
       ChatRoomMember member,
       ChatRoom room,
       Map<Long, Message> messagesById,
+      Map<Long, ChatMessageTranslation> translationsByMessageId,
       Map<Long, String> counterpartNames,
       Map<Long, Boolean> blockedRelationships) {
     long counterpartId = member.getCounterpartId();
@@ -154,13 +169,16 @@ public class ChatRoomListService {
             room.getListingSnapshot().title(),
             room.getListingSnapshot().address()),
         new ChatCounterpartResponse(counterpartId, counterpartName),
-        visibleLastMessage(member, room, messagesById),
+        visibleLastMessage(member, room, messagesById, translationsByMessageId),
         blocked);
   }
 
   /** 삭제 경계보다 뒤에 있는 마지막 메시지만 목록 미리보기로 만든다. */
   private static ChatLastMessageResponse visibleLastMessage(
-      ChatRoomMember member, ChatRoom room, Map<Long, Message> messagesById) {
+      ChatRoomMember member,
+      ChatRoom room,
+      Map<Long, Message> messagesById,
+      Map<Long, ChatMessageTranslation> translationsByMessageId) {
     Long lastMessageId = room.getLastMessageId();
     if (lastMessageId == null || lastMessageId <= member.getHistoryHiddenThroughMessageId()) {
       return null;
@@ -173,7 +191,14 @@ public class ChatRoomListService {
     }
 
     // BOOKING_CARD의 문구는 myRole과 앱 언어에 따라 프런트가 고정 label을 선택하므로 preview는 null이다.
-    String preview = message.getType() == MessageType.TEXT ? message.getContent() : null;
+    String preview = null;
+    if (message.getType() == MessageType.TEXT) {
+      ChatMessageTranslation translation = translationsByMessageId.get(message.getId());
+      preview =
+          translation != null && translation.getStatus() == ChatTranslationStatus.SUCCEEDED
+              ? translation.getTranslatedContent()
+              : message.getContent();
+    }
     return new ChatLastMessageResponse(
         message.getId(), message.getType(), preview, message.getSentAt());
   }

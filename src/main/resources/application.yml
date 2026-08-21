@@ -75,6 +75,28 @@ app:
       message-size-limit-bytes: 65536
       # handshake만 열어 둔 익명 연결이 CONNECT 없이 자원을 계속 점유하지 못하게 한다.
       time-to-first-message: 10s
+    translation:
+      # 자격증명이 준비되지 않은 환경에서는 Google 호출만 끄고, 수신자에게는 FAILED 상태와 원문을 한 번에 보낸다.
+      enabled: ${APP_CHAT_TRANSLATION_ENABLED:false}
+      # Cloud Translation Advanced v3의 parent 경로에 들어가는 Google Cloud 프로젝트 ID다.
+      project-id: ${APP_CHAT_TRANSLATION_PROJECT_ID:}
+      # 일반 NMT 번역은 global 위치를 사용한다.
+      location: ${APP_CHAT_TRANSLATION_LOCATION:global}
+      # 최초 호출을 포함한 총 Google 호출 상한이다. DB CHECK도 5회로 고정한다.
+      max-attempts: 5
+      # Google SDK 자체 재시도는 끄고 한 번의 네트워크 호출이 점유할 수 있는 시간을 제한한다.
+      request-timeout: 2s
+      # 수신자가 너무 오래 기다리지 않도록 최대 5회보다 이 전체 시간을 먼저 넘으면 원문 fallback으로 끝낸다.
+      delivery-timeout: 5s
+      # 외부 호출 중 DB lock은 풀되 다른 Worker가 같은 작업을 가져가지 못하게 하는 안전 기한이다.
+      lease-duration: 30s
+      # 일반 처리 주기가 아니라 서버 재시작·즉시 신호 유실 때 PENDING 작업을 찾는 안전망이다.
+      recovery-interval: 60s
+      # 재시도 가능한 오류 사이의 첫 대기 시간이다. 다음 대기는 2배씩 늘어난다.
+      initial-backoff: 200ms
+      # Google 네트워크 호출이 STOMP inbound thread를 막지 않도록 전용 Worker 수를 제한한다.
+      worker-pool-size: 4
+      recovery-batch-size: 100
   jwt:
     issuer: kohere
     access-ttl-seconds: 3600 # access 1시간 (ADR-0011)

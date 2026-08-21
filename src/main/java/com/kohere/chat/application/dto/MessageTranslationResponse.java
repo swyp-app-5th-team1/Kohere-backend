@@ -1,6 +1,7 @@
 package com.kohere.chat.application.dto;
 
 import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 
 /**
  * 로그인 사용자의 표시 언어로 생성된 TEXT 번역 결과다.
@@ -9,7 +10,9 @@ import com.kohere.chat.domain.TranslationProvider;
  * 번역 미완료·불필요·최종 실패 중 화면에서 필요한 처리는 원문을 기준으로 한다.
  */
 public record MessageTranslationResponse(
-    /** 번역된 TEXT. 원문을 덮어쓰지 않는다. */
+    /** 화면에 공개하는 최종 결과. 내부 PENDING과 PROCESSING은 이 응답에 포함하지 않는다. */
+    TranslationResultStatus status,
+    /** SUCCEEDED일 때의 번역된 TEXT. NOT_REQUIRED와 FAILED에는 null이며 원문을 사용한다. */
     String content,
     /** 번역 provider가 감지한 원문 언어 code. 사용자 프로필 언어로 추정하지 않는다. */
     String sourceLanguage,
