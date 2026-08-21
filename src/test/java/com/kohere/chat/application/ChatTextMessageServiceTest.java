@@ -21,7 +21,11 @@ import com.kohere.chat.domain.ChatUnavailableException;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
+import com.kohere.chat.domain.translation.ChatTranslationStatus;
 import com.kohere.common.exception.InvalidInputException;
+import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
 import java.util.List;
@@ -48,6 +52,8 @@ class ChatTextMessageServiceTest {
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private MessageRepository messageRepository;
+  @Mock private ChatMessageTranslationRepository translationRepository;
+  @Mock private UserAccountService userAccountService;
   @Mock private UserBlockService userBlockService;
 
   private ChatTextMessageService service;
@@ -56,7 +62,12 @@ class ChatTextMessageServiceTest {
   void setUp() {
     service =
         new ChatTextMessageService(
-            chatRoomRepository, memberRepository, messageRepository, userBlockService);
+            chatRoomRepository,
+            memberRepository,
+            messageRepository,
+            translationRepository,
+            userAccountService,
+            userBlockService);
   }
 
   /** 신규 원문은 한 번 저장하고 저장된 ID로 방 마지막 메시지 포인터를 이동한다. */
@@ -64,6 +75,7 @@ class ChatTextMessageServiceTest {
   @DisplayName("신규 TEXT를 저장하고 마지막 메시지를 갱신한다")
   void savesNewTextAndUpdatesRoomPointer() {
     prepareVisibleConversation();
+    prepareTranslationSave("en");
     given(messageRepository.save(any(Message.class)))
         .willAnswer(invocation -> withId(invocation.getArgument(0), 501L));
 
@@ -74,6 +86,15 @@ class ChatTextMessageServiceTest {
     assertThat(result.message().getContent()).isEqualTo("안녕하세요");
     assertThat(result.recipientUserId()).isEqualTo(RECIPIENT_ID);
     assertThat(result.recipientRoomReopened()).isFalse();
+    assertThat(result.translationId()).isEqualTo(801L);
+
+    ArgumentCaptor<ChatMessageTranslation> translationCaptor =
+        ArgumentCaptor.forClass(ChatMessageTranslation.class);
+    verify(translationRepository).save(translationCaptor.capture());
+    assertThat(translationCaptor.getValue().getMessageId()).isEqualTo(501L);
+    assertThat(translationCaptor.getValue().getRecipientUserId()).isEqualTo(RECIPIENT_ID);
+    assertThat(translationCaptor.getValue().getTargetLanguage()).isEqualTo("en");
+    assertThat(translationCaptor.getValue().getStatus()).isEqualTo(ChatTranslationStatus.PENDING);
 
     ArgumentCaptor<ChatRoom> roomCaptor = ArgumentCaptor.forClass(ChatRoom.class);
     verify(chatRoomRepository).save(roomCaptor.capture());
@@ -94,6 +115,7 @@ class ChatTextMessageServiceTest {
             .deleteRequestedAt(deletedAt)
             .build();
     prepareConversation(senderMember(), hiddenRecipient);
+    prepareTranslationSave("ko");
     given(messageRepository.save(any(Message.class)))
         .willAnswer(invocation -> withId(invocation.getArgument(0), 501L));
 
@@ -107,6 +129,7 @@ class ChatTextMessageServiceTest {
     assertThat(reopened.getRoomHiddenAt()).isNull();
     assertThat(reopened.getHistoryHiddenThroughMessageId()).isEqualTo(400L);
     assertThat(reopened.getDeleteRequestedAt()).isEqualTo(deletedAt);
+    assertThat(result.translationId()).isEqualTo(801L);
   }
 
   /** 같은 UUID·같은 본문 재전송은 기존 결과만 반환하고 어떠한 쓰기도 다시 만들지 않는다. */
@@ -130,7 +153,9 @@ class ChatTextMessageServiceTest {
     assertThat(result.message()).isSameAs(existing);
     assertThat(result.duplicate()).isTrue();
     assertThat(result.recipientRoomReopened()).isFalse();
+    assertThat(result.translationId()).isNull();
     verify(messageRepository, never()).save(any(Message.class));
+    verify(translationRepository, never()).save(any(ChatMessageTranslation.class));
     verify(chatRoomRepository, never()).save(any(ChatRoom.class));
     verify(memberRepository, never()).save(any(ChatRoomMember.class));
   }
@@ -209,6 +234,17 @@ class ChatTextMessageServiceTest {
   private void prepareConversation(ChatRoomMember sender, ChatRoomMember recipient) {
     given(chatRoomRepository.findByIdForUpdate(ROOM_ID)).willReturn(Optional.of(room()));
     given(memberRepository.findByChatRoomId(ROOM_ID)).willReturn(List.of(sender, recipient));
+  }
+
+  /** 수신자 언어 조회와 PENDING 저장소가 DB ID를 반환하는 정상 경로를 준비한다. */
+  private void prepareTranslationSave(String language) {
+    given(userAccountService.getLanguage(RECIPIENT_ID)).willReturn(language);
+    given(translationRepository.save(any(ChatMessageTranslation.class)))
+        .willAnswer(
+            invocation -> {
+              ChatMessageTranslation pending = invocation.getArgument(0);
+              return pending.toBuilder().id(801L).build();
+            });
   }
 
   private static ChatRoom room() {

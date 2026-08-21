@@ -19,6 +19,11 @@ import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
+import com.kohere.chat.domain.translation.ChatTranslationStatus;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.CursorResponse;
 import java.time.Instant;
@@ -45,6 +50,7 @@ class ChatMessageHistoryServiceTest {
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private MessageRepository messageRepository;
+  @Mock private ChatMessageTranslationRepository translationRepository;
 
   private ChatMessageHistoryService service;
 
@@ -52,7 +58,8 @@ class ChatMessageHistoryServiceTest {
   @BeforeEach
   void setUp() {
     service =
-        new ChatMessageHistoryService(chatRoomRepository, memberRepository, messageRepository);
+        new ChatMessageHistoryService(
+            chatRoomRepository, memberRepository, messageRepository, translationRepository);
   }
 
   /** 첫 진입은 최근 메시지를 최신순으로 반환하고 size+1번째 행으로 다음 페이지를 판단한다. */
@@ -141,6 +148,27 @@ class ChatMessageHistoryServiceTest {
     assertThat(result.bookingCard().bookingId()).isEqualTo(15L);
     assertThat(result.bookingCard().listing().thumbnailUrl())
         .isEqualTo("https://cdn.example.com/cover.jpg");
+  }
+
+  /** 받은 TEXT에는 저장된 최종 번역을 원문과 함께 반환하고 내가 보낸 TEXT에는 상대용 번역을 붙이지 않는다. */
+  @Test
+  @DisplayName("수신자용 번역 결과를 원문과 함께 반환한다")
+  void mapsRecipientTranslationWithOriginal() {
+    prepareVisibleRoom(0L);
+    Message received = text(301L, COUNTERPART_ID);
+    Message mine = text(302L, USER_ID);
+    given(messageRepository.findBefore(ROOM_ID, null, 3)).willReturn(List.of(mine, received));
+    given(translationRepository.findByMessageIdsAndRecipientUserId(List.of(302L, 301L), USER_ID))
+        .willReturn(List.of(succeededTranslation(received.getId())));
+
+    CursorResponse<MessageResponse> page = service.getMessages(USER_ID, ROOM_ID, null, null, 2);
+
+    assertThat(page.content().get(0).translation()).isNull();
+    MessageResponse translated = page.content().get(1);
+    assertThat(translated.originalContent()).isEqualTo("message-301");
+    assertThat(translated.translation().status()).isEqualTo(TranslationResultStatus.SUCCEEDED);
+    assertThat(translated.translation().content()).isEqualTo("translated-301");
+    assertThat(translated.translation().targetLanguage()).isEqualTo("ko");
   }
 
   /** cursor와 afterMessageId를 함께 보내면 어느 방향으로 정렬할지 모호하므로 400 입력 오류로 거부한다. */
@@ -260,6 +288,25 @@ class ChatMessageHistoryServiceTest {
         .payload(payload)
         .bookingId(payload.bookingId())
         .sentAt(SENT_AT)
+        .build();
+  }
+
+  /** REST 이력에 붙일 완료 번역 fixture다. */
+  private static ChatMessageTranslation succeededTranslation(long messageId) {
+    return ChatMessageTranslation.builder()
+        .id(901L)
+        .messageId(messageId)
+        .recipientUserId(USER_ID)
+        .targetLanguage("ko")
+        .detectedSourceLanguage("en")
+        .status(ChatTranslationStatus.SUCCEEDED)
+        .translatedContent("translated-" + messageId)
+        .provider(TranslationProvider.GOOGLE_CLOUD_TRANSLATION)
+        .model("NMT")
+        .attemptCount(1)
+        .translatedAt(SENT_AT)
+        .createdAt(SENT_AT)
+        .updatedAt(SENT_AT)
         .build();
   }
 }

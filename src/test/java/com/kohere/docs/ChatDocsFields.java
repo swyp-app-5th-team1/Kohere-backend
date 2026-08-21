@@ -10,6 +10,7 @@ import static org.springframework.restdocs.request.RequestDocumentation.paramete
 import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.report.domain.ReportReason;
 import com.kohere.report.domain.ReportStatus;
 import java.util.List;
@@ -56,7 +57,7 @@ public final class ChatDocsFields {
       | `/user/queue/chat-acks` | 내가 보낸 TEXT의 DB 저장 성공 결과 |
       | `/user/queue/chat-errors` | 내가 보낸 TEXT의 검증·권한 오류 |
       | `/user/queue/chat-room-events` | 채팅방 생성·갱신·재표시 알림 |
-      | `/user/queue/chat-translations` | 추후 자동 번역 결과를 받을 예약 경로 |
+      | `/user/queue/chat-translations` | 내가 받은 TEXT의 원문과 최종 번역 결과를 함께 받는 경로 |
 
       **4. 개인 queue가 준비됐는지 확인**
 
@@ -70,7 +71,7 @@ public final class ChatDocsFields {
 
       **5. 채팅방 구독**
 
-      `/topic/chat-rooms/{roomId}`를 구독하면 그 채팅방에 새로 저장되는 `TEXT`와 `BOOKING_CARD`를 실시간으로 받는다.
+      `/topic/chat-rooms/{roomId}`를 구독하면 서버가 만든 새 `BOOKING_CARD`를 실시간으로 받는다.
       여기서 topic은 방 참여자들이 같은 실시간 이벤트를 받도록 만든 **방송 경로**이며, 데이터를 저장하는 장소는 아니다. 정본은 MySQL이다.
 
       구독이 서버 broker에 실제 등록되면 개인 control queue로 `SUBSCRIPTION_READY`가 온다.
@@ -99,16 +100,26 @@ public final class ChatDocsFields {
       - `clientMessageId`: 프런트가 전송 직전에 생성한 UUID. 같은 메시지 재시도에는 같은 UUID를 사용한다.
       - `content`: 사용자가 입력한 원문. 공백을 포함해 최대 3,000 Unicode 문자다.
 
-      저장이 완료되면 room topic으로 `MESSAGE_CREATED`가 온다. 주요 값은 다음과 같다.
+      저장이 완료되면 발신자에게는 ACK가 먼저 온다. 수신자에게는 번역 작업이 끝난 뒤
+      `/user/queue/chat-translations`로 **원문과 번역 결과가 한 이벤트에 함께** 온다. 원문만 먼저 보내고 나중에 말풍선을 바꾸는 방식이 아니다.
+
+      주요 값은 다음과 같다.
 
       - `messageId`: MySQL이 발급한 최종 메시지 번호
-      - `clientMessageId`: 프런트가 보낸 TEXT UUID. BOOKING_CARD는 null
+      - `clientMessageId`: 프런트가 SEND할 때 만든 UUID
       - `chatRoomId`: 메시지가 속한 채팅방 번호
-      - `senderId`: TEXT 발신 사용자 ID. BOOKING_CARD는 null
-      - `type`: `TEXT` 또는 `BOOKING_CARD`
-      - `originalContent`: TEXT 원문. BOOKING_CARD는 null
-      - `bookingCard`: 신청 카드 데이터. TEXT는 null
-      - `sentAt`: 서버 저장 시각
+      - `senderId`: TEXT를 보낸 사용자 ID
+      - `originalContent`: 사용자가 입력한 수정하지 않은 원문
+      - `status`: `SUCCEEDED`, `NOT_REQUIRED`, `FAILED` 중 최종 번역 상태
+      - `sourceLanguage`: Google이 감지한 원문 언어. 실패하면 null일 수 있음
+      - `targetLanguage`: 수신자 언어에서 정한 `ko` 또는 `en`
+      - `translatedContent`: 성공한 번역문. 번역 불필요·실패면 null
+      - `provider`: 현재 `GOOGLE_CLOUD_TRANSLATION`
+      - `sentAt`: 원문 저장 시각
+      - `translatedAt`: 번역 작업이 끝난 시각
+
+      `FAILED`여도 `originalContent`가 함께 오므로 앱은 원문 말풍선을 표시할 수 있다. 같은 언어여서 번역이 필요 없는
+      `NOT_REQUIRED`도 원문을 표시한다. 백엔드는 `번역 중` 같은 화면 문구를 보내지 않는다.
 
       입주 신청이 저장되면 서버가 `BOOKING_CARD`를 자동 생성해 같은 room topic으로 전달한다. 프런트가 카드를 SEND하지 않는다.
 
@@ -650,7 +661,7 @@ public final class ChatDocsFields {
         field(
             "data.roomSubscribeDestination",
             JsonFieldType.STRING,
-            "TEXT·BOOKING_CARD를 실시간 수신할 방 topic 형식. {roomId}를 서버 채팅방 번호로 교체"),
+            "서버 생성 BOOKING_CARD를 실시간 수신할 방 topic 형식. {roomId}를 서버 채팅방 번호로 교체"),
         field(
             "data.messageSendDestination",
             JsonFieldType.STRING,
@@ -665,7 +676,7 @@ public final class ChatDocsFields {
         field(
             "data.translationQueue",
             JsonFieldType.STRING,
-            "추후 자동 번역 결과를 받을 개인 queue. 현재 번역 기능은 아직 미구현"),
+            "받은 TEXT의 원문과 최종 번역 상태를 한 이벤트로 함께 받는 개인 queue"),
         field(
             "data.maxTextCodePoints",
             JsonFieldType.NUMBER,
@@ -942,11 +953,15 @@ public final class ChatDocsFields {
         optField(
             "data.content[].translation",
             JsonFieldType.OBJECT,
-            "현재 로그인 사용자에게 보여 줄 TEXT 자동 번역 정보. 번역이 없거나 실패·불필요하면 null이며 앱은 originalContent 표시"),
+            "현재 로그인 사용자에게 보여 줄 받은 TEXT의 최종 번역 정보. 처리가 끝나지 않았거나 내가 보낸 TEXT·BOOKING_CARD이면 null"),
+        optEnumField(
+            "data.content[].translation.status",
+            TranslationResultStatus.class,
+            "최종 번역 상태. SUCCEEDED=번역문 표시, NOT_REQUIRED=같은 언어라 원문 표시, FAILED=번역 실패로 원문 표시"),
         optField(
             "data.content[].translation.content",
             JsonFieldType.STRING,
-            "기본 말풍선에 먼저 표시할 자동 번역문. 원문 보기 선택 시 originalContent로 전환"),
+            "status=SUCCEEDED일 때 기본 말풍선에 표시할 번역문. 그 외 상태는 null"),
         optField(
             "data.content[].translation.sourceLanguage",
             JsonFieldType.STRING,

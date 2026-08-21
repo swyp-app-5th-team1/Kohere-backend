@@ -21,6 +21,7 @@ import com.kohere.chat.application.dto.MessageTranslationResponse;
 import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatControlEventPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageSendPayload;
@@ -96,7 +97,11 @@ class ChatContractTest {
             "Is the room still available?",
             null,
             new MessageTranslationResponse(
-                "아직 방을 구할 수 있나요?", "en", "ko", TranslationProvider.GOOGLE_CLOUD_TRANSLATION),
+                TranslationResultStatus.SUCCEEDED,
+                "아직 방을 구할 수 있나요?",
+                "en",
+                "ko",
+                TranslationProvider.GOOGLE_CLOUD_TRANSLATION),
             SENT_AT);
 
     JsonNode json = objectMapper.valueToTree(response);
@@ -115,6 +120,7 @@ class ChatContractTest {
             "sentAt");
     assertThat(json.path("mine").asBoolean()).isFalse();
     assertThat(json.path("bookingCard").isNull()).isTrue();
+    assertThat(json.path("translation").path("status").asText()).isEqualTo("SUCCEEDED");
     assertThat(json.path("translation").path("targetLanguage").asText()).isEqualTo("ko");
   }
 

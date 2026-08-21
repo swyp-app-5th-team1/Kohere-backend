@@ -2,6 +2,7 @@ package com.kohere.chat.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
 import com.kohere.chat.application.ChatRoomCreator;
@@ -21,7 +22,12 @@ import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
+import com.kohere.chat.domain.translation.ChatTranslationStatus;
+import com.kohere.chat.infrastructure.translation.persistence.ChatMessageTranslationRepositoryImpl;
 import com.kohere.common.response.CursorResponse;
+import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -58,6 +64,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
   MessageRepositoryImpl.class,
+  ChatMessageTranslationRepositoryImpl.class,
   ChatTextMessageService.class,
   ChatRoomDeletionService.class,
   ChatMessageHistoryService.class,
@@ -82,6 +89,9 @@ class ChatPersistenceIntegrationTest {
   /** 실제 JPA 포트를 하나의 TEXT 저장 트랜잭션으로 묶는 응용 서비스다. */
   @Autowired private ChatTextMessageService textMessageService;
 
+  /** 원문과 함께 저장되는 사용자별 번역 작업·결과 포트다. */
+  @Autowired private ChatMessageTranslationRepository translationRepository;
+
   /** 사용자별 숨김 경계를 방·참여자 잠금 안에서 저장하는 삭제 유스케이스다. */
   @Autowired private ChatRoomDeletionService roomDeletionService;
 
@@ -93,6 +103,9 @@ class ChatPersistenceIntegrationTest {
 
   /** 이 통합 테스트는 chat 저장 원자성에 집중하므로 user 모듈의 차단 조회 경계만 대체한다. */
   @MockitoBean private UserBlockService userBlockService;
+
+  /** 수신자 표시 언어 snapshot을 만드는 user 공개 API만 mock으로 대체한다. */
+  @MockitoBean private UserAccountService userAccountService;
 
   /** CHECK 제약을 의도적으로 위반하는 SQL과 물리 타입 확인에만 사용하는 테스트 도구다. */
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -498,6 +511,58 @@ class ChatPersistenceIntegrationTest {
                     9003L,
                     now()))
         .isInstanceOf(DataAccessException.class);
+  }
+
+  /** 신규 TEXT와 PENDING이 함께 저장되고 PROCESSING·SUCCEEDED 상태가 실제 MySQL에서 손실 없이 왕복하는지 확인한다. */
+  @Test
+  void storesTranslationJobWithTextAndPersistsItsLifecycle() {
+    Instant createdAt = now();
+    ChatRoom room = chatRoomRepository.save(newRoom("64f000000000000000000027", createdAt));
+    memberRepository.saveAll(
+        List.of(
+            newMember(room.getId(), 101L, 202L, ChatParticipantRole.TENANT, createdAt),
+            newMember(room.getId(), 202L, 101L, ChatParticipantRole.LANDLORD, createdAt)));
+    given(userAccountService.getLanguage(202L)).willReturn("en");
+
+    TextMessageSaveResult saved =
+        textMessageService.saveText(room.getId(), 101L, UUID.randomUUID(), "안녕하세요");
+    ChatMessageTranslation pending =
+        translationRepository.findById(saved.translationId()).orElseThrow();
+
+    assertThat(pending.getMessageId()).isEqualTo(saved.message().getId());
+    assertThat(pending.getRecipientUserId()).isEqualTo(202L);
+    assertThat(pending.getTargetLanguage()).isEqualTo("en");
+    assertThat(pending.getStatus()).isEqualTo(ChatTranslationStatus.PENDING);
+    assertThat(pending.getTranslatedContent()).isNull();
+
+    Instant processingAt = now().plusSeconds(1);
+    ChatMessageTranslation processing =
+        translationRepository.save(
+            pending
+                .claim(processingAt, java.time.Duration.ofSeconds(30))
+                .beginAttempt(processingAt, java.time.Duration.ofSeconds(30), 5));
+    ChatMessageTranslation succeeded =
+        translationRepository.save(processing.succeed("ko", "Hello", processingAt.plusSeconds(1)));
+
+    entityManager.flush();
+    entityManager.clear();
+
+    ChatMessageTranslation stored = translationRepository.findById(succeeded.getId()).orElseThrow();
+    assertThat(stored.getStatus()).isEqualTo(ChatTranslationStatus.SUCCEEDED);
+    assertThat(stored.getAttemptCount()).isEqualTo(1);
+    assertThat(stored.getDetectedSourceLanguage()).isEqualTo("ko");
+    assertThat(stored.getTranslatedContent()).isEqualTo("Hello");
+    assertThat(stored.getLeaseUntil()).isNull();
+
+    // 같은 메시지·수신자·대상 언어 조합은 Worker 신호가 중복돼도 두 행으로 늘어날 수 없다.
+    assertThatThrownBy(
+            () -> {
+              translationRepository.save(
+                  ChatMessageTranslation.pending(
+                      saved.message().getId(), 202L, "en", now().plusSeconds(2)));
+              entityManager.flush();
+            })
+        .isInstanceOf(DataIntegrityViolationException.class);
   }
 
   /** 테스트 비교와 DATETIME(6) 왕복이 일치하도록 현재 시각을 MySQL 마이크로초 정밀도로 맞춘다. */

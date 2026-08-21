@@ -21,6 +21,7 @@ import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
 import com.kohere.user.api.UserAccountService;
@@ -47,6 +48,7 @@ class ChatRoomListServiceTest {
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private MessageRepository messageRepository;
+  @Mock private ChatMessageTranslationRepository translationRepository;
   @Mock private UserAccountService userAccountService;
   @Mock private UserBlockService userBlockService;
 
@@ -60,6 +62,7 @@ class ChatRoomListServiceTest {
             chatRoomRepository,
             memberRepository,
             messageRepository,
+            translationRepository,
             userAccountService,
             userBlockService);
   }

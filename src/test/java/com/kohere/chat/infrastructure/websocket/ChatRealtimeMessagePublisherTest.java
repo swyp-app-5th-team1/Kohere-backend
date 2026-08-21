@@ -12,13 +12,21 @@ import com.kohere.chat.application.BookingCardService;
 import com.kohere.chat.application.BookingCardWriter;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.domain.BookingCardPayload;
+import com.kohere.chat.domain.ChatParticipantRole;
+import com.kohere.chat.domain.ChatRoomMember;
+import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatTranslationStatus;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageAckPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageCreatedPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatRoomEventPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatStompEventType;
+import com.kohere.chat.presentation.stomp.dto.ChatTranslationPayload;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -40,6 +48,7 @@ class ChatRealtimeMessagePublisherTest {
   private final SimpMessagingTemplate messagingTemplate = mock(SimpMessagingTemplate.class);
   private final ChatSessionMessageSender sessionMessageSender =
       mock(ChatSessionMessageSender.class);
+  private final ChatRoomMemberRepository memberRepository = mock(ChatRoomMemberRepository.class);
 
   private ChatRealtimeMessagePublisher publisher;
 
@@ -48,22 +57,17 @@ class ChatRealtimeMessagePublisherTest {
     @SuppressWarnings("unchecked")
     ObjectProvider<SimpMessagingTemplate> provider = mock(ObjectProvider.class);
     given(provider.getObject()).willReturn(messagingTemplate);
-    publisher = new ChatRealtimeMessagePublisher(provider, sessionMessageSender);
+    publisher = new ChatRealtimeMessagePublisher(provider, sessionMessageSender, memberRepository);
   }
 
-  /** 신규 원문은 방 참여자에게 발행하고 숨겼던 수신자에게 재표시 신호를 보내며 발신자에게 ACK한다. */
+  /** 신규 TEXT는 원문을 먼저 방송하지 않고 목록 신호와 발신자 ACK만 즉시 보낸다. */
   @Test
-  @DisplayName("신규 TEXT는 room 메시지·목록 이벤트·ACK를 발행한다")
+  @DisplayName("신규 TEXT는 원문 선발행 없이 목록 이벤트와 ACK를 발행한다")
   void publishesNewTextAndReopenEvent() {
     Message message = message();
 
     publisher.publishTextResult(
-        SESSION_ID, new TextMessageSaveResult(message, false, RECIPIENT_ID, true));
-
-    ArgumentCaptor<ChatMessageCreatedPayload> roomPayload =
-        ArgumentCaptor.forClass(ChatMessageCreatedPayload.class);
-    verify(messagingTemplate)
-        .convertAndSend(eq(ChatStompDestinations.roomTopic(10L)), roomPayload.capture());
+        SESSION_ID, new TextMessageSaveResult(message, false, RECIPIENT_ID, true, 801L));
     verify(messagingTemplate)
         .convertAndSendToUser(
             eq(String.valueOf(SENDER_ID)),
@@ -83,8 +87,31 @@ class ChatRealtimeMessagePublisherTest {
             eq(ChatStompDestinations.ACK_USER_DESTINATION),
             any(ChatMessageAckPayload.class));
 
-    assertThat(roomPayload.getValue().originalContent()).isEqualTo("안녕하세요");
     assertThat(recipientEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_REOPENED);
+  }
+
+  /** 번역 최종 상태가 커밋되면 수신자는 개인 queue 이벤트 하나에서 원문과 번역본을 함께 받는다. */
+  @Test
+  @DisplayName("번역 성공은 원문과 번역본을 수신자 개인 queue로 함께 보낸다")
+  void publishesOriginalAndTranslationTogetherToRecipient() {
+    Message original = message();
+    ChatMessageTranslation translation = succeededTranslation(original.getId());
+    given(memberRepository.findByChatRoomIdAndUserId(10L, RECIPIENT_ID))
+        .willReturn(java.util.Optional.of(visibleRecipient()));
+
+    publisher.publish(original, translation);
+
+    ArgumentCaptor<ChatTranslationPayload> payload =
+        ArgumentCaptor.forClass(ChatTranslationPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(RECIPIENT_ID)),
+            eq(ChatStompDestinations.TRANSLATION_USER_DESTINATION),
+            payload.capture());
+    assertThat(payload.getValue().originalContent()).isEqualTo("안녕하세요");
+    assertThat(payload.getValue().translatedContent()).isEqualTo("Hello");
+    assertThat(payload.getValue().status()).isEqualTo(TranslationResultStatus.SUCCEEDED);
+    assertThat(payload.getValue().senderId()).isEqualTo(SENDER_ID);
   }
 
   /** 중복 재전송은 이미 전달한 원문과 목록 갱신을 반복하지 않고 기존 저장 결과 ACK만 다시 보낸다. */
@@ -92,7 +119,7 @@ class ChatRealtimeMessagePublisherTest {
   @DisplayName("중복 TEXT는 room 재방송 없이 duplicate ACK만 발행한다")
   void publishesOnlyAckForDuplicate() {
     publisher.publishTextResult(
-        SESSION_ID, new TextMessageSaveResult(message(), true, RECIPIENT_ID, false));
+        SESSION_ID, new TextMessageSaveResult(message(), true, RECIPIENT_ID, false, null));
 
     verifyNoInteractions(messagingTemplate);
     ArgumentCaptor<ChatMessageAckPayload> ack =
@@ -221,6 +248,41 @@ class ChatRealtimeMessagePublisherTest {
         .bookingId(payload.bookingId())
         .payload(payload)
         .sentAt(Instant.parse("2026-08-21T10:16:30Z"))
+        .build();
+  }
+
+  /** 번역 이벤트를 받을 수 있는 현재 표시 상태의 수신자 fixture다. */
+  private static ChatRoomMember visibleRecipient() {
+    Instant now = Instant.parse("2026-08-21T10:15:30Z");
+    return ChatRoomMember.builder()
+        .id(2L)
+        .chatRoomId(10L)
+        .userId(RECIPIENT_ID)
+        .counterpartId(SENDER_ID)
+        .role(ChatParticipantRole.LANDLORD)
+        .historyHiddenThroughMessageId(0L)
+        .createdAt(now)
+        .updatedAt(now)
+        .build();
+  }
+
+  /** Google 번역 성공이 DB에 커밋된 상태 fixture다. */
+  private static ChatMessageTranslation succeededTranslation(long messageId) {
+    Instant now = Instant.parse("2026-08-21T10:15:31Z");
+    return ChatMessageTranslation.builder()
+        .id(801L)
+        .messageId(messageId)
+        .recipientUserId(RECIPIENT_ID)
+        .targetLanguage("en")
+        .detectedSourceLanguage("ko")
+        .status(ChatTranslationStatus.SUCCEEDED)
+        .translatedContent("Hello")
+        .provider(TranslationProvider.GOOGLE_CLOUD_TRANSLATION)
+        .model("NMT")
+        .attemptCount(1)
+        .translatedAt(now)
+        .createdAt(now.minusSeconds(1))
+        .updatedAt(now)
         .build();
   }
 }

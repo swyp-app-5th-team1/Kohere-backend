@@ -90,6 +90,8 @@ import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.ChatMessageTranslationRepository;
 import com.kohere.common.security.JwtProperties;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.docs.ApiDocsErrors;
@@ -98,6 +100,7 @@ import com.kohere.listing.api.ChatListingQueryService;
 import com.kohere.listing.api.ChatListingView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -149,6 +152,7 @@ class ChatDocsTest {
   @Autowired private ChatRoomRepository chatRoomRepository;
   @Autowired private ChatRoomMemberRepository chatRoomMemberRepository;
   @Autowired private MessageRepository messageRepository;
+  @Autowired private ChatMessageTranslationRepository translationRepository;
 
   @MockitoBean private ChatListingQueryService listingQueryService;
   @MockitoBean private UserAccountService userAccountService;
@@ -514,6 +518,13 @@ class ChatDocsTest {
                 .clientMessageId(UUID.fromString("0c3f0261-90bb-4ba5-a429-d669f7b92222"))
                 .sentAt(Instant.parse("2026-08-20T10:20:30.123456Z"))
                 .build());
+    Instant translationStartedAt = Instant.parse("2026-08-20T10:20:30.223456Z");
+    ChatMessageTranslation completedTranslation =
+        ChatMessageTranslation.pending(message.getId(), TENANT_ID, "ko", translationStartedAt)
+            .claim(translationStartedAt, Duration.ofSeconds(30))
+            .beginAttempt(translationStartedAt, Duration.ofSeconds(30), 5)
+            .succeed("en", "이 방은 9월 1일부터 입주할 수 있습니다.", translationStartedAt.plusMillis(300));
+    translationRepository.save(completedTranslation);
 
     mockMvc
         .perform(
@@ -529,7 +540,13 @@ class ChatDocsTest {
             jsonPath("$.data.content[0].originalContent")
                 .value("The room is available from September 1."))
         .andExpect(jsonPath("$.data.content[0].bookingCard").isEmpty())
-        .andExpect(jsonPath("$.data.content[0].translation").isEmpty())
+        .andExpect(jsonPath("$.data.content[0].translation.status").value("SUCCEEDED"))
+        .andExpect(
+            jsonPath("$.data.content[0].translation.content").value("이 방은 9월 1일부터 입주할 수 있습니다."))
+        .andExpect(jsonPath("$.data.content[0].translation.sourceLanguage").value("en"))
+        .andExpect(jsonPath("$.data.content[0].translation.targetLanguage").value("ko"))
+        .andExpect(
+            jsonPath("$.data.content[0].translation.provider").value("GOOGLE_CLOUD_TRANSLATION"))
         .andExpect(jsonPath("$.data.content[1].messageId").value(bookingCard.getId()))
         .andExpect(jsonPath("$.data.content[1].type").value("BOOKING_CARD"))
         .andExpect(jsonPath("$.data.content[1].clientMessageId").isEmpty())

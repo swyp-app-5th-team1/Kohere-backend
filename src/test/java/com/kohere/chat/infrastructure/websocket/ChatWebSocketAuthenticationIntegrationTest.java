@@ -21,6 +21,8 @@ import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageType;
+import com.kohere.chat.domain.translation.ChatMessageTranslation;
+import com.kohere.chat.domain.translation.TranslationResultStatus;
 import com.kohere.chat.presentation.stomp.ChatStompDestinations;
 import com.kohere.chat.presentation.stomp.dto.ChatControlEventPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatControlPingPayload;
@@ -29,6 +31,7 @@ import com.kohere.chat.presentation.stomp.dto.ChatMessageCreatedPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageErrorPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatMessageSendPayload;
 import com.kohere.chat.presentation.stomp.dto.ChatStompEventType;
+import com.kohere.chat.presentation.stomp.dto.ChatTranslationPayload;
 import com.kohere.common.security.JwtTokenService;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserAccountView;
@@ -369,10 +372,10 @@ class ChatWebSocketAuthenticationIntegrationTest {
     sessionB.disconnect();
   }
 
-  /** 두 참여자의 실제 socket이 신규 TEXT 원문을 받고 원래 발신 session만 저장 ACK를 받는지 검증한다. */
+  /** 발신자는 즉시 ACK를 받고 수신자는 번역 완료 뒤 원문·번역본을 한 payload로 받는지 검증한다. */
   @Test
-  @DisplayName("실제 STOMP TEXT: 두 참여자는 원문을 받고 발신 session만 ACK를 받는다")
-  void sendsCommittedTextToRoomAndAckToOriginSession() throws Exception {
+  @DisplayName("실제 STOMP TEXT: 발신자는 ACK, 수신자는 원문·번역 결합 결과를 받는다")
+  void sendsAckToOriginAndCombinedTranslationToRecipient() throws Exception {
     long roomId = 560L;
     prepareVisibleRoomAccess(roomId, USER_ID, RECIPIENT_ID);
 
@@ -384,6 +387,8 @@ class ChatWebSocketAuthenticationIntegrationTest {
     LinkedBlockingQueue<ChatMessageAckPayload> senderAcks = subscribeAcks(senderSession);
     LinkedBlockingQueue<ChatMessageAckPayload> recipientAcks = subscribeAcks(recipientSession);
     LinkedBlockingQueue<ChatMessageErrorPayload> senderErrors = subscribeErrors(senderSession);
+    LinkedBlockingQueue<ChatTranslationPayload> recipientTranslations =
+        subscribeTranslations(recipientSession);
     LinkedBlockingQueue<ChatMessageCreatedPayload> senderMessages =
         subscribeReadyRoom(senderSession, roomId);
     LinkedBlockingQueue<ChatMessageCreatedPayload> recipientMessages =
@@ -393,7 +398,7 @@ class ChatWebSocketAuthenticationIntegrationTest {
     Instant sentAt = Instant.parse("2026-08-21T10:15:30Z");
     Message saved = textMessage(roomId, USER_ID, 701L, clientMessageId, "안녕하세요", sentAt);
     given(chatTextMessageService.saveText(roomId, USER_ID, clientMessageId, "안녕하세요"))
-        .willReturn(new TextMessageSaveResult(saved, false, RECIPIENT_ID, false));
+        .willReturn(new TextMessageSaveResult(saved, false, RECIPIENT_ID, false, null));
 
     senderSession.send(
         ChatStompDestinations.messageSend(roomId),
@@ -404,18 +409,33 @@ class ChatWebSocketAuthenticationIntegrationTest {
         .saveText(roomId, USER_ID, clientMessageId, "안녕하세요");
     assertThat(senderErrors.poll(300, TimeUnit.MILLISECONDS)).isNull();
     assertThat(clientFrameErrors).isEmpty();
-    ChatMessageCreatedPayload senderMessage = senderMessages.poll(2, TimeUnit.SECONDS);
-    ChatMessageCreatedPayload recipientMessage = recipientMessages.poll(2, TimeUnit.SECONDS);
     ChatMessageAckPayload ack = senderAcks.poll(2, TimeUnit.SECONDS);
-    assertThat(senderMessage).isNotNull();
-    assertThat(recipientMessage).isNotNull();
-    assertThat(senderMessage.messageId()).isEqualTo(701L);
-    assertThat(recipientMessage.originalContent()).isEqualTo("안녕하세요");
     assertThat(ack).isNotNull();
     assertThat(ack.clientMessageId()).isEqualTo(clientMessageId);
     assertThat(ack.messageId()).isEqualTo(701L);
     assertThat(ack.duplicate()).isFalse();
     assertThat(recipientAcks.poll(300, TimeUnit.MILLISECONDS)).isNull();
+
+    // TEXT는 번역 전 원문을 room topic으로 먼저 보내지 않는다. 두 사용자의 topic queue가 모두 비어 있어야 한다.
+    assertThat(senderMessages.poll(300, TimeUnit.MILLISECONDS)).isNull();
+    assertThat(recipientMessages.poll(300, TimeUnit.MILLISECONDS)).isNull();
+
+    // Worker가 Google 결과를 DB에 확정한 상황을 만들어 실제 개인 queue 전송까지 확인한다.
+    ChatMessageTranslation succeeded =
+        ChatMessageTranslation.pending(701L, RECIPIENT_ID, "en", sentAt)
+            .claim(sentAt, Duration.ofSeconds(30))
+            .beginAttempt(sentAt, Duration.ofSeconds(30), 5)
+            .succeed("ko", "Hello", sentAt.plusMillis(250));
+    realtimeMessagePublisher.publish(saved, succeeded);
+
+    ChatTranslationPayload received = recipientTranslations.poll(2, TimeUnit.SECONDS);
+    assertThat(received).isNotNull();
+    assertThat(received.messageId()).isEqualTo(701L);
+    assertThat(received.originalContent()).isEqualTo("안녕하세요");
+    assertThat(received.status()).isEqualTo(TranslationResultStatus.SUCCEEDED);
+    assertThat(received.sourceLanguage()).isEqualTo("ko");
+    assertThat(received.targetLanguage()).isEqualTo("en");
+    assertThat(received.translatedContent()).isEqualTo("Hello");
     senderSession.disconnect();
     recipientSession.disconnect();
   }
@@ -443,7 +463,7 @@ class ChatWebSocketAuthenticationIntegrationTest {
             "이미 저장된 메시지",
             Instant.parse("2026-08-21T10:16:30Z"));
     given(chatTextMessageService.saveText(roomId, USER_ID, clientMessageId, "이미 저장된 메시지"))
-        .willReturn(new TextMessageSaveResult(existing, true, RECIPIENT_ID, false));
+        .willReturn(new TextMessageSaveResult(existing, true, RECIPIENT_ID, false, null));
 
     session.send(
         ChatStompDestinations.messageSend(roomId),
@@ -578,6 +598,14 @@ class ChatWebSocketAuthenticationIntegrationTest {
       StompSession session) {
     LinkedBlockingQueue<ChatMessageErrorPayload> events = new LinkedBlockingQueue<>();
     session.subscribe(ChatStompDestinations.ERROR_QUEUE, new ErrorFrameHandler(events));
+    return events;
+  }
+
+  /** 수신자 전용 원문·번역 결합 queue의 JSON을 타입 안전하게 모은다. */
+  private static LinkedBlockingQueue<ChatTranslationPayload> subscribeTranslations(
+      StompSession session) {
+    LinkedBlockingQueue<ChatTranslationPayload> events = new LinkedBlockingQueue<>();
+    session.subscribe(ChatStompDestinations.TRANSLATION_QUEUE, new TranslationFrameHandler(events));
     return events;
   }
 
@@ -800,6 +828,21 @@ class ChatWebSocketAuthenticationIntegrationTest {
     @Override
     public void handleFrame(StompHeaders headers, Object payload) {
       events.offer((ChatMessageErrorPayload) payload);
+    }
+  }
+
+  /** 비동기 원문·번역 결합 frame을 테스트 queue에 넣는다. */
+  private record TranslationFrameHandler(LinkedBlockingQueue<ChatTranslationPayload> events)
+      implements StompFrameHandler {
+
+    @Override
+    public Type getPayloadType(StompHeaders headers) {
+      return ChatTranslationPayload.class;
+    }
+
+    @Override
+    public void handleFrame(StompHeaders headers, Object payload) {
+      events.offer((ChatTranslationPayload) payload);
     }
   }
 
