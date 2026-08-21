@@ -1,15 +1,12 @@
 /**
- * 콘텐츠 신고 Bounded Context. 게시글(POST)·댓글(COMMENT)·채팅 메시지(MESSAGE)에 대한 신고를 접수·저장하고, 신고 사유 enum 메타를
- * 노출한다. MVP 범위는 신고 접수/저장 및 사유 메타 조회까지이며, 운영자 검토·제재 흐름은 포함하지 않는다.
+ * 1:1 채팅방 신고 Bounded Context다. 사용자가 선택한 고정 사유로 신고를 접수하고, 신고 당시 최근 TEXT 원문을 별도 증거 스냅샷으로 보관한다.
  *
- * <p>도메인 에러 코드 prefix: {@code REPORT}. 스펙: docs/api/specs/07-reports.md.
+ * <p>신고자와 신고 대상자는 클라이언트가 보내지 않는다. {@code chat :: api} 공개 계약이 방 참여자·개인 숨김 경계를 검사하고 상대방과 원문 증거를 제공한다.
+ * report 모듈은 받은 스냅샷을 자기 테이블에 저장해 후속 관리자 검토가 채팅 보존 상태와 독립적으로 진행될 수 있게 한다.
  *
- * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}에만 의존한다.
- *
- * <p>TODO: 신고 대상 존재검증·자기 신고 차단은 다른 모듈(listing/community/chat) 정보가 필요하므로, 공개 API·이벤트로 연결한다(현재는 직접
- * import 금지 — 모듈 경계 유지).
+ * <p>현재 범위는 사용자 접수만 포함한다. 관리자 목록·상태 처리·제재·보관 만료 파기는 future 설계에서 구현한다.
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Report",
-    allowedDependencies = {"common"})
+    allowedDependencies = {"common", "chat :: api"})
 package com.kohere.report;

@@ -3,13 +3,15 @@ package com.kohere.report.domain;
 import java.util.Optional;
 
 /**
- * 신고 영속 포트. 구현은 infrastructure 계층에 두어 의존성을 역전한다(docs/convention/code-style.md §3-3). 도메인은 영속 기술을
- * 모른다.
+ * 채팅방 신고 기본 정보를 저장하고 찾는 도메인 포트다.
  *
- * <p>TODO: 신고 저장(save), 운영자 검토용 목록 조회 메서드를 추가한다.
+ * <p>인터페이스는 JPA를 모르며 infrastructure 어댑터가 실제 {@code chat_reports} SQL을 수행한다.
  */
 public interface ReportRepository {
 
-  Optional<Report> findByReporterIdAndTargetTypeAndTargetId(
-      Long reporterId, ReportTargetType targetType, Long targetId);
+  /** 신규 신고를 저장하고 DB가 발급한 reportId를 포함해 반환한다. */
+  Report save(Report report);
+
+  /** 같은 사용자가 같은 채팅방을 이미 신고했는지 확인해 네트워크 재시도를 멱등 처리한다. */
+  Optional<Report> findByReporterIdAndChatRoomId(Long reporterId, Long chatRoomId);
 }

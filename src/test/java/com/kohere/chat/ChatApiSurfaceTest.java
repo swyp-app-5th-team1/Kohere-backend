@@ -10,6 +10,7 @@ import com.kohere.chat.presentation.ChatRoomController;
 import com.kohere.chat.presentation.ChatStompGuideController;
 import com.kohere.chat.presentation.InquiryController;
 import com.kohere.common.security.AuthPrincipal;
+import com.kohere.report.presentation.ChatRoomReportController;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Arrays;
@@ -102,6 +103,17 @@ class ChatApiSurfaceTest {
     assertThat(requestParameterNames(blockCounterpart)).isEmpty();
   }
 
+  /** 사용자용 신고 표면은 사유 목록·상태 조회 없이 현재 채팅방의 POST 한 경로만 제공한다. */
+  @Test
+  void chatRoomReportExposesOnlyTheCreateEndpoint() {
+    Method createReport = methodNamed(ChatRoomReportController.class, "createReport");
+
+    assertThat(createReport.getAnnotation(PostMapping.class)).isNotNull();
+    assertThat(mappedPaths(createReport, PostMapping.class)).isEmpty();
+    assertThat(requestParameterNames(createReport)).isEmpty();
+    assertThat(mappedPaths(ChatRoomReportController.class, GetMapping.class)).isEmpty();
+  }
+
   /** Swagger 안내용 REST가 실제 STOMP 경로 정본을 반환하고 메시지 전송 API로 오해되지 않게 GET으로만 노출되는지 확인한다. */
   @Test
   void stompGuideExposesTheCurrentReadOnlyContract() {
@@ -137,7 +149,8 @@ class ChatApiSurfaceTest {
   }
 
   /** 컨트롤러에 노출된 특정 HTTP method의 모든 상대 경로를 모은다. */
-  private static Set<String> mappedPaths(Class<?> controller, Class<PostMapping> annotationType) {
+  private static <A extends java.lang.annotation.Annotation> Set<String> mappedPaths(
+      Class<?> controller, Class<A> annotationType) {
     Set<String> paths = new LinkedHashSet<>();
     for (Method method : controller.getDeclaredMethods()) {
       paths.addAll(mappedPaths(method, annotationType));

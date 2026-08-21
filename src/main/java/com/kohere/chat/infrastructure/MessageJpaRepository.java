@@ -1,5 +1,6 @@
 package com.kohere.chat.infrastructure;
 
+import com.kohere.chat.domain.MessageType;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,4 +27,8 @@ interface MessageJpaRepository extends JpaRepository<MessageJpaEntity, Long> {
   /** 재연결 기준보다 새 행을 오래된 순으로 읽어 중간 누락 없이 checkpoint를 전진시킬 수 있게 한다. */
   List<MessageJpaEntity> findByChatRoomIdAndIdGreaterThanOrderByIdAsc(
       Long chatRoomId, Long afterMessageId, Pageable pageable);
+
+  /** 숨김 경계 뒤의 TEXT만 최신순으로 읽어 BOOKING_CARD가 신고 증거에 섞이지 않게 한다. */
+  List<MessageJpaEntity> findByChatRoomIdAndTypeAndIdGreaterThanOrderByIdDesc(
+      Long chatRoomId, MessageType type, Long hiddenThroughMessageId, Pageable pageable);
 }

@@ -10,6 +10,8 @@ import static org.springframework.restdocs.request.RequestDocumentation.paramete
 import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.domain.TranslationProvider;
+import com.kohere.report.domain.ReportReason;
+import com.kohere.report.domain.ReportStatus;
 import java.util.List;
 import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.payload.JsonFieldType;
@@ -543,6 +545,78 @@ public final class ChatDocsFields {
   public static final String[] ROOM_BLOCK_403 = {"AUTH_ONBOARDING_REQUIRED"};
   public static final String[] ROOM_BLOCK_404 = {"CHAT_ROOM_NOT_FOUND"};
 
+  public static final String CHAT_REPORT_SUMMARY = "채팅방 상대방 신고 접수";
+
+  public static final String CHAT_REPORT_DESCRIPTION =
+      """
+      현재 1:1 채팅방의 상대방을 **고정 신고 사유 하나로 신고**한다.
+
+      **프론트 요청 순서**
+
+      1. 앱이 현재 언어에 맞는 신고 화면을 직접 표시한다. 신고 사유 문구는 프론트가 `ko/en`으로 관리한다.
+      2. 사용자가 사유 하나를 선택하고 신고 버튼을 누른다.
+      3. 채팅방 목록·상세에서 받은 숫자 `chatRoomId`를 URL의 `roomId`에 넣는다.
+      4. body에는 선택한 `reason` 코드 하나만 보낸다.
+
+      ```http
+      POST /api/v1/chat-rooms/556/reports
+      Authorization: Bearer <accessToken>
+      Content-Type: application/json
+      ```
+
+      ```json
+      { "reason": "ILLEGAL_CONTENT" }
+      ```
+
+      **프론트가 보내지 않는 값**
+
+      - 신고자 ID: access token에서 서버가 확인한다.
+      - 신고 대상 사용자 ID: 서버가 채팅방의 다른 참여자를 찾는다.
+      - 상세 사유 문자열: 지원하지 않는다.
+      - 증거 메시지: 서버가 신고자에게 현재 보이는 최근 TEXT 원문을 최대 20개 수집한다.
+
+      BOOKING_CARD와 자동 번역문은 신고 증거에서 제외한다. 사용자가 이전에 채팅방을 삭제했다가 다시 들어왔다면 삭제 전에 숨긴 과거 TEXT도 증거로 복원하지 않는다.
+
+      **성공 응답 처리**
+
+      - `201 Created`: 이번 요청으로 새 신고와 증거가 DB에 저장됐다.
+      - `200 OK`: 같은 사용자가 같은 채팅방을 이미 신고해 기존 접수 결과를 반환했다.
+      - 두 경우의 JSON 구조는 같다. `reportId`가 있으면 DB 접수가 완료된 것이다.
+      - DB 저장 뒤 응답을 받지 못해 같은 요청을 재전송해도 신고가 중복 저장되지 않는다.
+      - 두 번째 요청의 reason이 달라도 최초 신고 사유와 증거를 덮어쓰지 않는다.
+
+      신고 접수는 상대방을 자동 차단하거나 채팅방을 자동 삭제하지 않는다. 필요하면 차단·삭제 API를 각각 별도로 호출한다.
+
+      **신고 사유 코드와 프론트 표시 예시**
+
+      | code | ko | en |
+      |---|---|---|
+      | `ABUSE_HARASSMENT_DISCRIMINATION` | 욕설, 비방, 차별, 혐오 | Abuse, Harassment, Discrimination |
+      | `ILLEGAL_CONTENT` | 불법정보 | Illegal Content |
+      | `SEXUAL_INAPPROPRIATE_CONTENT` | 음란, 청소년 유해 | Sexual or Inappropriate Content |
+      | `PERSONAL_INFORMATION` | 개인정보 노출, 유포, 거래 | Personal Information |
+      | `SPAM` | 도배, 스팸 | Spam |
+      | `OTHER` | 기타 | Other |
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | reason 누락 |
+      | 400 | `MALFORMED_REQUEST` | roomId가 숫자가 아니거나 지원하지 않는 reason 문자열 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
+      | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음·비참여자·현재 숨긴 방 |
+      | 422 | `REPORT_REQUIRES_TEXT_MESSAGE` | 신고자에게 현재 보이는 TEXT 원문이 없음 |
+      """;
+
+  public static final String[] CHAT_REPORT_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
+  public static final String[] CHAT_REPORT_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] CHAT_REPORT_403 = {"AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] CHAT_REPORT_404 = {"CHAT_ROOM_NOT_FOUND"};
+  public static final String[] CHAT_REPORT_422 = {"REPORT_REQUIRES_TEXT_MESSAGE"};
+
   private ChatDocsFields() {}
 
   /** 실제 WebSocket 처리 코드와 같은 경로가 안내 응답에 노출되는지 Swagger schema에 고정한다. */
@@ -712,6 +786,39 @@ public final class ChatDocsFields {
       parameterWithName("roomId")
           .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 숫자 chatRoomId. 서버가 이 방에서 로그인 사용자가 아닌 상대방을 찾아 차단")
     };
+  }
+
+  /** 신고 대상 userId가 아니라 현재 채팅방 ID만 경로에 넣는다는 점을 고정한다. */
+  public static ParameterDescriptor[] chatReportPathParameters() {
+    return new ParameterDescriptor[] {
+      parameterWithName("roomId")
+          .description("채팅방 목록·상세 또는 문의하기 응답에서 받은 숫자 chatRoomId. 서버가 이 방의 상대방과 원문 증거를 찾음")
+    };
+  }
+
+  /** 프런트가 보내는 신고 값은 현지화 문구가 아닌 고정 code 한 개뿐이다. */
+  public static List<FieldDescriptor> chatReportRequestFields() {
+    return List.of(
+        enumField(
+            "reason",
+            ReportReason.class,
+            "사용자가 선택한 신고 사유의 언어 무관 코드. 화면 문구는 프론트가 ko/en으로 현지화하며 상세 사유 문자열은 보내지 않음"));
+  }
+
+  /** 신규 201과 중복 200이 함께 사용하는 신고 접수 확인 응답이다. */
+  public static List<FieldDescriptor> chatReportResponseFields() {
+    return List.of(
+        field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
+        field("data.reportId", JsonFieldType.NUMBER, "DB에 커밋된 신고의 서버 식별자"),
+        field("data.chatRoomId", JsonFieldType.NUMBER, "신고가 접수된 현재 1:1 채팅방 ID"),
+        enumField(
+            "data.reason",
+            ReportReason.class,
+            "최초 접수된 신고 사유 코드. 중복 재요청에서는 이번 body가 아니라 기존 최초 사유가 반환될 수 있음"),
+        enumField(
+            "data.status", ReportStatus.class, "신고 상태. 현재 사용자 접수 단계는 RECEIVED이며 관리자 처리 상태는 후속 기능"),
+        field("data.receivedAt", JsonFieldType.STRING, "서버가 최초 신고와 증거 저장을 완료한 접수 시각(ISO-8601 UTC)"),
+        errorNull());
   }
 
   /** 채팅방 헤더와 역할별 카드 UI에 필요한 단건 응답 필드다. */

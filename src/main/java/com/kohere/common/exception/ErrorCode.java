@@ -90,10 +90,8 @@ public enum ErrorCode {
   // --- 게이미피케이션 (gamification) — docs/api/specs/06-gamification.md ---
   QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "퀴즈를 찾을 수 없습니다."),
 
-  // --- 신고 (report) — docs/api/specs/07-reports.md ---
-  REPORT_TARGET_NOT_FOUND(HttpStatus.NOT_FOUND, "신고 대상을 찾을 수 없습니다."),
-  REPORT_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 신고한 대상입니다."),
-  REPORT_SELF_TARGET(HttpStatus.UNPROCESSABLE_ENTITY, "본인 콘텐츠는 신고할 수 없습니다."),
+  // --- 채팅방 신고 (report) — docs/architecture/chat/02-api-contracts.md ---
+  REPORT_REQUIRES_TEXT_MESSAGE(HttpStatus.UNPROCESSABLE_ENTITY, "신고할 수 있는 텍스트 대화가 없습니다."),
 
   // --- 생활 팁 (lifetip) — docs/api/specs/08-life-tips.md ---
   LIFE_TIP_TOPIC_NOT_FOUND(HttpStatus.NOT_FOUND, "생활 팁 주제를 찾을 수 없습니다.");

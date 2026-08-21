@@ -170,11 +170,6 @@ public class SecurityConfig {
                     // ChannelInterceptor가 별도로 담당하므로 이 REST 매처에 섞지 않는다.
                     .requestMatchers("/api/v1/chat-rooms/**")
                     .hasRole("USER")
-                    // 신고 사유 조회와 신고 접수에는 사용자 언어·신고자 식별자가 필요하다. 일반 사용자 신고 API 전체를
-                    // ROLE_USER로 묶어 온보딩 중인 계정이 운영 처리 데이터에 들어오는 것을 막는다. 관리자 검토 API는
-                    // 후속 `/api/v1/admin/**` 경계로 분리되므로 이 사용자 경로 매처의 영향을 받지 않는다.
-                    .requestMatchers("/api/v1/reports/**")
-                    .hasRole("USER")
                     // 예약 내역 관리(삭제·차단·신고) — 조회 매처는 GET·단일 세그먼트라 신규 경로를 덮지 못한다.
                     // 명시하지 않으면 anyRequest().authenticated()로 떨어져 온보딩(ROLE_ONBOARDING) 토큰이 통과한다.
                     .requestMatchers(HttpMethod.DELETE, "/api/v1/bookings/*")

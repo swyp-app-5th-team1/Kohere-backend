@@ -2,6 +2,7 @@ package com.kohere.chat.infrastructure;
 
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
+import com.kohere.chat.domain.MessageType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -84,6 +85,19 @@ public class MessageRepositoryImpl implements MessageRepository {
     return jpaRepository
         .findByChatRoomIdAndIdGreaterThanOrderByIdAsc(
             chatRoomId, afterMessageId, PageRequest.of(0, size))
+        .stream()
+        .map(MessageRepositoryImpl::toDomain)
+        .toList();
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public List<Message> findRecentTextForReport(
+      Long chatRoomId, long hiddenThroughMessageId, int size) {
+    // 타입·사용자별 숨김 경계·최대 개수를 SQL에 모두 적용해 필요한 원문만 메모리로 가져온다.
+    return jpaRepository
+        .findByChatRoomIdAndTypeAndIdGreaterThanOrderByIdDesc(
+            chatRoomId, MessageType.TEXT, hiddenThroughMessageId, PageRequest.of(0, size))
         .stream()
         .map(MessageRepositoryImpl::toDomain)
         .toList();

@@ -2,6 +2,13 @@ package com.kohere.chat;
 
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.resourceDetails;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_400;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_401;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_403;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_404;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_422;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_DESCRIPTION;
+import static com.kohere.docs.ChatDocsFields.CHAT_REPORT_SUMMARY;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_401;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_403;
 import static com.kohere.docs.ChatDocsFields.INQUIRY_404;
@@ -41,6 +48,9 @@ import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_401;
 import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_403;
 import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_DESCRIPTION;
 import static com.kohere.docs.ChatDocsFields.STOMP_GUIDE_SUMMARY;
+import static com.kohere.docs.ChatDocsFields.chatReportPathParameters;
+import static com.kohere.docs.ChatDocsFields.chatReportRequestFields;
+import static com.kohere.docs.ChatDocsFields.chatReportResponseFields;
 import static com.kohere.docs.ChatDocsFields.inquiryPathParameters;
 import static com.kohere.docs.ChatDocsFields.inquiryResponseFields;
 import static com.kohere.docs.ChatDocsFields.messageHistoryPathParameters;
@@ -62,6 +72,7 @@ import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.docu
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
+import static org.springframework.restdocs.payload.PayloadDocumentation.requestFields;
 import static org.springframework.restdocs.payload.PayloadDocumentation.responseFields;
 import static org.springframework.restdocs.request.RequestDocumentation.pathParameters;
 import static org.springframework.restdocs.request.RequestDocumentation.queryParameters;
@@ -101,6 +112,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.restdocs.RestDocumentationContextProvider;
 import org.springframework.restdocs.RestDocumentationExtension;
 import org.springframework.test.context.ActiveProfiles;
@@ -976,6 +988,193 @@ class ChatDocsTest {
                 ROOM_BLOCK_403));
   }
 
+  /** 실제 방·참여자·TEXT에서 신고자와 상대를 찾고 신고·증거를 저장한 신규 201 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 상대방 신고 신규 접수 문서화")
+  void createChatRoomReport() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    messageRepository.save(
+        Message.builder()
+            .chatRoomId(roomId)
+            .senderId(LANDLORD_ID)
+            .type(MessageType.TEXT)
+            .content("This is the original text kept as report evidence.")
+            .clientMessageId(UUID.fromString("1781a47c-d383-493c-bd41-a749db38404f"))
+            .sentAt(Instant.parse("2026-08-22T10:20:30.123456Z"))
+            .build());
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/reports", roomId)
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"ILLEGAL_CONTENT\"}"))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.reportId").isNumber())
+        .andExpect(jsonPath("$.data.chatRoomId").value(roomId))
+        .andExpect(jsonPath("$.data.reason").value("ILLEGAL_CONTENT"))
+        .andExpect(jsonPath("$.data.status").value("RECEIVED"))
+        .andExpect(jsonPath("$.data.receivedAt").isString())
+        .andDo(
+            document(
+                "chat-room-report",
+                resourceDetails()
+                    .tag(ApiDocsTags.CHATS)
+                    .summary(CHAT_REPORT_SUMMARY)
+                    .description(CHAT_REPORT_DESCRIPTION),
+                pathParameters(chatReportPathParameters()),
+                requestFields(chatReportRequestFields()),
+                responseFields(chatReportResponseFields())));
+  }
+
+  /** 같은 방을 다시 신고하면 두 번째 reason으로 덮지 않고 최초 reportId·사유와 200을 반환하는 계약을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 신고 중복 재요청 문서화")
+  void createChatRoomReportAgainReturnsExisting() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    messageRepository.save(
+        Message.builder()
+            .chatRoomId(roomId)
+            .senderId(LANDLORD_ID)
+            .type(MessageType.TEXT)
+            .content("Original report evidence")
+            .clientMessageId(UUID.fromString("fd28883c-5298-452c-8cb4-2bc93dc43530"))
+            .sentAt(Instant.parse("2026-08-22T10:20:30Z"))
+            .build());
+
+    String token = accessToken();
+    String firstResponse =
+        mockMvc
+            .perform(reportRequest(roomId, "SPAM").header(HttpHeaders.AUTHORIZATION, token))
+            .andExpect(status().isCreated())
+            .andReturn()
+            .getResponse()
+            .getContentAsString();
+    long reportId = reportIdFromJson(firstResponse);
+
+    mockMvc
+        .perform(reportRequest(roomId, "OTHER").header(HttpHeaders.AUTHORIZATION, token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.reportId").value(reportId))
+        .andExpect(jsonPath("$.data.reason").value("SPAM"));
+  }
+
+  /** TEXT가 없는 빈 방은 관리자 판단 근거가 없어 422로 거부됨을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 신고 TEXT 없음 오류 문서화")
+  void createChatRoomReportWithoutText() throws Exception {
+    long roomId = createRoomThroughInquiry();
+
+    mockMvc
+        .perform(reportRequest(roomId, "SPAM").header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isUnprocessableEntity())
+        .andExpect(jsonPath("$.error.code").value("REPORT_REQUIRES_TEXT_MESSAGE"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-report-requires-text",
+                ApiDocsTags.CHATS,
+                CHAT_REPORT_SUMMARY,
+                CHAT_REPORT_DESCRIPTION,
+                chatReportPathParameters(),
+                CHAT_REPORT_422));
+  }
+
+  /** 제3자는 실제 roomId를 알아도 상대방과 원문을 신고 데이터로 복사할 수 없음을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 신고 비참여자 404 문서화")
+  void createChatRoomReportAsOutsider() throws Exception {
+    long roomId = createRoomThroughInquiry();
+    String outsiderToken = bearer(jwtTokenService.issueAccessToken(999L));
+
+    mockMvc
+        .perform(reportRequest(roomId, "SPAM").header(HttpHeaders.AUTHORIZATION, outsiderToken))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("CHAT_ROOM_NOT_FOUND"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-report-not-found",
+                ApiDocsTags.CHATS,
+                CHAT_REPORT_SUMMARY,
+                CHAT_REPORT_DESCRIPTION,
+                chatReportPathParameters(),
+                CHAT_REPORT_404));
+  }
+
+  /** reason 누락·알 수 없는 enum·잘못된 roomId를 프론트가 구분하지 않고 400 입력 오류로 처리할 수 있게 문서화한다. */
+  @Test
+  @DisplayName("채팅방 신고 입력 오류 문서화")
+  void createChatRoomReportInputErrors() throws Exception {
+    mockMvc
+        .perform(reportRequest(556L, null).header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("INVALID_INPUT"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-report-reason-required",
+                ApiDocsTags.CHATS,
+                CHAT_REPORT_SUMMARY,
+                CHAT_REPORT_DESCRIPTION,
+                chatReportPathParameters(),
+                CHAT_REPORT_400));
+
+    mockMvc
+        .perform(
+            reportRequest(556L, "UNKNOWN_REASON").header(HttpHeaders.AUTHORIZATION, accessToken()))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"));
+
+    mockMvc
+        .perform(
+            post("/api/v1/chat-rooms/{roomId}/reports", "room-id")
+                .header(HttpHeaders.AUTHORIZATION, accessToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"SPAM\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.error.code").value("MALFORMED_REQUEST"));
+  }
+
+  /** 토큰 없음·만료·온보딩 미완료가 다른 채팅 REST와 같은 보안 코드로 반환됨을 문서화한다. */
+  @Test
+  @DisplayName("채팅방 신고 인증 오류 문서화")
+  void createChatRoomReportAuthenticationErrors() throws Exception {
+    mockMvc
+        .perform(reportRequest(556L, "SPAM"))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-report-unauthenticated",
+                ApiDocsTags.CHATS,
+                CHAT_REPORT_SUMMARY,
+                CHAT_REPORT_DESCRIPTION,
+                chatReportPathParameters(),
+                CHAT_REPORT_401));
+
+    mockMvc
+        .perform(
+            reportRequest(556L, "SPAM")
+                .header(HttpHeaders.AUTHORIZATION, expiredAccessTokenHeader()))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"));
+
+    mockMvc
+        .perform(
+            reportRequest(556L, "SPAM")
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    bearer(jwtTokenService.issueOnboardingToken(TENANT_ID))))
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("AUTH_ONBOARDING_REQUIRED"))
+        .andDo(
+            ApiDocsErrors.errorSnippet(
+                "chat-room-report-onboarding-required",
+                ApiDocsTags.CHATS,
+                CHAT_REPORT_SUMMARY,
+                CHAT_REPORT_DESCRIPTION,
+                chatReportPathParameters(),
+                CHAT_REPORT_403));
+  }
+
   /** 새 방은 201과 created=true를 반환하며 Swagger 성공 예시의 정본이 된다. */
   @Test
   @DisplayName("문의 채팅방 신규 생성 문서화")
@@ -1164,6 +1363,14 @@ class ChatDocsTest {
     return post("/api/v1/listings/{listingId}/inquiries", LISTING_ID);
   }
 
+  /** 모든 신고 테스트가 같은 경로·JSON 형식을 사용하도록 요청 생성을 한곳에 둔다. */
+  private static MockHttpServletRequestBuilder reportRequest(long roomId, String reason) {
+    String body = reason == null ? "{}" : "{\"reason\":\"" + reason + "\"}";
+    return post("/api/v1/chat-rooms/{roomId}/reports", roomId)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body);
+  }
+
   /** 오류 status가 달라도 같은 오퍼레이션 설명과 path 계약을 사용해 Swagger 병합 순서 영향을 없앤다. */
   private void performError(
       MockHttpServletRequestBuilder request,
@@ -1198,6 +1405,16 @@ class ChatDocsTest {
     Matcher matcher = CHAT_ROOM_ID_PATTERN.matcher(json);
     if (!matcher.find()) {
       throw new IllegalArgumentException("응답에 chatRoomId가 없습니다.");
+    }
+    return Long.parseLong(matcher.group(1));
+  }
+
+  /** 신고 성공 응답에서 숫자 reportId를 추출해 중복 재요청이 같은 행을 반환하는지 비교한다. */
+  private static long reportIdFromJson(String json) {
+    Pattern pattern = Pattern.compile("\\\"reportId\\\"\\s*:\\s*(\\d+)");
+    Matcher matcher = pattern.matcher(json);
+    if (!matcher.find()) {
+      throw new IllegalArgumentException("응답에 reportId가 없습니다.");
     }
     return Long.parseLong(matcher.group(1));
   }
