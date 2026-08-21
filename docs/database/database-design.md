@@ -21,7 +21,7 @@
 | [`chat`](#4-6-chat) | **MySQL** | `chat_rooms`·`chat_room_members`·`chat_messages` (`V24`) | ✅ |
 | [`community`](#4-7-community) | **MySQL** | `posts`·`comments`·`post_likes`·`post_hashtags` | 이후 |
 | [`gamification`](#4-8-gamification) | **MongoDB** | `quizzes`(문항·선택지 카탈로그 — 인라인 언어-키 맵·무상태 채점) | 이후 |
-| [`report`](#4-9-report) | **저장소(추후 결정)** | `reports` | 이후 |
+| [`report`](#4-9-report) | **MySQL** | `chat_reports`·`chat_report_evidence` (`V26`) | ✅ |
 | [`lifetip`](#4-10-lifetip) | **MongoDB** | `lifeTipTopics`·`lifeTips` — 인라인 언어-키 맵 번역, US-8-1·US-8-2 | 이후 |
 
 > `access` 토큰은 무상태 JWT라 저장소에 없다. `common`은 공유 커널(스키마 없음).
@@ -71,7 +71,7 @@
 ### 2-4. 제약·무결성 (공통)
 
 - **FK는 같은 모듈 안에서만.** 교차 모듈 참조는 **store가 같아도 FK 금지** — 식별자 값만 보유한다(Modulith 독립성·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). 교차 스토어 조인·FK·분산 트랜잭션 금지([ADR-0005](../adr/0005-polyglot-persistence.md) D5·D6) → 애플리케이션 레벨 조인/이벤트.
-- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `local_accounts(email)` · `local_accounts(user_id)` · `users(nickname)` · `users(phone_number)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `reports(reporter_id,target_type,target_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
+- **유니크 제약은 도메인 불변식대로**: `social_accounts(provider,provider_user_id)` · `local_accounts(email)` · `local_accounts(user_id)` · `users(nickname)` · `users(phone_number)` · `user_blocks(blocker_id,blocked_user_id)` · `nickname_adjectives(word)` · `nickname_nouns(word)` · `favorites(userId,listingId)` · `bookings(tenant_id,room_offer_id)` · `booking_report_reasons(code,lang)` · `post_likes(post_id,user_id)` · `chat_reports(reporter_id,chat_room_id)` · `chat_rooms(listing_id,tenant_id,landlord_id)`.
 - **카운트 정합**(`community` like/comment/share, `listings.favoriteCount`)은 단일 store 트랜잭션 또는 원자적 증감 + 배치 재계산으로 유지(음수 방지).
 - **민감정보**(비자·이메일·토큰 원문·인증번호 원문)는 응답·로그 마스킹([error-response-guide §6](../api/error-response-guide.md)). 컬럼 암호화 여부는 [§6](#6-결정-필요-open-questions).
 
@@ -836,7 +836,7 @@
 
 > 스토어: **MySQL** — [`V24__create_chat_core_tables.sql`](../../src/main/resources/db/migration/V24__create_chat_core_tables.sql)로 채팅방·참여자별 표시 상태·공유 메시지의 물리 스키마를 확정했다. domain-model `ChatRoom`·`ChatRoomMember`·`Message`, 값 객체 `ListingSnapshot`·`BookingCardPayload`와 일치한다.
 >
-> `V24`는 저장 기반을 만드는 단계다. 문의·신청에서 방을 생성하는 응용 흐름, 신청 이벤트를 `BOOKING_CARD`로 연결하는 처리, STOMP 송수신은 이 테이블 위에 순서대로 구현한다. 번역·신고 테이블은 해당 기능을 구현할 때 별도 전진 migration으로 추가한다.
+> `V24`는 채팅 저장 기반을 만들었고 문의·신청·STOMP 흐름은 그 위에 구현한다. 신고 저장은 별도 `V26`의 `chat_reports`·`chat_report_evidence`가 담당하며, 자동 번역 테이블은 해당 기능 단계의 후속 전진 migration으로 추가한다.
 
 `chat_rooms`
 
@@ -983,26 +983,17 @@ TEXT와 카드를 한 테이블에 저장해야 신청 카드와 일반 메시�
 
 ### 4-9. `report`
 
-> 스토어: **저장소(추후 결정)** — **논리 스키마**. **1차 MVP 이후**. domain-model `Report`(VO `ReportTarget`·`ReportDetail`).
+> 스토어: **MySQL** — [`V26__create_chat_reports.sql`](../../src/main/resources/db/migration/V26__create_chat_reports.sql)로 1:1 채팅방 신고 접수와 최초 원문 증거를 물리화했다.
 
-`reports` — 불변(immutable). `target`(VO `ReportTarget`)·`detail`(VO `ReportDetail`)은 컬럼으로 평탄화.
+`chat_reports`는 신고 번호, 채팅방, JWT 신고자, 방에서 찾은 상대방, 고정 사유, `RECEIVED` 상태, 증거 상한, 접수·1년 보관 만료 시각을 가진다. **UNIQUE `(reporter_id, chat_room_id)`**로 같은 사용자의 같은 방 신고는 한 건만 저장한다.
 
-| 필드 | 타입 | 키/제약 |
-| --- | --- | --- |
-| `id` | long | PK |
-| `reporter_id` | long | NOT NULL · UNIQUE(복합) · → user(값 참조). 응답 비노출 |
-| `target_type` | enum `ReportTargetType` | NOT NULL · UNIQUE(복합) |
-| `target_id` | long | NOT NULL · UNIQUE(복합) · 다형 참조(community/chat). FK 불가 |
-| `reason` | enum `ReportReason` | NOT NULL |
-| `detail` | text | NULL, ≤500 · 응답 비노출 |
-| `status` | enum `ReportStatus` | NOT NULL, default `RECEIVED` |
-| `created_at` | datetime | NOT NULL |
+`chat_report_evidence`는 신고별 JSON 증거 한 건을 가진다. **UNIQUE `(report_id)`**이며, schema version, 증거 상한, 최근 보이는 TEXT 원문 최대 20개 snapshot, SHA-256 검증값과 캡처 시각을 저장한다. `BOOKING_CARD`와 자동 번역문은 포함하지 않는다.
 
-**인덱스**: PK `id` / **UNIQUE `(reporter_id, target_type, target_id)`**(중복 신고 차단, `REPORT_ALREADY_EXISTS` 409) / (선택) INDEX `(target_type, target_id)`(운영자 검토 — 흐름 확정 후).
-
-- **교차 모듈 no-FK**: `reporter_id`(→user)·`target_id`(→community/chat 다형) 값 참조. 다형이라 단일 FK 불가.
-- **프라이버시**: `reporter_id`·`detail`은 저장하되 응답 비노출([error-response-guide §6](../api/error-response-guide.md)).
-- **불변**: 전이 없음 → `updated_at`/소프트삭제 불요. 자기 신고 차단(`422`)·대상 존재 검증(`404`)·MESSAGE 참여 권한(`403`)은 대상 모듈 공개 쿼리로.
+- **표시 문구는 프런트 소유**: 사유 label은 `ko/en` UI에서 code로 매핑한다. DB catalog와 사유 목록 API는 없다.
+- **클라이언트 값 최소화**: 요청은 `roomId`와 `reason`만 받으며 신고자·상대방·증거는 서버가 결정한다.
+- **no-FK**: 기존 저장소 관례대로 숫자 값을 참조하고 신고·증거를 한 트랜잭션으로 저장한다.
+- **프라이버시**: 사용자 응답에는 증거 원문, 상대 ID, 보관 만료 시각을 노출하지 않는다.
+- **후속 운영**: 관리자 목록·처리와 실제 만료 정리 작업은 [후속 설계](../architecture/chat/future/README.md)에서 구현한다.
 
 ### 4-10. `lifetip`
 
@@ -1125,7 +1116,7 @@ TEXT와 카드를 한 테이블에 저장해야 신청 카드와 일반 메시�
 
 영속 물리화 전 닫아야 할 **저장소·인프라 결정**(도메인 설계는 [domain-model](../architecture/domain-model.md)에서 확정됨).
 
-1. **남은 저장소 결정**: `booking`은 [`V9`](../../src/main/resources/db/migration/V9__bookings.sql), `chat`은 [`V24`](../../src/main/resources/db/migration/V24__create_chat_core_tables.sql)로 MySQL 물리 스키마가 배포 대상에 포함돼 두 저장소는 더 이상 미결정이 아니다. 남은 스토어 결정은 `report`이며, [ADR-0005](../adr/0005-polyglot-persistence.md)의 폴리글랏 배치 표에는 booking·chat의 실제 MySQL 배치를 반영해야 한다.
+1. **저장소 결정 완료**: `booking`은 [`V9`](../../src/main/resources/db/migration/V9__bookings.sql), `chat`은 [`V24`](../../src/main/resources/db/migration/V24__create_chat_core_tables.sql), 채팅방 신고는 [`V26`](../../src/main/resources/db/migration/V26__create_chat_reports.sql)으로 MySQL 물리 스키마를 확정했다. [ADR-0005](../adr/0005-polyglot-persistence.md)의 폴리글랏 배치 표에도 실제 배치를 반영해야 한다.
 2. **카운트 정합 전략**: `listings.favoriteCount`·community 카운트의 갱신/배치 재계산 주기, MySQL `CHECK` 가능 버전 확인.
 3. **검색/레이트리밋**: community FULLTEXT(ngram) 도입 시점(MVP 이후), 공유·신고 레이트리밋 카운터 저장소(Redis 등 — DB 외).
 4. **채팅 저장소·카테고리 — 해결됨**: `V24`는 MySQL과 `LANDLORD` 카테고리만 허용하고 `listing_id`를 NOT NULL로 고정했다. 따라서 `NEIGHBOR`나 `listing_id=null` 방의 유일성은 현재 스키마의 결정 필요 항목이 아니다. 향후 실제 요구가 생기면 기존 컬럼에 임의 값을 넣지 않고 새 migration에서 카테고리 CHECK와 유일성 규칙을 함께 설계한다.

@@ -76,7 +76,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 - 차단: 기존 사용자 차단 저장 기능은 재사용하지만 채팅 화면에서는 새 room 기반 차단 API를 호출한다.
 - 삭제: 채팅방 DELETE가 `204`이면 해당 채팅방을 목록에서 제거한다. 응답 본문과 복원 UI는 없다.
-- 신고: 상세 사유 입력 없이 서버가 반환한 고정 사유 code 한 개를 room 신고 API로 보낸다.
+- 신고: 상세 사유 입력 없이 프런트가 `ko/en`으로 표시한 고정 사유 code 한 개를 room 신고 API로 보낸다.
 - 메시지: 새 전송마다 프런트엔드가 `clientMessageId` UUID를 만들고 같은 메시지 재시도에는 같은 값을 사용한다.
 - 신청 카드: 앱이 직접 카드 생성 API를 호출하거나 payload를 보내지 않는다. 기존 신청 API 성공 뒤 같은 채팅방을 열고, REST 이력 또는 room topic의 `BOOKING_CARD`를 역할별 UI로 표시한다.
 
@@ -140,16 +140,16 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 중간 publish 실패를 연속 DB checkpoint가 복구
 - 10초 heartbeat, 연결 손실, 서버 재시작 후 reconnect
 
-### 2.4 REST·신고 사유 현지화
+### 2.4 REST·채팅방 신고
 
-- 사용자 언어별 동일 code·다른 label
-- 번역 누락 시 영어 fallback
+- 프런트 고정 사유 6종과 backend enum code 일치
 - 방 신고에서 reporter와 reported user를 서버가 결정
 - 자유 입력 detail을 받지 않음
 - 빈 방 신고 거부
 - 동일 방 신고 재시도 200, 신규 201
 - 현재 보이는 메시지 범위만 신고 evidence로 사용
-- 다른 사용자의 reportId 조회를 동일 404 처리
+- 최근 TEXT 최대 20개만 저장하고 BOOKING_CARD·번역문 제외
+- 사용자용 사유 목록·신고 상태 조회 API가 노출되지 않음
 - 최초 evidence snapshot과 hash 유지
 
 ### 2.5 채팅 메시지 자동 번역
@@ -221,7 +221,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 | 5 | 메시지를 중복 없이 저장하기 | 네트워크 때문에 다시 보내도 메시지가 한 번만 저장됨 |
 | 6 | 실시간 채팅 연결하기 | 두 사용자가 바로 메시지를 주고받고 누락분도 보충함 |
 | 7 | 받은 메시지 자동 번역하기 | 새 메시지를 한국어 또는 영어로 볼 수 있음 |
-| 8 | 채팅방 신고 만들기 | 고정 사유로 신고하고 내 신고 상태를 확인할 수 있음 |
+| 8 | 채팅방 신고 만들기 | 고정 사유로 신고하고 POST 응답에서 접수 결과를 확인할 수 있음 |
 | 9 | 전체 점검 후 출시 준비하기 | 신청부터 신고까지 전체 흐름과 장애·보안을 확인함 |
 
 ### 3.3 자동 처리와 앱 요청 구분
@@ -282,7 +282,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. `chat_rooms`, `chat_room_members`, `chat_messages`의 UNIQUE·조회 인덱스·기본값을 적용한다. `chat_messages`에는 nullable `booking_id`, `payload`와 타입별 필드 조건을 포함한다.
 3. 자동 번역 작업·결과와 신고 접수 테이블은 각 기능 단계에서 별도 migration으로 추가할 수 있도록 번호를 예약하지 않고 순서대로 작성한다.
 4. JPA entity, repository port와 adapter를 구현하고 `ddl-auto=validate`로 migration과 매핑을 비교한다.
-5. `chat -> listing::api`, `chat -> user::api` 공개 interface와 Modulith allowed dependency를 정리한다. `report -> chat::api`, `report -> user::api`는 실제 신고 조회 계약을 정의하는 8단계에서 추가해 사용하지 않는 모듈 권한을 미리 열지 않는다.
+5. `chat -> listing::api`, `chat -> user::api` 공개 interface와 Modulith allowed dependency를 정리한다. `report -> chat::api`는 실제 신고 증거 계약을 정의하는 8단계에서 추가해 사용하지 않는 모듈 권한을 미리 열지 않는다.
 6. chat·inquiry·report REST를 `ROLE_USER`로 명시하고 온보딩 token 접근을 차단한다.
 7. STOMP에서 재사용할 JWT 검증 결과에 `userId`, 온보딩 완료 여부와 검증된 만료시각을 제공한다. 토큰 발급 흐름은 변경하지 않는다.
 
@@ -416,14 +416,15 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 
 쉽게 말하면 사용자가 고정 사유 하나를 골라 현재 채팅방의 상대를 신고할 수 있게 만든다.
 
-1. `ko/en` 고정 신고 사유 catalog, `reports`, 최초 `report_evidence` migration을 추가한다.
+1. `V26`으로 `chat_reports`와 `chat_report_evidence`를 추가한다. 사유 문구는 프런트가 관리하므로 별도 label catalog는 만들지 않는다.
 2. 신고 body는 고정 `reason` 하나만 받고 자유 입력 `detail`은 받지 않는다.
 3. 서버가 인증 사용자, 채팅방의 상대 사용자와 현재 보이는 원문 증거 범위를 결정한다.
-4. 최소 한 개의 TEXT 원문이 있는 방만 신고할 수 있고 최근 최대 20개 TEXT 원문을 evidence로 저장한다. BOOKING_CARD payload는 신고 원문 증거에서 제외한다.
-5. 신규 신고는 `201`, 같은 사용자의 같은 채팅방 재시도는 기존 신고를 `200`으로 반환한다.
-6. 사용자는 본인이 접수한 신고의 공개 상태만 조회하고 내부 증거·상대 ID·운영 메모는 받지 않는다.
-7. `report -> chat::api`, `report -> user::api` 공개 조회 계약과 Modulith allowed dependency를 이 단계에서 추가한다.
-8. 관리자 목록·처리·완료 API와 신고자료 자동 삭제는 구현하지 않는다.
+4. 최소 한 개의 TEXT 원문이 있는 방만 신고할 수 있고 최근 최대 20개 TEXT 원문을 evidence로 저장한다. BOOKING_CARD payload와 번역문은 제외한다.
+5. 신고·evidence를 한 트랜잭션으로 저장하고 접수 시각에서 UTC 달력 기준 1년 뒤의 보관 만료 시각도 기록한다.
+6. 신규 신고는 `201`, 같은 사용자의 같은 채팅방 재시도는 최초 사유·증거를 유지한 채 기존 신고를 `200`으로 반환한다.
+7. 앱은 POST 응답의 `reportId`로 성공을 확인한다. 사용자용 사유 목록과 신고 상태 조회 API는 만들지 않는다.
+8. `report -> chat::api` 공개 조회 계약과 Modulith allowed dependency를 추가한다. report 모듈에서 user API는 직접 사용하지 않는다.
+9. 관리자 목록·처리·완료 API와 신고자료 만료 정리 작업은 구현하지 않는다.
 
 완료 조건:
 
@@ -506,7 +507,7 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 - 차단 이후 메시지는 저장·전달되지 않고 과거 기록은 유지된다.
 - 신고는 방·신고자·상대·사유·접수 시각·원문 증거를 갖는다.
 - 신고 UI와 API에 자유 입력 상세 사유가 없다.
-- 신고 사유 label은 로그인 사용자 언어로 반환된다.
+- 신고 사유 label은 프런트가 동일 code를 기준으로 `ko/en`으로 표시한다.
 - 읽음 기능, `LISTING_CARD`, `SYSTEM` 메시지, 그룹 채팅은 포함되지 않는다. `BOOKING_CARD`는 포함한다.
 - 단일 EC2에서 Simple Broker로 동작하고 재연결 시 MySQL로 복구된다.
 

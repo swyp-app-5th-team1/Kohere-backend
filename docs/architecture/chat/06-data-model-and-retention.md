@@ -1,6 +1,6 @@
 # MySQL 데이터 모델과 현재 저장 흐름
 
-이 문서는 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 이 가운데 현재 물리화가 끝난 저장 기반은 `V24`의 `chat_rooms`·`chat_room_members`·`chat_messages` 세 테이블이다. 뒤의 번역·신고 구조는 각 기능 단계에서 별도 migration으로 추가한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
+이 문서는 채팅·자동 번역·사용자별 숨김·신고 접수 데이터 구조를 설명한다. 현재 `V24`는 `chat_rooms`·`chat_room_members`·`chat_messages`, `V26`은 `chat_reports`·`chat_report_evidence`를 물리화한다. 자동 번역 구조는 해당 기능 단계의 별도 migration으로 추가한다. 외부 REST 계약은 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
 관리자 신고 처리, 삭제 후 3개월 만료 확정, 메시지·방의 물리 삭제는 현재 migration과 batch 범위에 포함하지 않는다. 해당 설계는 [후속 고도화 문서](future/README.md)로 분리한다.
 
@@ -216,67 +216,59 @@ Worker는 Google을 대신해 번역하는 구성 요소가 아니다. 번역할
 
 ## 4. 신고 접수 테이블
 
-### 4.1 `report_reason_labels`
+신고 사유는 프런트가 `ko/en` 문구로 표시하는 고정 enum이다. 서버는 표시 label을 저장하거나 사유 목록 API를 제공하지 않고 언어와 무관한 code만 `chat_reports.reason`에 저장한다.
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `reason_code` | 언어 불변 code |
-| `language` | `ko`, `en` |
-| `label` | 사용자 표시 문구 |
-| `display_order` | 화면 순서 |
-| `active` | 노출 여부 |
+### 4.1 `chat_reports`
 
-```sql
-PRIMARY KEY (reason_code, language)
-```
-
-신고 행에는 label이 아니라 code만 저장한다. 고정 code는 `ABUSE`, `ILLEGAL_CONTENT`, `SEXUAL_CONTENT`, `PERSONAL_INFORMATION`, `SPAM`, `ETC`다.
-
-### 4.2 `reports`
-
-| 컬럼 | 설명 |
-| --- | --- |
-| `id` | 신고 번호 |
-| `reporter_id` | JWT에서 얻은 신고자 ID |
-| `reported_user_id` | 방에서 서버가 도출한 상대 ID |
-| `target_type` | `CHAT_ROOM` |
-| `target_id` | 채팅방 ID |
-| `reason_code` | 고정 신고 사유 |
-| `status` | 현재 범위에서는 `RECEIVED` |
-| `received_at` | 서버 접수 시각 |
-| `evidence_through_message_id` | 접수 시점 마지막 메시지 ID |
-| `created_at`, `updated_at` | 생성·변경 시각 |
+| 컬럼 | MySQL 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `BIGINT` | 신고 번호, auto increment |
+| `chat_room_id` | `BIGINT` | 신고한 1:1 채팅방 ID |
+| `reporter_id` | `BIGINT` | JWT에서 얻은 신고자 ID |
+| `reported_user_id` | `BIGINT` | 방에서 서버가 도출한 상대 ID |
+| `reason` | `VARCHAR(64)` | 고정 신고 사유 code |
+| `status` | `VARCHAR(32)` | 현재는 `RECEIVED`만 허용 |
+| `evidence_through_message_id` | `BIGINT` | 신고자에게 보이는 마지막 증거 TEXT ID |
+| `received_at` | `DATETIME(6)` | 서버 접수 시각 |
+| `retention_expires_at` | `DATETIME(6)` | 접수 시각에서 UTC 달력 기준 1년 뒤 |
+| `created_at`, `updated_at` | `DATETIME(6)` | 생성·변경 시각 |
 
 ```sql
-UNIQUE (reporter_id, target_type, target_id)
-INDEX (target_type, target_id, received_at)
+UNIQUE (reporter_id, chat_room_id)
+INDEX (received_at DESC, id DESC)
+INDEX (reported_user_id, received_at DESC, id DESC)
+INDEX (retention_expires_at, id)
 ```
 
-자유 입력 상세 사유 컬럼은 만들지 않는다. 같은 사용자가 같은 방을 반복 신고하면 기존 접수 결과를 반환한다. 운영자가 신고를 종결한 뒤 재신고를 허용하는 규칙과 DB 제약 변경은 [후속 관리자 설계](future/01-admin-report-management.md)에서 다룬다.
+고정 code는 `ABUSE_HARASSMENT_DISCRIMINATION`, `ILLEGAL_CONTENT`, `SEXUAL_INAPPROPRIATE_CONTENT`, `PERSONAL_INFORMATION`, `SPAM`, `OTHER`다. 자유 입력 상세 사유 컬럼은 만들지 않는다. 같은 사용자가 같은 방을 반복 신고하면 첫 행의 사유와 증거를 변경하지 않고 기존 접수 결과를 반환한다.
 
-### 4.3 `report_evidence`
+### 4.2 `chat_report_evidence`
 
-| 컬럼 | 설명 |
-| --- | --- |
-| `id` | evidence PK |
-| `report_id` | 신고 ID |
-| `schema_version` | snapshot JSON schema 버전 |
-| `evidence_through_message_id` | 접수 증거 상한 |
-| `snapshot` | 방·참여자·매물·최근 원문 메시지의 JSON snapshot |
-| `captured_at` | snapshot 생성 시각 |
-| `content_hash` | 원문 증거 무결성 확인용 hash |
+| 컬럼 | MySQL 타입 | 설명 |
+| --- | --- | --- |
+| `id` | `BIGINT` | evidence PK, auto increment |
+| `report_id` | `BIGINT` | `chat_reports.id` 값 참조 |
+| `schema_version` | `INT` | 현재 snapshot JSON schema 버전 `1` |
+| `evidence_through_message_id` | `BIGINT` | 접수 증거 상한 TEXT ID |
+| `snapshot` | `JSON` | 방·참여자·매물·최근 원문 TEXT의 스냅샷 |
+| `content_hash` | `VARCHAR(64)` | snapshot record의 SHA-256 검증값 |
+| `captured_at` | `DATETIME(6)` | snapshot 생성 시각 |
+| `created_at` | `DATETIME(6)` | DB 생성 시각 |
 
 ```sql
 UNIQUE (report_id)
+INDEX (captured_at DESC, id DESC)
 ```
 
-- 접수 시 최근 최대 20개 텍스트 원문을 저장한다.
-- `BOOKING_CARD` payload는 텍스트 원문 증거 최대 20건에 포함하지 않는다.
-- 클라이언트가 보낸 본문은 증거로 신뢰하지 않고 MySQL 원문으로 snapshot을 만든다.
-- 전체 채팅을 제한 없이 복제하지 않는다.
-- 이후 사용자 방 숨김과 관계없이 접수된 evidence는 유지하고 사용자 API로 원문을 노출하지 않는다.
+- 접수 시 신고자에게 현재 보이는 최근 TEXT 원문을 최대 20개 저장한다.
+- `BOOKING_CARD` payload와 자동 번역문은 증거에 포함하지 않는다.
+- 클라이언트가 증거를 보내지 않으며 MySQL의 `chat_messages.content`로 snapshot을 만든다.
+- 신고 기본 행과 evidence 행은 같은 트랜잭션으로 저장해 한쪽만 남지 않게 한다.
+- 사용자에게는 evidence를 반환하지 않는다. 이후 사용자가 방을 숨겨도 이미 접수된 evidence는 독립적으로 유지한다.
 
-운영자 상태 이력, 최종 증거 버전, 처리 완료 시각, 보관 만료일과 법적 hold는 [후속 관리자 설계](future/01-admin-report-management.md)로 분리한다.
+두 테이블은 목록용 작은 접수 정보와 민감한 대형 JSON을 분리한다. 그래서 후속 관리자 목록은 증거 JSON을 매번 읽지 않아도 되고 증거 접근·파기 정책도 별도로 적용할 수 있다. FK는 기존 저장소 관례대로 만들지 않으며 애플리케이션 트랜잭션과 UNIQUE가 관계를 보장한다.
+
+운영자 상태 변경, 법적 hold와 실제 만료 정리 작업은 [후속 관리자 설계](future/01-admin-report-management.md)로 분리한다.
 
 ## 5. 사용자별 채팅방 숨김과 삭제 경계
 

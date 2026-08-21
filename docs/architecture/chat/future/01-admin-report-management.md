@@ -12,18 +12,18 @@
 
 - 모든 endpoint는 별도 `ADMIN` 인증이 필요하다.
 - 목록·상세 조회와 상태 변경을 감사 로그로 남긴다.
-- 사용자용 신고 상태 API에는 증거, 신고 대상 ID, 관리자 ID와 내부 메모를 노출하지 않는다.
+- 현재 사용자 API는 접수 POST 응답만 제공한다. 증거, 신고 대상 ID, 관리자 ID와 내부 메모는 앞으로도 사용자에게 노출하지 않는다.
 
 ## 2. 신고 상태와 추가 필드
 
-상위 문서의 `reports`를 다음과 같이 확장한다.
+현재 `V26`의 `chat_reports`를 다음과 같이 확장한다.
 
 | 항목 | 설명 |
 | --- | --- |
 | `status` | `RECEIVED → UNDER_REVIEW → ACTIONED 또는 DISMISSED` |
 | `review_due_at` | 접수 후 처리 목표 시각 |
 | `resolved_at` | 최종 처리 완료 시각 |
-| `retention_expires_at` | 처리 완료 후 신고 자료 정리 예정 시각 |
+| `retention_expires_at` | 현재 접수 시각 + 1년으로 이미 저장되는 신고 자료 정리 예정 시각 |
 | `resolution_code` | 운영 처리 결과 code |
 | `version` | 운영자 동시 처리 optimistic lock |
 | `active_slot` | 열린 신고 중복 방지용 generated column |
@@ -37,7 +37,7 @@ active_slot TINYINT
     END
   ) STORED
 
-UNIQUE (reporter_id, target_type, target_id, active_slot)
+UNIQUE (reporter_id, chat_room_id, active_slot)
 INDEX (status, review_due_at, id)
 INDEX (retention_expires_at, id)
 ```
@@ -64,8 +64,8 @@ INDEX (retention_expires_at, id)
 
 ## 4. 보존과 hold
 
-- 최종 처리와 동시에 `resolved_at`, `retention_expires_at`을 기록한다.
-- 처리 완료 후 6개월은 현재 제품 정책 초안이며 실제 운영 정책 확정 시 다시 검토한다.
+- 최종 처리와 동시에 `resolved_at`을 기록한다.
+- `retention_expires_at`은 현재 사용자 고지와 맞춰 접수 시각부터 1년으로 유지한다. 법령·운영 정책 때문에 기준을 바꾸려면 별도 migration과 사용자 고지 변경을 함께 검토한다.
 - 진행 중인 분쟁 등 별도 보존 사유가 있으면 기간과 재검토일을 가진 hold를 생성한다.
 - 무기한 boolean hold를 두지 않고 생성 사유·책임자·다음 검토일·해제 시각을 기록한다.
 - 만료 정리 작업은 active hold가 없는 자료만 삭제한다.
@@ -77,7 +77,7 @@ INDEX (retention_expires_at, id)
 1. 신고 `version` 확인
 2. 필요한 경우 최종 evidence version append
 3. 최종 상태와 status history 저장
-4. `resolved_at`, `retention_expires_at` 저장
+4. `resolved_at` 저장, 기존 `retention_expires_at` 유지
 5. 원본 방 보존 hold가 있다면 안전하게 해제
 
 증거 저장은 실패했는데 원본 보존만 먼저 해제되는 상태를 허용하지 않는다.

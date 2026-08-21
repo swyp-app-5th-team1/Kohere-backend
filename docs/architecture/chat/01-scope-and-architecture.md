@@ -161,7 +161,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 | 신청 | 기존 Booking API·`BookingService` | chat 안에 예약 로직을 복제하지 않음 |
 | 신청 카드 데이터 | 신청 생성 과정에서 이미 조회한 매물·객실·신청자 정보와 기존 금액 계산 방식 | `BookingCreatedEvent`에 신청 당시 사본을 함께 담아 카드 생성에 사용 |
 | 차단 | `UserBlockService`, `user_blocks` | 서버가 방의 상대를 도출해 호출 |
-| 언어 | `UserAccountService.getLanguage` | 채팅 번역 대상 언어와 신고 사유 label 결정 |
+| 언어 | `UserAccountService.getLanguage` | 채팅 번역 대상 언어 결정. 채팅방 신고 label은 프런트가 `ko/en`으로 관리 |
 | 공통 응답 | `ApiResponse`, `PageResponse`, `CursorResponse` | 기존 REST 응답 형식 유지 |
 | DB | Flyway, JPA, MySQL | 새 migration과 JPA adapter 작성 |
 | 외부 API adapter | 기존 port/adapter·timeout·stub 패턴 | Google 번역 adapter를 provider 독립 port 뒤에 배치 |
@@ -173,7 +173,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 | --- | --- | --- | --- |
 | 차단 | `UserBlockService`, `user_blocks`, 기존 차단 목록·해제 | `roomId`로 상대를 찾는 채팅방 차단 API, 방 생성·메시지 전송 전 양방향 차단 검사 | 채팅방 차단 버튼을 새 room 기반 API에 연결 |
 | 삭제 | 예약 기능의 “요청자에게만 숨김” 처리 방식만 참고 | 채팅용 사용자별 숨김 경계와 DELETE API | 삭제 성공 시 내 목록에서 제거하며 복원 UI는 제공하지 않음 |
-| 신고 | 사용자 언어별 고정 사유를 반환하는 기존 패턴 | 채팅방 단위 신고 API, 참여자·상대·원문 증거 검증과 저장 | 상세 입력 없이 고정 사유 하나와 roomId 기준으로 신고 |
+| 신고 | `Report` 모듈 골격 | 채팅방 단위 신고 API, 참여자·상대·원문 증거 검증과 저장 | 상세 입력과 사유 조회 없이 고정 code 하나와 roomId 기준으로 신고 |
 
 따라서 세 기능 모두 처음부터 전부 새로 만드는 것은 아니지만, 기존 API를 그대로 호출하는 것도 아니다. 기존 서비스와 설계 패턴을 재사용하고 채팅방 문맥에 필요한 API와 검증을 추가한다.
 
@@ -181,7 +181,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 
 - `InquiryController`, `ChatRoomController`, `ChatService`
 - `ChatRoom`, `Message`, repository port와 adapter
-- `ReportController`, `ReportService`, `Report` 골격
+- `ChatRoomReportController`, `ReportService`, `Report` 골격
 
 기존 `/read` endpoint와 `unreadCount` DTO는 이번 범위에서 노출하지 않는다. 기존 `BookingEventHandler` 골격은 신청 후 같은 채팅방을 보장하고 `BOOKING_CARD`를 한 번만 저장하는 handler로 완성한다. 푸시 알림은 이번 범위에 포함하지 않는다.
 
@@ -190,7 +190,6 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 - `chat -> listing::api`: 매물·임대인·표시용 사본 정보 확인
 - `chat -> user::api`: 차단 검사, 상대 표시 정보, 수신자의 번역 대상 언어
 - `report -> chat::api`: 방 참여자, 상대, 증거 범위 확인
-- `report -> user::api`: 로그인 사용자의 언어 확인
 - `booking -> 공개 BookingCreatedEvent`: chat에 직접 의존하지 않음
 - `booking -> chat` 공개 이벤트: 신청 시점 카드 사본이 포함된 이벤트로 누락된 방을 보장하고 `BOOKING_CARD`를 한 번만 저장
 

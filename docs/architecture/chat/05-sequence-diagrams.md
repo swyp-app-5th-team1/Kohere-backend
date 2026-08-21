@@ -412,31 +412,25 @@ sequenceDiagram
     actor U as 신고자
     participant APP as 앱
     participant REPORT as Report API
-    participant USER as User API
     participant CHAT as Chat Query API
     participant DB as MySQL
 
     U->>APP: 채팅방에서 신고하기 선택
-    APP->>REPORT: 신고 사유 목록 요청
-    REPORT->>USER: 신고자의 표시 언어 조회
-    USER-->>REPORT: ko 또는 en
-    REPORT->>DB: 해당 언어의 고정 신고 사유 조회
-    DB-->>REPORT: 신고 사유 코드와 표시 문구
-    REPORT-->>APP: 신고 사유 목록
+    APP-->>U: 현재 언어(ko/en)의 고정 사유 6개 표시
     U->>APP: 사유 한 개 선택 후 신고
-    APP->>REPORT: 채팅방 신고 접수 요청
+    APP->>REPORT: roomId와 reason code로 신고 접수
     REPORT->>CHAT: 방 참여자·상대방·증거 원문 확인
     CHAT->>DB: 방 정보와 최근 원문 조회
     DB-->>CHAT: 신고에 필요한 정보
     CHAT-->>REPORT: 신고 대상과 증거 사본
-    REPORT->>DB: 신고·최근 원문 증거 저장
+    REPORT->>DB: 신고·보이는 최근 TEXT 원문 최대 20개 저장
     DB-->>REPORT: COMMIT
     REPORT-->>APP: 신고 접수 완료
 ```
 
-**쉽게 설명하면:** 사용자는 고정 신고 사유 한 개와 `roomId`만 보낸다. 서버는 신고자가 실제 방 참여자인지 확인하고 방의 다른 사용자를 신고 대상으로 결정한다. 신고 대상은 특정 메시지 번호가 아니라 채팅방이며, 최근 원문과 기준 `messageId`는 서버가 직접 증거로 확보한다.
+**쉽게 설명하면:** 앱은 고정 사유 문구를 `ko/en`으로 직접 보여 주고, 사용자는 code 한 개와 `roomId`만 보낸다. 서버는 신고자가 실제 방 참여자인지 확인하고 방의 다른 사용자를 신고 대상으로 결정한다. 최근 TEXT 원문과 기준 `messageId`는 서버가 직접 증거로 확보한다.
 
-**결과:** 앱은 고정 사유만 보내며 신고자·상대방·방·접수 시각·증거는 서버가 결정한다.
+**결과:** POST 응답에 `reportId`가 오면 접수가 완료된 것이다. 별도 상태 조회 API는 없으며 신고자·상대방·방·접수 시각·증거는 서버가 결정한다.
 
 운영자 처리와 신고 자료 만료 정리 시퀀스는 [후속 고도화 시퀀스](future/03-sequence-diagrams.md)로 분리한다.
 

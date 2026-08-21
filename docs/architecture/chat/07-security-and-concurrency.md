@@ -119,16 +119,16 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 
 ### 접수
 
-`ReportService`가 같은 MySQL datasource의 outer transaction을 연다. `chat::api`의 증거 조회가 `REQUIRED`로 참여한다.
+`ReportCreator`가 신규 신고 생성 transaction을 연다. 그 안에서 `chat::api`의 증거 조회가 같은 MySQL transaction에 참여한다.
 
 1. room lock
 2. reporter 참여자 여부와 reported user 도출
 3. 신고자에게 현재 보이는 범위와 마지막 TEXT messageId 확인
 4. 최근 TEXT 원문 snapshot 생성 (`BOOKING_CARD` payload 제외)
-5. report와 최초 evidence 저장
+5. `chat_reports`와 `chat_report_evidence` 저장
 6. 한 번에 commit
 
-신고 중복은 `(reporterId, targetType, targetId)` UNIQUE가 최종 방어한다. unique 충돌은 transaction 경계를 안전하게 끝낸 뒤 기존 신고를 조회해 `200`으로 반환한다.
+신고 중복은 `(reporterId, chatRoomId)` UNIQUE가 최종 방어한다. unique 충돌로 신규 생성 transaction이 롤백된 뒤 `ReportService`가 기존 신고를 다시 조회해 `200`으로 반환한다. 두 번째 reason으로 최초 신고와 evidence를 덮어쓰지 않는다.
 
 ## 7. Lock 순서
 
@@ -184,9 +184,9 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 | 빈 메시지 | `INVALID_INPUT` |
 | 3,000자 초과 | `CHAT_MESSAGE_TOO_LONG` |
 | 같은 clientMessageId에 다른 본문 | `CHAT_CLIENT_MESSAGE_CONFLICT` |
-| 유효하지 않은 신고 사유 | `REPORT_INVALID_REASON` |
-| 신고 없음 또는 다른 신고자 | `REPORT_NOT_FOUND` |
-| 메시지 없는 방 신고 | `CHAT_REPORT_NO_MESSAGES` |
+| 신고 사유 누락 | `INVALID_INPUT` |
+| 지원하지 않는 신고 사유 문자열 | `MALFORMED_REQUEST` |
+| 현재 보이는 TEXT가 없는 방 신고 | `REPORT_REQUIRES_TEXT_MESSAGE` |
 | 전송률 초과 | `TOO_MANY_REQUESTS` |
 
 차단 여부를 상대에게 상세히 노출하지 않기 위해 전송에는 일반 `CHAT_UNAVAILABLE`을 사용한다. CONNECT 실패는 STOMP ERROR 후 close하고, 개별 SEND 오류는 원 발신 session의 user queue로만 보낸다.
@@ -211,7 +211,7 @@ Google credential은 서버의 secret 또는 AWS와 GCP 사이의 Workload Ident
 - WebSocket 연결·구독·재연결 수
 - 번역 대상 언어, 상태, provider 지연, 재시도 횟수와 비민감 오류 분류
 
-사용자 신고 상태 API에는 evidence, reportedUserId, 운영자 ID, 내부 처리 note·hold를 반환하지 않는다. 존재하지 않는 신고와 다른 사용자의 신고는 같은 404로 처리해 ID 추측을 막는다.
+사용자 신고 접수 응답에는 evidence, reportedUserId, 보관 만료 시각, 운영자 ID와 내부 처리 정보를 반환하지 않는다. 사용자용 신고 단건 조회 API는 만들지 않고 접수 POST의 `reportId`로 성공을 확인한다.
 
 ## 12. 보안 체크리스트
 

@@ -200,7 +200,7 @@
 | `BOOKING_NOT_FOUND` | 404 | 예약이 없거나 조회 권한 밖(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님), 요청자가 삭제·차단으로 숨긴 예약, 또는 삭제·차단·신고 요청자가 참여자가 아님(404로 통일) |
 | `BOOKING_ALREADY_EXISTS` | 409 | 동일 세입자가 동일 방 상품에 이미 신청함 (UNIQUE `(tenant_id, room_offer_id)` 위반) |
 
-> 예약 신고는 `booking` 모듈이 접수를 소유하므로 `BOOKING_*` prefix를 쓴다. `REPORT_*`는 게시글·댓글·메시지 신고를 담당하는 `report` 모듈의 것으로 그대로 남는다 — 두 곳은 신고 **대상이 겹치지 않아** 코드가 충돌하지 않는다.
+> 예약 신고는 `booking` 모듈이 접수를 소유하므로 `BOOKING_*` prefix를 쓴다. 1:1 채팅방 신고는 `report` 모듈이 별도로 접수하며, 아래 `REPORT_*` 코드는 현재 보이는 TEXT 증거가 없는 경우에 사용한다.
 
 > **#169에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
 > - **예약 삭제·차단·신고의 참여자 위반**: 기존 `BOOKING_NOT_FOUND`(404)를 재사용한다. 존재를 노출하지 않는 기존 booking 규약과 통일한다.
@@ -208,7 +208,15 @@
 > - **자기 신고**: 예약 생성이 TENANT 전용이고 `userType`은 온보딩 확정 후 불변이라 `tenant_id != landlord_id`가 구조적으로 보장된다. 발생할 수 없는 상황이므로 코드를 두지 않는다.
 > - **동일 예약 중복 신고 거부**: 코드를 두지 않는다. 동일 신고자가 동일 예약을 **여러 번 신고할 수 있다(다건 허용)** — 새 사유·지속 문제를 다시 접수해야 하기 때문이다. 예전 `(reporter_id, booking_id)` 유일성·`BOOKING_REPORT_ALREADY_EXISTS`(409)는 제거됐다. 신고 도배 방지는 **레이트리밋(`TOO_MANY_REQUESTS`, 429)** 으로 다루며 **후속·이연**이다(현재 미구현).
 
-> `CHAT_*` 코드(`CHAT_ROOM_NOT_FOUND`·`CHAT_SELF_INQUIRY_NOT_ALLOWED` 등)는 **후속·이연**된 매물 문의·채팅 기능용이며 1차 MVP 예약 범위 밖이다. 상세는 [04-booking-inquiry-chat](./specs/04-booking-inquiry-chat.md) 참조.
+> `CHAT_*` 코드(`CHAT_ROOM_NOT_FOUND`·`CHAT_SELF_INQUIRY_NOT_ALLOWED` 등)는 매물 문의·1:1 채팅 기능에서 사용한다. 상세는 [채팅 API 계약](../architecture/chat/02-api-contracts.md)을 따른다.
+
+#### report 도메인 코드
+
+| code | status | 의미 |
+| --- | --- | --- |
+| `REPORT_REQUIRES_TEXT_MESSAGE` | 422 | 신고자에게 현재 보이는 TEXT 원문이 없어 신고 증거를 만들 수 없음 |
+
+사유 누락은 공통 `INVALID_INPUT`(400), 지원하지 않는 enum 문자열은 `MALFORMED_REQUEST`(400), 방 없음·비참여자·현재 숨긴 방은 `CHAT_ROOM_NOT_FOUND`(404)를 사용한다. 같은 사용자의 같은 방 재요청은 오류가 아니라 기존 신고와 `200`을 반환한다.
 
 ## 5. 예외 계층 / 전역 핸들러
 

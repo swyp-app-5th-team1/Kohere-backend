@@ -17,9 +17,7 @@
 | 신규 | POST | `/api/v1/chat-rooms/{roomId}/block` | 방의 상대 사용자 차단 | 204 |
 | 기존 재사용 | GET | `/api/v1/users/me/blocks` | 내 차단 목록 | 200 |
 | 기존 재사용 | DELETE | `/api/v1/users/me/blocks/{userId}` | 차단 해제 | 204 |
-| 골격 완성 | GET | `/api/v1/reports/reasons` | 로그인 사용자 언어의 신고 사유 | 200 |
-| 신규 | POST | `/api/v1/chat-rooms/{roomId}/reports` | 채팅방 단위 신고 | 신규 201 / 열린 신고 재시도 200 |
-| 신규 | GET | `/api/v1/reports/{reportId}` | 내가 접수한 신고 상태 | 200 |
+| 구현 완료 | POST | `/api/v1/chat-rooms/{roomId}/reports` | 현재 채팅방의 상대방 신고 접수 | 신규 201 / 같은 방 재요청 200 |
 
 모든 사용자용 endpoint는 로그인과 온보딩을 완료한 `ROLE_USER`만 사용할 수 있다.
 
@@ -294,66 +292,41 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 요청 본문은 없다. 서버가 JWT 사용자와 방의 다른 참여자로 차단 관계를 만든다. 이미 차단돼 있어도 `204`이며, 이전 대화는 삭제하지 않는다.
 
-### 5.7 신고 사유
-
-`GET /api/v1/reports/reasons`
-
-code는 언어와 관계없이 같고 label만 사용자의 `ko/en` 설정에 따라 바뀐다. 번역이 없으면 영어로 fallback한다.
-
-```json
-{
-  "reasons": [
-    { "code": "ABUSE", "label": "욕설, 비방, 차별, 혐오" },
-    { "code": "ILLEGAL_CONTENT", "label": "불법정보" },
-    { "code": "SEXUAL_CONTENT", "label": "음란, 청소년 유해" },
-    { "code": "PERSONAL_INFORMATION", "label": "개인정보 노출, 유포, 거래" },
-    { "code": "SPAM", "label": "도배, 스팸" },
-    { "code": "ETC", "label": "기타" }
-  ]
-}
-```
-
-클라이언트는 label을 표시하고 신고할 때 code만 보낸다. 상세 사유 입력과 `detail` 필드는 없다.
-
-### 5.8 채팅방 신고
+### 5.7 채팅방 신고
 
 `POST /api/v1/chat-rooms/{roomId}/reports`
 
 ```json
 {
-  "reason": "ABUSE"
+  "reason": "ABUSE_HARASSMENT_DISCRIMINATION"
 }
 ```
 
-서버가 결정하는 값:
+프런트는 아래 고정 code를 `ko/en` 문구로 직접 표시하고 선택한 code만 보낸다. 별도의 신고 사유 조회 API와 상세 사유 입력은 없다.
+
+| code | ko 표시 예시 | en 표시 예시 |
+| --- | --- | --- |
+| `ABUSE_HARASSMENT_DISCRIMINATION` | 욕설, 비방, 차별, 혐오 | Abuse, Harassment, Discrimination |
+| `ILLEGAL_CONTENT` | 불법정보 | Illegal Content |
+| `SEXUAL_INAPPROPRIATE_CONTENT` | 음란, 청소년 유해 | Sexual or Inappropriate Content |
+| `PERSONAL_INFORMATION` | 개인정보 노출, 유포, 거래 | Personal Information |
+| `SPAM` | 도배, 스팸 | Spam |
+| `OTHER` | 기타 | Other |
+
+서버가 DB 정본으로 결정하는 값:
 
 - `reporterId`: JWT 사용자
 - `reportedUserId`: 방의 다른 참여자
-- `targetType`: `CHAT_ROOM`
-- `targetId`: path의 roomId
+- `chatRoomId`: path의 roomId
 - `status`: `RECEIVED`
 - `receivedAt`: 서버 접수 시각
-- `evidenceThroughMessageId`: 접수 시점의 마지막 메시지
+- `evidenceThroughMessageId`: 신고자에게 현재 보이는 마지막 TEXT 메시지
 
-최소 한 개의 텍스트 메시지가 있어야 신고할 수 있다. 같은 신고자가 같은 방을 다시 신고하면 새 행을 만들지 않고 기존 신고를 `200`으로 반환한다. 처리 완료 후 재신고 규칙은 운영자 처리와 함께 후속 고도화에서 정한다.
+신고자는 현재 표시된 방만 신고할 수 있고, 신고자에게 보이는 TEXT가 최소 한 개 있어야 한다. 서버는 보이는 최근 TEXT 원문을 최대 20개 증거로 저장하며 `BOOKING_CARD`와 번역문은 제외한다. 같은 신고자가 같은 방을 다시 신고하면 새 행을 만들거나 최초 사유·증거를 덮어쓰지 않고 기존 결과를 `200`으로 반환한다.
 
-### 5.9 내 신고 상태
+신규 접수는 `201`, 같은 방 재요청은 `200`이며 두 경우 모두 `reportId`, `chatRoomId`, `reason`, `status`, `receivedAt`을 반환한다. 이 응답으로 접수 성공을 확인하므로 사용자용 신고 상태 조회 API는 만들지 않는다. 신고 접수는 상대방 차단이나 채팅방 삭제를 자동 실행하지 않는다.
 
-`GET /api/v1/reports/{reportId}`
-
-`report.reporterId`가 JWT 사용자와 같아야 한다. 다른 사용자의 신고와 존재하지 않는 신고는 모두 같은 `404 REPORT_NOT_FOUND`로 처리한다.
-
-사용자에게 반환:
-
-- reportId, chatRoomId
-- reason code와 현재 언어 label
-- status, receivedAt
-
-사용자에게 반환하지 않음:
-
-- 증거 원문과 snapshot
-- 신고 대상 사용자 ID
-- 운영자 ID와 내부 note·hold 정보
+증거 원문, 신고 대상 사용자 ID, 보관 만료 시각과 후속 운영 정보는 사용자에게 반환하지 않는다. 관리자 조회·처리 API는 [후속 관리자 설계](future/01-admin-report-management.md)에서 별도로 구현한다.
 
 ## 6. STOMP 메시지 계약
 
