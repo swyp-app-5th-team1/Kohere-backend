@@ -12,3 +12,8 @@ output "app_url" {
   description = "앱 접속 URL(HTTPS — 도메인 필수)"
   value       = "https://${var.domain_name}"
 }
+
+output "configure_chat_translation_document_name" {
+  description = "기존 dev EC2에 WIF·번역 설정을 1회 적용하는 SSM Document 이름"
+  value       = aws_ssm_document.configure_chat_translation.name
+}

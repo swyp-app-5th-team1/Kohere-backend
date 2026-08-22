@@ -50,6 +50,7 @@ infra/terraform/
 │   │   ├── secrets/           # SSM Parameter Store SecureString(앱·DB 시크릿)
 │   │   ├── storage/           # 데이터 EBS(mysql/mongo 영속)
 │   │   ├── host/              # EC2+EIP+EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db)
+│   │   ├── google-wif/        # EC2 IAM 역할 → Google 서비스 계정 단기 토큰 → Cloud Translation
 │   │   ├── dns/               # Route53 A 레코드(EIP)
 │   │   └── monitoring/        # CloudWatch 알람 + SNS
 │   └── shared/

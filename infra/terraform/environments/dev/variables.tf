@@ -16,6 +16,28 @@ variable "aws_region" {
   default     = "ap-northeast-2"
 }
 
+# ----- Google Cloud Translation + AWS Workload Identity Federation -----
+variable "google_cloud_project_id" {
+  description = "Cloud Translation API와 WIF를 구성할 Google Cloud 프로젝트 ID"
+  type        = string
+}
+
+variable "google_translation_service_account_email" {
+  description = "dev EC2가 WIF로 가장할 기존 Google Translation 서비스 계정 이메일"
+  type        = string
+
+  validation {
+    condition     = endswith(var.google_translation_service_account_email, ".iam.gserviceaccount.com")
+    error_message = "google_translation_service_account_email에는 ...iam.gserviceaccount.com 형식의 서비스 계정 이메일을 입력해야 합니다."
+  }
+}
+
+variable "chat_translation_enabled" {
+  description = "dev 앱의 1:1 채팅 Google 자동 번역 활성화 여부"
+  type        = bool
+  default     = true
+}
+
 variable "app_image" {
   description = "ECR 앱 이미지 URI(:tag 포함). 예: <account>.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
   type        = string

@@ -97,6 +97,18 @@ module "iam" {
   web_bucket_arn = module.web.bucket_arn
 }
 
+# ===== Google Cloud Translation WIF =====
+# 기존 EC2 인스턴스 프로파일(kohere-dev-host)을 Google의 짧은 토큰으로 교환한다.
+# AWS IAM 역할·정책은 그대로 두고, Google 쪽에서 이 역할만 번역 서비스 계정을 가장하도록 허용한다.
+module "google_wif" {
+  source = "../../modules/dev/google-wif"
+
+  google_project_id                 = var.google_cloud_project_id
+  translation_service_account_email = var.google_translation_service_account_email
+  aws_account_id                    = data.aws_caller_identity.current.account_id
+  aws_role_name                     = module.iam.role_name
+}
+
 # ===== 시크릿 (SSM Parameter Store SecureString) =====
 module "secrets" {
   source = "../../modules/dev/secrets"
@@ -173,6 +185,12 @@ module "host" {
   images_bucket         = module.s3_cloudfront.bucket_name
   images_cdn_domain     = module.s3_cloudfront.cdn_domain
 
+  # 서비스 계정 개인키가 아닌 WIF 설정 JSON을 호스트에 쓰고 앱 컨테이너에 읽기 전용으로 연결한다.
+  google_wif_credential_configuration = module.google_wif.credential_configuration
+  chat_translation_enabled            = var.chat_translation_enabled
+  chat_translation_project_id         = var.google_cloud_project_id
+  chat_translation_location           = "global"
+
   # 임대인 웹 릴리스(#232) — deploy-web.sh 렌더와 부팅 복원(current.txt)이 이 버킷을 쓴다.
   web_artifacts_bucket = module.web.bucket_name
 
@@ -181,7 +199,7 @@ module "host" {
   enable_cloudwatch_agent = var.enable_cloudwatch_agent
 
   # 시크릿·설정 파라미터가 먼저 존재해야 부팅 시 refresh-env가 .env로 주입할 수 있다.
-  depends_on = [module.secrets]
+  depends_on = [module.secrets, module.google_wif]
 }
 
 # ===== Route53 A 레코드(도메인 필수) → EIP =====

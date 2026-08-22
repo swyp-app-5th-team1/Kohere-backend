@@ -4,6 +4,12 @@
 
 aws_region = "ap-northeast-2"
 
+# ----- Google 채팅 자동 번역 (필수) -----
+# 서비스 계정 JSON 키는 입력하지 않는다. EC2의 kohere-dev-host 역할을 Google WIF로 교환한다.
+google_cloud_project_id                = "project-bdb9704d-3952-475b-a1c"
+google_translation_service_account_email = "kohere@project-bdb9704d-3952-475b-a1c.iam.gserviceaccount.com"
+# chat_translation_enabled = true
+
 # ----- 앱 이미지 (필수) -----
 # CI가 ECR에 push한 dev 태그 이미지.
 app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"

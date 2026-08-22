@@ -81,6 +81,8 @@ services:
     # 지울 때 로그도 함께 사라진다. 파일 자체의 로테이션은 RollingFileAppender가 담당한다(50MB×7일, 총 500MB).
     volumes:
       - /opt/kohere/logs:/logs
+      # 서비스 계정 키가 아닌 WIF external_account 설정. 컨테이너는 읽기만 할 수 있다.
+      - /opt/kohere/google-wif-credentials.json:/run/secrets/google-wif-credentials.json:ro
     depends_on:
       - mysql
       - mongo
@@ -100,6 +102,12 @@ services:
       MAIL_FROM: ${mail_from}
       APP_IMAGES_BUCKET: ${images_bucket}
       APP_IMAGES_CDN_DOMAIN: ${images_cdn_domain}
+      # Google Cloud Java 라이브러리는 이 경로의 WIF 설정을 ADC로 읽고 EC2 역할을 짧은 Google 토큰으로 교환한다.
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-wif-credentials.json
+      AWS_REGION: ${aws_region}
+      APP_CHAT_TRANSLATION_ENABLED: "${chat_translation_enabled}"
+      APP_CHAT_TRANSLATION_PROJECT_ID: ${chat_translation_project_id}
+      APP_CHAT_TRANSLATION_LOCATION: ${chat_translation_location}
       # 연락처 SMS(SOLAPI)·사업자번호(비즈노)·네이버 지역 검색(#160/#162)·NCP 주소 검색(#223)·카카오 로컬(#224) 설정은 enabled·from·API 키·Client ID/Secret 모두
       # .env(SSM→refresh-env, env_file)로만 주입한다. compose(부팅 1회 렌더)에 박지 않아 tfvars 변경이 재배포(refresh-env 재실행 + app recreate)만으로 반영된다(ADR-0024/0034/0033).
 volumes:

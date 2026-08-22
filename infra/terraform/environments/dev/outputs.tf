@@ -13,6 +13,16 @@ output "instance_id" {
   value       = module.host.instance_id
 }
 
+output "google_wif_provider_name" {
+  description = "dev EC2가 Google 단기 토큰을 발급받을 때 사용하는 WIF Provider 전체 이름"
+  value       = module.google_wif.provider_name
+}
+
+output "configure_chat_translation_document" {
+  description = "기존 dev EC2에 WIF 파일·compose 설정을 1회 반영할 SSM Document 이름"
+  value       = module.host.configure_chat_translation_document_name
+}
+
 output "app_log_group" {
   description = "앱 로그 CloudWatch Log Group(Logs Insights 쿼리 대상). 수집 여부는 enable_cloudwatch_agent"
   value       = module.logs.log_group_name

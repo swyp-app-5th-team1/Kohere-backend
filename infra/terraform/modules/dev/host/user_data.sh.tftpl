@@ -60,10 +60,14 @@ REFRESH
 chmod +x /opt/kohere/refresh-env.sh
 bash /opt/kohere/refresh-env.sh
 
-# 5) Caddyfile · docker-compose.yml + reconcile-db.sh (Terraform이 렌더한 결과 주입)
+# 5) Google WIF · Caddyfile · docker-compose.yml + reconcile-db.sh (Terraform이 렌더한 결과 주입)
 #    app 컨테이너의 /logs 바인드 마운트 대상(ADR-0038). 호스트에 두어야 CloudWatch Agent가 tail할 수 있고
 #    --force-recreate로 컨테이너를 갈아도 로그가 남는다.
 mkdir -p /opt/kohere/logs
+# 서비스 계정 개인키가 아니라 EC2 역할을 Google 단기 토큰으로 교환하는 방법만 담긴 설정 파일이다.
+# base64로 전달해 JSON의 따옴표와 개행이 셸에서 바뀌지 않게 한다.
+printf '%s' '${google_wif_credentials_base64}' | base64 --decode >/opt/kohere/google-wif-credentials.json
+chmod 0444 /opt/kohere/google-wif-credentials.json
 cat >/opt/kohere/Caddyfile <<'CADDY'
 ${caddyfile}
 CADDY
@@ -74,6 +78,12 @@ cat >/opt/kohere/reconcile-db.sh <<'RECONCILE'
 ${reconcile_db}
 RECONCILE
 chmod +x /opt/kohere/reconcile-db.sh
+
+# 기존 EC2에 Terraform 변경을 재부팅·교체 없이 1회 반영할 때 SSM Document가 실행하는 동일 스크립트다.
+cat >/opt/kohere/configure-chat-translation.sh <<'TRANSLATION'
+${configure_chat_translation}
+TRANSLATION
+chmod +x /opt/kohere/configure-chat-translation.sh
 
 # 5-1) 임대인 웹 릴리스 루트(#232) — caddy가 /srv:ro 로 마운트해 여기서 SPA를 서빙한다.
 #      실제 릴리스는 프론트 CI가 deploy-web.sh 로 채운다. 여기선 자리만 잡고, 첫 배포 전에도

@@ -10,6 +10,29 @@ locals {
   ssm_prefix = "/${var.name_prefix}"
   # Caddy 사이트 주소 — 도메인으로 자동 HTTPS(도메인 필수).
   caddy_site = var.domain_name
+
+  # user_data와 기존 EC2용 SSM 명령이 완전히 같은 compose를 사용하도록 한 번만 렌더한다.
+  compose_yml = templatefile("${path.module}/docker-compose.yml.tftpl", {
+    aws_region                  = var.aws_region
+    db_name                     = var.db_name
+    app_image                   = var.app_image
+    smtp_host                   = var.smtp_host
+    smtp_port                   = var.smtp_port
+    mail_from                   = var.mail_from
+    images_bucket               = var.images_bucket
+    images_cdn_domain           = var.images_cdn_domain
+    mongo_username              = var.mongo_username
+    mysql_username              = var.mysql_username
+    chat_translation_enabled    = var.chat_translation_enabled
+    chat_translation_project_id = var.chat_translation_project_id
+    chat_translation_location   = var.chat_translation_location
+  })
+
+  # 현재 실행 중인 EC2는 user_data가 다시 실행되지 않으므로, 같은 내용을 SSM으로 1회 적용할 스크립트도 만든다.
+  configure_chat_translation_script = templatefile("${path.module}/configure-chat-translation.sh.tftpl", {
+    google_wif_credentials_base64 = base64encode(var.google_wif_credential_configuration)
+    compose_yml_base64            = base64encode(local.compose_yml)
+  })
 }
 
 resource "aws_instance" "host" {
@@ -20,7 +43,8 @@ resource "aws_instance" "host" {
   iam_instance_profile   = var.instance_profile_name
 
   metadata_options {
-    http_tokens = "required" # IMDSv2 only
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 2          # Docker 컨테이너까지 IMDSv2 응답이 도달하려면 한 홉을 더 허용해야 한다.
   }
 
   root_block_device {
@@ -60,17 +84,9 @@ resource "aws_instance" "host" {
     cloudwatch_agent_config = templatefile("${path.module}/cloudwatch-agent.json.tftpl", {
       log_group_name = var.log_group_name
     })
-    compose_yml = templatefile("${path.module}/docker-compose.yml.tftpl", {
-      db_name           = var.db_name
-      app_image         = var.app_image
-      smtp_host         = var.smtp_host
-      smtp_port         = var.smtp_port
-      mail_from         = var.mail_from
-      images_bucket     = var.images_bucket
-      images_cdn_domain = var.images_cdn_domain
-      mongo_username    = var.mongo_username
-      mysql_username    = var.mysql_username
-    })
+    compose_yml                   = local.compose_yml
+    google_wif_credentials_base64 = base64encode(var.google_wif_credential_configuration)
+    configure_chat_translation    = local.configure_chat_translation_script
   }))
 
   lifecycle {
@@ -91,4 +107,26 @@ resource "aws_volume_attachment" "data" {
   volume_id    = var.volume_id
   instance_id  = aws_instance.host.id
   skip_destroy = true
+}
+
+# Terraform apply 뒤 이 문서를 한 번 실행하면 EC2를 교체하지 않고도 현재 서버에 WIF/compose 설정이 반영된다.
+# 새 EC2는 user_data가 같은 파일을 만들기 때문에 이 문서를 실행하지 않아도 된다.
+resource "aws_ssm_document" "configure_chat_translation" {
+  name            = "${var.name_prefix}-configure-chat-translation"
+  document_type   = "Command"
+  document_format = "YAML"
+
+  content = yamlencode({
+    schemaVersion = "2.2"
+    description   = "기존 dev EC2에 Google WIF와 채팅 자동 번역 설정을 반영한다"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "configureChatTranslation"
+      inputs = {
+        runCommand = [local.configure_chat_translation_script]
+      }
+    }]
+  })
+
+  tags = merge(var.tags, { Name = "${var.name_prefix}-configure-chat-translation" })
 }

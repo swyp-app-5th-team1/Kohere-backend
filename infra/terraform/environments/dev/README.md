@@ -1,6 +1,6 @@
 # dev 환경 배포 (저비용 단일 EC2)
 
-이 문서 하나로 **AWS 계정도 Terraform도 없는 상태에서 dev 환경을 `apply` 까지** 끝낸다. dev는 매니지드 서비스 대신 **EC2 1대 위 docker-compose**(Caddy·app·MySQL·MongoDB·Redis)로 도는 저비용 구성이다([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)).
+이 문서 하나로 AWS dev 환경과 채팅 자동 번역용 Google WIF를 `apply`까지 끝낸다. dev는 매니지드 서비스 대신 **EC2 1대 위 docker-compose**(Caddy·app·MySQL·MongoDB·Redis)로 도는 저비용 구성이다([ADR-0021](../../../../docs/adr/0021-cost-optimization-profile.md)).
 
 **결과물**: 고정 IP(EIP)에 도메인을 붙여 **항상 HTTPS**로 접속되는 앱, 콘텐츠 이미지용 S3 + CloudFront CDN(커스텀 도메인), `release` 브랜치 머지(push) 시 자동 재배포되는 CI/CD 배포 역할.
 
@@ -23,6 +23,7 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
                                                   ├─ mongo:7     (listing·diagnosis)┤ 암호화 EBS /data
                                                   └─ redis:7     (refresh 토큰)     ┘ 에 영속
                                                   └─ 시크릿 ─────▶ SSM Parameter Store(부팅 시 .env 주입, ADR-0023)
+                                                  └─ 채팅 번역 ──▶ AWS 역할 ──WIF──▶ Google 서비스 계정 ──▶ Translation API
 앱 이미지:     백엔드 레포 Actions ──OIDC──▶ ECR(:dev 이동 태그) ──▶ SSM run-command로 EC2 재배포
 임대인 웹:     프론트 레포 Actions ──OIDC──▶ S3(releases/<sha> 불변 + current.txt 포인터)
                                         ──▶ SSM(전용 Document)로 호스트가 내려받아 심볼릭 링크 원자 교체
@@ -36,10 +37,11 @@ prod와 **독립적**이다 — 이 디렉터리만 `apply` 하면 dev가 완결
 | `modules/dev/network` | 미니 VPC·IGW·public subnet |
 | `modules/dev/security` | SG(80/443 + 옵션 DB 포트 3306/27017) |
 | `modules/dev/iam` | 인스턴스 프로파일(SSM·ECR·파라미터·S3 이미지·S3 프론트 릴리스) |
+| `modules/dev/google-wif` | 기존 `kohere-dev-host` 역할을 Google 단기 토큰으로 교환하고 Translation 서비스 계정만 가장하도록 제한 |
 | `modules/dev/web` | 임대인 웹 릴리스 아티팩트 S3(비공개 — `releases/<sha>` 불변 + `current.txt` 포인터) — **항상 생성** |
 | `modules/dev/secrets` | SSM Parameter Store SecureString(앱·DB 시크릿) |
 | `modules/dev/storage` | 데이터 EBS(mysql/mongo 영속) |
-| `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·refresh-env·reconcile-db·deploy-web) |
+| `modules/dev/host` | EC2 + EIP + EBS attach, user_data(compose·Caddyfile·WIF 설정·refresh-env·reconcile-db·deploy-web) |
 | `modules/dev/dns` | Route53 A 레코드(domain→EIP) — **항상 생성**(domain·zone 필수) |
 | `modules/dev/monitoring` | CloudWatch 알람 + SNS → Discord(`discord_webhook_url`, SNS→Lambda) |
 | `modules/shared/s3-cloudfront` | 콘텐츠 이미지 S3 + CloudFront(OAC, 커스텀 도메인 별칭) — **항상 생성** |
@@ -74,6 +76,7 @@ CI/CD 배포 역할(`github_deploy`)은 루트의 `cicd.tf` 가 만든다. GitHu
 | --- | --- | --- |
 | Terraform | **>= 1.10.0** | 필수. S3 native lockfile(`use_lockfile`) 사용 |
 | AWS CLI | v2 | 자격증명·ECR·SSM |
+| Google Cloud CLI | 최신 | Google Terraform Provider용 관리자 ADC 준비 |
 | git | 최신 | 저장소 |
 | Docker | 최신 | 첫 앱 이미지 build/push(4단계) |
 
@@ -92,6 +95,7 @@ winget install Docker.DockerDesktop
 
 ```bash
 brew install terraform awscli git
+brew install --cask gcloud-cli
 brew install --cask docker
 ```
 
@@ -100,6 +104,7 @@ brew install --cask docker
 ```bash
 terraform version   # Terraform v1.10.x 이상
 aws --version       # aws-cli/2.x
+gcloud version      # Google Cloud SDK
 ```
 
 ### 2.4 AWS CLI 자격증명 구성
@@ -129,9 +134,22 @@ aws configure
 aws sts get-caller-identity   # Account / Arn 이 보이면 OK
 ```
 
-### 2.5 필수 입력 체크리스트
+### 2.5 Google Terraform 관리자 인증
 
-apply 전에 아래 5개는 **반드시** 손에 들고 있어야 한다(아래 변수들은 모두 `default` 가 없어 비우면 `plan` 단계에서 `No value for required variable` 로 실패한다).
+Terraform은 WIF Pool·API·IAM 바인딩을 만들기 때문에, 최초 apply를 실행하는 사람에게 Google 프로젝트 관리 권한이 필요하다. 여기서 사용하는 ADC는 **EC2 런타임 서비스 계정 인증과 별개**다.
+
+```bash
+# 프로젝트 Owner 또는 필요한 IAM 관리 역할을 가진 사람 계정으로 로그인한다.
+# 런타임용 kohere 서비스 계정을 --impersonate-service-account로 지정하지 않는다.
+gcloud auth application-default login
+gcloud auth application-default set-quota-project project-bdb9704d-3952-475b-a1c
+```
+
+최소 권한으로 운영한다면 실행자에게 Service Usage Admin, Workload Identity Pool Admin, Service Account Admin과 프로젝트 IAM 변경 권한이 필요하다. 앱이 실제로 실행될 때는 이 사람 계정을 사용하지 않고, EC2의 `kohere-dev-host` 역할이 WIF를 통해 `kohere@...` 서비스 계정의 짧은 토큰만 발급받는다.
+
+### 2.6 필수 입력 체크리스트
+
+apply 전에 아래 7개는 반드시 준비한다. 모두 `default`가 없어 비우면 `plan` 단계에서 실패한다.
 
 | 항목 | 변수 | 준비 방법 |
 | --- | --- | --- |
@@ -140,6 +158,8 @@ apply 전에 아래 5개는 **반드시** 손에 들고 있어야 한다(아래 
 | Route53 호스팅 영역 ID | `route53_zone_id` | 해당 도메인의 **이미 존재하는** 호스팅 영역 Z-ID |
 | 이미지 CDN 도메인 | `cdn_domain_name` | 이미지 서빙용 커스텀 도메인(예: `cdn.dev.kohere.app`) |
 | 이미지 S3 버킷명 | `images_bucket_name` | 콘텐츠 이미지 버킷 이름(S3 전역 유일 — 직접 지정, 자동생성 없음) |
+| Google 프로젝트 ID | `google_cloud_project_id` | Cloud Translation과 WIF를 구성한 프로젝트 ID |
+| 번역 서비스 계정 | `google_translation_service_account_email` | `kohere@...iam.gserviceaccount.com` 형식의 기존 서비스 계정 이메일 |
 
 > **Route53 사전 조건(중요)**: `route53_zone_id` 가 필수이므로 apply 전에 그 호스팅 영역이 계정에 **이미 존재**하고, 도메인 등록·NS 위임이 끝나 있어야 한다. NS 위임이 안 끝났으면 `module.cdn_acm` 의 ACM **DNS 검증이 통과하지 못하고 무한 대기/타임아웃**한다.
 
@@ -201,14 +221,21 @@ terraform init -reconfigure
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-`default` 가 없는 **필수 변수는 `app_image` · `domain_name` · `route53_zone_id` · `cdn_domain_name` · `images_bucket_name` 다섯 개**다. 이 중 하나라도 비우면 `terraform plan` 이 `No value for required variable` 로 실패한다. dev에는 **변수 validation 블록이 없다** — 동반 강제는 별도 검증이 아니라 다섯 변수가 모두 required(default 없음)라서 자연히 함께 채워야 하는 것이다.
+`default`가 없는 필수 변수는 기존 AWS 5개와 Google 2개다. 하나라도 비우면 `terraform plan`이 실패한다.
 
-**예시 `terraform.tfvars`** (`terraform.tfvars.example` 과 동일하게 필수 5개를 모두 채운다):
+- AWS: `app_image`, `domain_name`, `route53_zone_id`, `cdn_domain_name`, `images_bucket_name`
+- Google: `google_cloud_project_id`, `google_translation_service_account_email`
+
+**예시 `terraform.tfvars`** (`terraform.tfvars.example`과 동일하게 필수 값을 모두 채운다):
 
 ```hcl
 aws_region = "ap-northeast-2"
 
-# --- 필수 5개 (default 없음) ---
+# --- Google 채팅 자동 번역(필수, 비밀키 아님) ---
+google_cloud_project_id                   = "project-bdb9704d-3952-475b-a1c"
+google_translation_service_account_email = "kohere@project-bdb9704d-3952-475b-a1c.iam.gserviceaccount.com"
+
+# --- AWS 필수 5개 (default 없음) ---
 # CI가 ECR에 push할 dev 태그 이미지 (account_id 는 본인 것으로)
 app_image          = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:dev"
 # 앱 도메인 + HTTPS(Caddy 자동 인증서, ADR-0022). 항상 Route53 A 레코드(domain→EIP)가 생성된다.
@@ -294,7 +321,7 @@ terraform plan
 terraform apply
 ```
 
-> 첫 apply는 `module.cdn_acm` 의 ACM DNS 검증 때문에 수 분 걸릴 수 있다. NS 위임이 완료된 호스팅 영역이어야 검증이 통과한다(2.5 사전 조건 참고).
+> 첫 apply는 `module.cdn_acm` 의 ACM DNS 검증 때문에 수 분 걸릴 수 있다. NS 위임이 완료된 호스팅 영역이어야 검증이 통과한다(2.6 사전 조건 참고).
 
 주요 output:
 
@@ -303,6 +330,8 @@ terraform apply
 | `app_url` | 앱 접속 URL — **항상 `https://<domain_name>`** |
 | `public_ip` | dev 호스트 EIP(Route53 A 레코드 대상) |
 | `instance_id` | EC2 인스턴스 ID(SSM 접속용) |
+| `google_wif_provider_name` | EC2 역할을 검증하는 Google WIF Provider 전체 이름 |
+| `configure_chat_translation_document` | 기존 EC2에 WIF·번역 설정을 한 번 반영할 SSM Document 이름 |
 | `github_deploy_role_arn` | GitHub Actions가 assume할 배포 역할 ARN → 리포 Variables `AWS_DEPLOY_ROLE_ARN` 에 설정 |
 | `images_bucket` | 콘텐츠 이미지 S3 버킷명 |
 | `images_cdn_domain` | 이미지 서빙 커스텀 도메인(`cdn_domain_name` 별칭, 항상 설정됨) |
@@ -313,6 +342,36 @@ terraform apply
 ```bash
 terraform output github_deploy_role_arn   # 다음 단계에서 사용
 ```
+
+### 7.1 이미 실행 중인 dev EC2에 번역 설정 1회 반영
+
+`user_data`는 새 EC2가 처음 부팅할 때만 실행된다. 따라서 기존 서버는 `terraform apply` 후 아래 전용 SSM Document를 **한 번만** 실행한다. EC2를 교체하지 않으며 app 컨테이너만 다시 만들고 MySQL·MongoDB·Redis·Caddy는 유지한다.
+
+```bash
+INSTANCE_ID=$(terraform output -raw instance_id)
+DOCUMENT_NAME=$(terraform output -raw configure_chat_translation_document)
+
+COMMAND_ID=$(aws ssm send-command \
+  --region ap-northeast-2 \
+  --document-name "$DOCUMENT_NAME" \
+  --instance-ids "$INSTANCE_ID" \
+  --comment "configure Google WIF for chat translation" \
+  --query 'Command.CommandId' \
+  --output text)
+
+aws ssm wait command-executed \
+  --region ap-northeast-2 \
+  --command-id "$COMMAND_ID" \
+  --instance-id "$INSTANCE_ID"
+
+aws ssm get-command-invocation \
+  --region ap-northeast-2 \
+  --command-id "$COMMAND_ID" \
+  --instance-id "$INSTANCE_ID" \
+  --query '{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}'
+```
+
+`Status`가 `Success`이면 `/opt/kohere/google-wif-credentials.json` 생성, Docker 읽기 전용 마운트, 번역 환경변수, app 재생성이 모두 끝난 것이다. 새로 만든 EC2는 부팅 과정에서 자동 적용되므로 이 명령이 필요 없다.
 
 ---
 
@@ -383,6 +442,11 @@ sudo cat /var/log/devhost-init.log
 
 # 4) 컨테이너 상태 — app/mysql/mongo/redis/caddy 가 Up 이어야 함
 cd /opt/kohere && sudo docker compose ps
+
+# 5) WIF 파일과 번역 환경변수 확인 — 파일 내용이나 토큰은 출력하지 않는다.
+sudo test -r /opt/kohere/google-wif-credentials.json && echo "WIF 설정 파일 확인"
+sudo docker inspect kohere-app --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|APP_CHAT_TRANSLATION_)'
 ```
 
 > `public_ip` 로 직접(`https://<IP>`) 접속하면 인증서가 도메인용이라 브라우저 경고가 뜬다 — 정상 접속 경로는 `app_url`(HTTPS) 이다. app만 빠져 있으면 보통 ECR에 `:dev` 이미지가 없는 것이다(6단계 대안 B). CI 배포를 한 번 돌리면 채워진다. SMTP(`smtp_host`)를 비워 둔 경우 이메일 인증 플로우는 dev에서 동작하지 않는다(dev엔 MailHog 등 로컬 SMTP가 없다). 마찬가지로 `naver_search_client_id`/`naver_search_client_secret` 를 비워 두면 지도 장소 검색(`GET /api/v1/listings/places`)이 502(`UPSTREAM_ERROR`)로 실패한다 — 키를 채우고 재배포하면 반영된다.
@@ -405,7 +469,10 @@ cd /opt/kohere && sudo docker compose ps
 | 증상 | 조치 |
 | --- | --- |
 | user_data 실패 / app 미기동 | `aws ssm start-session` 으로 접속 → `sudo cat /var/log/devhost-init.log` 확인 → `cd /opt/kohere && sudo docker compose ps`. 이미지 부재면 6단계, 시크릿이면 `sudo cat /opt/kohere/.env`(주의) 확인 후 재배포 |
-| `terraform apply` 가 ACM 검증에서 멈춤/타임아웃 | `route53_zone_id` 호스팅 영역의 NS 위임 미완료. 도메인 등록·NS 위임을 끝낸 뒤 재시도(2.5 참고) |
+| `terraform apply` 가 ACM 검증에서 멈춤/타임아웃 | `route53_zone_id` 호스팅 영역의 NS 위임 미완료. 도메인 등록·NS 위임을 끝낸 뒤 재시도(2.6 참고) |
+| Google Provider가 `403`으로 WIF/API/IAM 생성을 거부 | 런타임 서비스 계정을 impersonate한 ADC가 아니라 프로젝트 관리 권한이 있는 사람 ADC로 `gcloud auth application-default login` 후 재시도 |
+| 앱 번역 결과가 `GOOGLE_PERMISSION_DENIED` | SSM 1회 반영 성공 여부, 서비스 계정의 `roles/cloudtranslate.user`, WIF principalSet의 역할 이름이 `kohere-dev-host`인지 확인 |
+| 컨테이너에서 EC2 자격증명을 읽지 못함 | `aws ec2 describe-instances`로 `HttpPutResponseHopLimit=2`인지 확인하고, Terraform apply가 끝났는지 확인 |
 | `release` 브랜치 머지했는데 배포가 안 됨 | `AWS_DEPLOY_ROLE_ARN` Variable이 비면 deploy 런이 첫 스텝(`Verify required repo variable`)에서 **에러로 실패**한다(`::error::` 메시지). Variables 탭에 설정 |
 | `cicd.tf` OIDC provider lookup 실패 | bootstrap이 OIDC provider를 아직 안 만들었다. **1단계 bootstrap을 먼저 apply** 하면 생성된다(provider는 bootstrap 단일 소유) |
 | 디스크에 dangling 이미지 누적 | 배포는 `:dev` 이동 태그를 덮어써 옛 이미지가 dangling된다. 배포 워크플로가 `docker image prune -f` 로 정리하지만, 수동 정리는 SSM 세션에서 `sudo docker image prune -f` |
