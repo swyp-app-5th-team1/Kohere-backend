@@ -4,6 +4,7 @@ import com.kohere.user.domain.User;
 import com.kohere.user.domain.UserRepository;
 import com.kohere.user.domain.UserStatus;
 import com.kohere.user.domain.UserType;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
@@ -28,6 +29,21 @@ public class UserRepositoryImpl implements UserRepository {
    * UserRepository#findActiveLandlordIdByPhoneNumberForUpdate} 참조. 조건의 {@code ACTIVE}·{@code
    * LANDLORD}는 여기서 상수로 고정한다(호출자가 바꿀 수 있는 값이 아니라 연동 규칙이다).
    */
+  /**
+   * 이메일 찾기용 읽기 조회 — 잠금 없이 {@code ACTIVE} + ({@code LANDLORD}·{@code ADMIN})를 모아 식별자만 남긴다. 두 역할을 함께
+   * 보는 이유와 다건이 정상인 이유는 포트 {@link
+   * com.kohere.user.domain.UserRepository#findActiveWebUserIdsByPhoneNumber} 참조.
+   */
+  @Override
+  public List<Long> findActiveWebUserIdsByPhoneNumber(String phoneNumber) {
+    return jpaRepository
+        .findByPhoneNumberAndStatusAndUserTypeIn(
+            phoneNumber, UserStatus.ACTIVE, List.of(UserType.LANDLORD, UserType.ADMIN))
+        .stream()
+        .map(UserJpaEntity::getId)
+        .toList();
+  }
+
   @Override
   public Optional<Long> findActiveLandlordIdByPhoneNumberForUpdate(String phoneNumber) {
     return jpaRepository

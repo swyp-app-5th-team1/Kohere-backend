@@ -1,5 +1,6 @@
 package com.kohere.user.domain;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -37,6 +38,21 @@ public interface UserRepository {
    */
   Optional<User> findActiveLandlordByPhoneNumberExcludingForUpdate(
       String phoneNumber, long excludedUserId);
+
+  /**
+   * 인증된 휴대폰 번호로 <b>웹 로그인이 가능한 계정 후보</b>를 찾는다 — 이메일 찾기(US-1-16)의 첫 홉이며 <b>잠금을 걸지 않는다</b>.
+   *
+   * <p>위 두 {@code ForUpdate} 조회와 이름을 다르게 두는 것은 의도다 — 그쪽은 check-then-act 앞단 전용이라 잠금이 호출부의 정합성 전제이고,
+   * 이쪽은 permitAll 순수 조회라 잠금을 걸면 <b>익명 호출자가 남의 행을 붙잡는</b> 표면이 된다.
+   *
+   * <p><b>{@code ADMIN}도 대상에 넣는다.</b> 운영자 계정은 임대인 웹 가입으로 만든 뒤 수동 승격한 것이라 로그인 경로가 임대인과 완전히 같은데, 역할을
+   * {@code LANDLORD}로 고정하면 관리자가 로그인 ID를 잊었을 때 복구 수단이 하나도 없다. 그 결과 같은 번호로 두 행이 잡힐 수 있어 반환이 {@code
+   * List}이며, 그중 무엇을 고를지는 <b>웹 자격증명이 붙어 있는지</b>로 호출부(auth)가 판정한다.
+   *
+   * @param phoneNumber 숫자만 남긴 표준형 번호
+   * @return 조건을 만족하는 회원 식별자들(없으면 빈 목록)
+   */
+  List<Long> findActiveWebUserIdsByPhoneNumber(String phoneNumber);
 
   /** 닉네임 전역 유니크 충돌 검사용(NicknameGenerator). */
   boolean existsByNickname(String nickname);

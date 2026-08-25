@@ -25,8 +25,8 @@ import org.springframework.util.StringUtils;
  *
  * <p><b>다만 두 단위가 완전히 같아지지는 않는다.</b> {@code local_accounts}는 {@code utf8mb4} 기본 콜레이션({@code
  * utf8mb4_0900_ai_ci})이라 대소문자뿐 아니라 <b>악센트도 구분하지 않아</b> {@code usér@x.com}이 {@code user@x.com} 행을
- * 찾는데, 소문자 접기만으로는 그 둘이 다른 버킷에 떨어진다. 그래서 이메일 한도는 <b>정확한 상한이 아니라 근사</b>다 — 실질 방어는 5회 실패 잠금이 먼저 걸어
- * 닫는다(잠긴 계정은 해시 대조 전에 423으로 끊긴다). 정확한 상한이 필요해지면 키를 DB 콜레이션과 같은 방식(NFD 정규화 후 결합 문자 제거)으로 접어야 한다.
+ * 찾는데, 소문자 접기만으로는 그 둘이 다른 버킷에 떨어진다. 그래서 이메일 한도는 <b>정확한 상한이 아니라 근사</b>다 — 실질 방어는 실패 잠금이 먼저 걸어 닫는다(잠긴
+ * 계정은 해시 대조 전에 423으로 끊긴다). 정확한 상한이 필요해지면 키를 DB 콜레이션과 같은 방식(NFD 정규화 후 결합 문자 제거)으로 접어야 한다.
  *
  * <p>카운터는 TTL로 사라지므로 키에 실린 이메일·IP도 1시간을 넘겨 남지 않는다. 비밀번호는 어디에도 닿지 않는다.
  */
@@ -75,5 +75,17 @@ public class RedisLoginAttemptRateLimiter implements LoginAttemptRateLimiter {
       redis.expire(key, WINDOW);
     }
     return count > maxPerHour;
+  }
+
+  /**
+   * 이메일 축 카운터 삭제(멱등). 키를 만드는 규칙은 {@link #recordAttempt}와 <b>같은 한 줄</b>이어야 한다 — 한쪽만 {@code
+   * toLowerCase}를 빠뜨리면 지운다고 부른 키가 실제로 세고 있던 키와 달라 아무 일도 일어나지 않고, 사용자는 재설정을 마치고도 429를 맞는다.
+   */
+  @Override
+  public void clearEmailCounter(String email) {
+    if (!StringUtils.hasText(email)) {
+      return;
+    }
+    redis.delete(EMAIL_PREFIX + email.toLowerCase(Locale.ROOT));
   }
 }

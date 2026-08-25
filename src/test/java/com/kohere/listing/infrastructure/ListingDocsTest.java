@@ -52,6 +52,8 @@ import static com.kohere.docs.ListingV1DocsFields.emptyPageResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.emptyRecentListingsResponseFields;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
@@ -162,6 +164,9 @@ class ListingDocsTest {
   /** REST Docs용 MockMvc를 만들고, 문서 예시에 사용할 v4 정본 시드(매물 2건 + 번역 사전)를 매번 초기화한다. */
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) throws Exception {
+    // 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돈다. userType 을 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 경로에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())

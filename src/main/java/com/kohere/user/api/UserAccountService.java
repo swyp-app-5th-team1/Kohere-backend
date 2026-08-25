@@ -1,5 +1,6 @@
 package com.kohere.user.api;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -64,6 +65,23 @@ public interface UserAccountService {
    * @return 매칭된 회원 식별자. 없으면 비어 있음(신규 가입 경로)
    */
   Optional<Long> findActiveLandlordIdByPhoneNumber(String normalizedPhoneNumber);
+
+  /**
+   * 인증된 휴대폰 번호로 <b>웹 로그인이 가능한 계정 후보</b>를 찾는다(이메일 찾기 US-1-16). 위 조회와 달리 <b>잠금을 걸지 않는 읽기 전용</b>이며 역할도
+   * {@code LANDLORD} 하나가 아니라 {@code ADMIN}까지 포함한다.
+   *
+   * <p><b>왜 기존 조회를 재사용하지 않는가</b> — 그쪽은 {@code SELECT … FOR UPDATE}이고 구현 트랜잭션도 읽기 전용이 아니다. 이메일 찾기는
+   * <b>인증되지 않은 호출자</b>가 부르는 permitAll 순수 조회라, 그대로 쓰면 익명 호출자가 임의 번호로 {@code users} 행에 쓰기 잠금을 걸어 그
+   * 사람의 가입·온보딩·병합 트랜잭션과 락 경합을 유발할 수 있다.
+   *
+   * <p><b>왜 다건인가</b> — {@code uq_users_phone_number}가 V28에서 {@code (user_type, phone_number)} 복합
+   * 유니크가 되어 같은 번호로 {@code LANDLORD}·{@code ADMIN} 두 행이 정상적으로 공존할 수 있다. 그중 무엇이 웹 로그인 계정인지는 <b>{@code
+   * local_accounts} 행이 붙어 있는지</b>로 갈리는데 그 판정은 {@code auth}가 소유하므로, 여기서는 후보만 돌려주고 고르지 않는다.
+   *
+   * @param normalizedPhoneNumber 숫자만 남긴 표준형 번호. 구현이 방어적으로 한 번 더 접는다(멱등)
+   * @return 조건을 만족하는 회원 식별자들(없으면 빈 목록)
+   */
+  List<Long> findActiveWebUserIdsByPhoneNumber(String normalizedPhoneNumber);
 
   /**
    * 인증된 휴대폰 번호로 <b>병합할 웹 계정</b>을 찾는다(앱 임대인 온보딩 US-1-15 전용). 위 조회와 조건·잠금이 같고 <b>{@code

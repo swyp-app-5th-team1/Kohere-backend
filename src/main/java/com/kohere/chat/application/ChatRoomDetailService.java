@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomDetailService {
 
   private final ChatRoomRepository chatRoomRepository;
+  private final AppUserGuard appUserGuard;
   private final ChatRoomMemberRepository memberRepository;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
@@ -42,6 +43,7 @@ public class ChatRoomDetailService {
    */
   @Transactional(readOnly = true)
   public ChatRoomDetailResponse getRoom(long userId, long roomId) {
+    appUserGuard.requireAppUser(userId);
     // member 행부터 확인하면 제3자의 요청은 공유 채팅방 정보 자체를 읽기 전에 중단된다.
     ChatRoomMember member = visibleMember(roomId, userId);
     ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow(ChatRoomNotFoundException::new);

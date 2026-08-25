@@ -21,7 +21,7 @@ sequenceDiagram
     C->>SEC: POST /api/v1/auth/signup<br/>{ name, birthDate, phoneNumber, email, password,<br/>termsOfServiceAgreed, privacyPolicyAgreed, marketingAgreed }
     Note over SEC: permitAll 경로 — 가입 전이라 토큰이 없다<br/>SecurityConfig 공개 티어와 PublicPaths.ALL에 함께 등록
     SEC->>AUTH: 인증 주체 없이 요청 전달
-    Note over AUTH: Bean Validation — 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상,<br/>길이 8~10, 공백 불허. 위반 시 400 INVALID_INPUT (errors 배열에 field=password)
+    Note over AUTH: Bean Validation — 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상,<br/>길이 8~20, 공백 불허. 위반 시 400 INVALID_INPUT (errors 배열에 field=password)
     Note over AUTH,SQL: 아래 MySQL 쓰기는 한 트랜잭션이다 — 어느 단계에서 실패해도 함께 롤백한다<br/>users만 생기고 local_accounts가 없는(로그인 불가) 계정도,<br/>자격증명만 뜬 계정도 남기지 않는다<br/>단 아래 Redis 두 단계는 이 보장 밖이다(각 단계 주석 참조)
     Note over AUTH: phoneNumber 정규화(숫자만 남김)
     AUTH->>RDS: signup-phone:verified:{정규화번호} 조회
@@ -82,7 +82,7 @@ sequenceDiagram
 ## 흐름 요약
 
 - **`POST /api/v1/auth/signup`은 permitAll이다.** 가입 전이라 토큰이 없으므로 `SecurityConfig` 공개 티어와 [`PublicPaths.ALL`](../../../../src/main/java/com/kohere/common/security/PublicPaths.java)에 **함께** 등록한다(한쪽만 등록하면 만료 토큰을 든 브라우저가 가입에서 401을 맞는다). 필터는 주체를 세우지 않고 그대로 통과시킨다.
-- **본문 검증은 게이트보다 먼저, Bean Validation이 끝낸다.** 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상 · 길이 8~10 · 공백 불허이며 위반 시 `400 INVALID_INPUT`(`errors[].field=password`)이고, `name`·`phoneNumber` 누락과 `email`·`birthDate` 형식 위반도 같은 `400`이다(부수효과 없음). 검증을 통과한 뒤의 게이트·상태 전이·INSERT는 **전부 한 트랜잭션**이라 어느 단계에서 실패해도 전체 롤백한다 — `users`만 생기고 `local_accounts`가 없는(로그인 불가) 계정도, 자격증명만 뜬 계정도 남기지 않는다.
+- **본문 검증은 게이트보다 먼저, Bean Validation이 끝낸다.** 비밀번호는 영문자·숫자·ASCII 특수문자 각 1자 이상 · 길이 8~20 · 공백 불허이며 위반 시 `400 INVALID_INPUT`(`errors[].field=password`)이고, `name`·`phoneNumber` 누락과 `email`·`birthDate` 형식 위반도 같은 `400`이다(부수효과 없음). 검증을 통과한 뒤의 게이트·상태 전이·INSERT는 **전부 한 트랜잭션**이라 어느 단계에서 실패해도 전체 롤백한다 — `users`만 생기고 `local_accounts`가 없는(로그인 불가) 계정도, 자격증명만 뜬 계정도 남기지 않는다.
 - **게이트 순서는 인증 마커 → 약관 → 이메일 중복 → 번호 매칭이다.** 정규화한 번호로 Redis 마커(`signup-phone:verified:{정규화번호}`)를 먼저 확인해 없으면 `422 AUTH_PHONE_NOT_VERIFIED`로 끊고 **계정 생성도 연동도 하지 않는다** — 번호는 *조회 키*이지 *인증 수단*이 아니며, 소유 증명은 [US-1-13](us-1-13-signup-phone-verification.md)이 전담한다. 이어 필수 약관 2종(`termsOfServiceAgreed`·`privacyPolicyAgreed`)이 모두 `true`가 아니면 `422 AUTH_REQUIRED_AGREEMENT_MISSING`이다(`marketingAgreed`는 선택).
 - **이메일 중복은 `local_accounts.email`만 본다.** 이메일은 **연동 키가 아니라 웹 로그인 ID**여서 유일해야 하지만, `users.email`은 소셜 provider 진본이고 로그인 판정에 쓰이지 않는다(소셜은 `(provider, provider_user_id)`로 판정한다). `users.email`까지 검사하면 **본인이 본인 소셜 이메일로 가입하려다 409**를 맞는 가장 흔한 정상 경로가 막힌다. `users.email`에 UNIQUE를 걸지 않는 것도 같은 이유다. 그 반대급부로 **남의 소셜 이메일과 같은 주소로 웹 가입하는 것은 막히지 않으며**(`users.email`이 같은 사용자가 둘 생길 수 있다) 이는 수용한 제약이다 — 매물·예약은 `user_id`로 갈려 섞이지 않고, 이메일은 웹 로그인 ID일 뿐 계정 복구 수단이 아니라 탈취 경로가 되지 않는다.
 - **연동 판정은 `SELECT ... FOR UPDATE`로 대상 행을 잠근 뒤 수행한다.** 조건은 정규화 번호 + `status='ACTIVE'` + `user_type='LANDLORD'`이며, 뒤 두 조건은 지금은 중복이지만(번호가 채워진 계정은 사실상 `ACTIVE` 임대인뿐이다) **암묵 불변식에 기대지 않기 위해 명시**한다.

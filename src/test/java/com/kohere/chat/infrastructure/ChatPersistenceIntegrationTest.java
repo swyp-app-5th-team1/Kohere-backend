@@ -2,6 +2,7 @@ package com.kohere.chat.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 
 import com.kohere.chat.application.ChatMessageHistoryService;
@@ -35,6 +36,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -61,6 +63,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 @Import({
+  // 슬라이스 컨텍스트는 @Component 를 스캔하지 않는다. 게이트를 쓰는 서비스를 import 하면 이것도 함께 필요하다.
+  com.kohere.chat.application.AppUserGuard.class,
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
   MessageRepositoryImpl.class,
@@ -112,6 +116,17 @@ class ChatPersistenceIntegrationTest {
 
   /** 저장 직후 1차 캐시를 비워 JSON과 UUID를 실제 MySQL 행에서 다시 읽는 데 사용한다. */
   @Autowired private EntityManager entityManager;
+
+  /**
+   * 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돌므로 회원 유형을 채운다.
+   *
+   * <p>{@code userType}을 스텁하지 않으면 mock이 {@code null}을 돌려줘 관리자와 구분되지 않고 403이 난다 — 이 테스트의 관심사인 저장
+   * 원자성에 닿기도 전에 끊긴다. 채팅 참여자는 세입자다.
+   */
+  @BeforeEach
+  void stubUserType() {
+    given(userAccountService.getUserType(anyLong())).willReturn("TENANT");
+  }
 
   /** 방·두 참여자·두 메시지를 저장한 뒤 JSON, UUID와 cursor 정렬까지 손실 없이 복원되는지 확인한다. */
   @Test

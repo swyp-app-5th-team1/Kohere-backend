@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomBlockService {
 
   private final ChatRoomRepository chatRoomRepository;
+  private final AppUserGuard appUserGuard;
   private final ChatRoomMemberRepository memberRepository;
   private final UserBlockService userBlockService;
 
@@ -36,6 +37,7 @@ public class ChatRoomBlockService {
    */
   @Transactional
   public void blockCounterpart(long blockerId, long roomId) {
+    appUserGuard.requireAppUser(blockerId);
     // 방 존재 확인과 동시 TEXT 저장의 순서를 한곳에서 정하기 위해 메시지 저장과 같은 room 잠금을 사용한다.
     chatRoomRepository.findByIdForUpdate(roomId).orElseThrow(ChatRoomNotFoundException::new);
 

@@ -36,6 +36,8 @@ class ChatRoomDeletionServiceTest {
   private static final long LANDLORD_ID = 42L;
   private static final long LAST_MESSAGE_ID = 501L;
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
 
@@ -43,7 +45,7 @@ class ChatRoomDeletionServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new ChatRoomDeletionService(chatRoomRepository, memberRepository);
+    service = new ChatRoomDeletionService(chatRoomRepository, appUserGuard, memberRepository);
   }
 
   /** 요청자 행만 숨기고 방의 현재 마지막 메시지를 개인 이력 경계로 저장한다. */

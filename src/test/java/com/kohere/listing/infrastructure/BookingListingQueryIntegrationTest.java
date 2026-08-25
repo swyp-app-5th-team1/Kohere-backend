@@ -50,6 +50,10 @@ class BookingListingQueryIntegrationTest {
 
   private static final String LISTING_ID = "6858e2000000000000000002";
   private static final String ROOM_OFFER_ID = "6858e2000000000000000102";
+
+  /** 저장 불변식(활성 방 1개 이상)을 만족시키려고 함께 두는 다른 방이다. */
+  private static final String OTHER_ROOM_OFFER_ID = "6858e2000000000000000103";
+
   private static final String LISTINGS_COLLECTION = "listings";
 
   @Container @ServiceConnection static MongoDBContainer mongo = new MongoDBContainer("mongo:7.0");
@@ -98,7 +102,7 @@ class BookingListingQueryIntegrationTest {
   @Test
   @DisplayName("공개 상태(PUBLISHED)가 아니면 빈 값")
   void emptyWhenListingNotPublished() {
-    listingRepository.save(listingBuilder().status(Listing.ListingStatus.PAUSED).build());
+    listingRepository.save(listingBuilder().status(Listing.ListingStatus.REJECTED).build());
 
     assertThat(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .isEmpty();
@@ -107,6 +111,7 @@ class BookingListingQueryIntegrationTest {
   @Test
   @DisplayName("방 상품이 비활성(INACTIVE)이면 빈 값")
   void emptyWhenRoomOfferInactive() {
+    // 저장 불변식이 활성 방 1개 이상을 요구하므로 대상 방만 비활성으로 둔다.
     listingRepository.save(
         listingBuilder()
             .roomOffers(
@@ -116,7 +121,13 @@ class BookingListingQueryIntegrationTest {
                         "스탠다드 1인실",
                         Listing.RoomOfferStatus.INACTIVE,
                         500000,
-                        550000)))
+                        550000),
+                    roomOffer(
+                        OTHER_ROOM_OFFER_ID,
+                        "스탠다드 2인실",
+                        Listing.RoomOfferStatus.ACTIVE,
+                        600000,
+                        650000)))
             .build());
 
     assertThat(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
@@ -150,6 +161,7 @@ class BookingListingQueryIntegrationTest {
         .landlordId(1L)
         .contact(new Listing.Contact("김담당", "+82) 10-1111-2222"))
         .businessRegistrationNumber("1112233344")
+        .consents(new Listing.Consents(true, true, "v1.0", Instant.parse("2026-06-24T00:00:00Z")))
         .blogUrl(null)
         .ageMin(20)
         .ageMax(35)

@@ -108,6 +108,12 @@
     "label": { "ko": "개별난방", "en": "Individual Heating" }
   },
   {
+    "_id": "HEATING_SYSTEM:NONE",
+    "category": "HEATING_SYSTEM",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
+  },
+  {
     "_id": "LAUNDRY:WASHER",
     "category": "LAUNDRY",
     "code": "WASHER",
@@ -130,6 +136,12 @@
     "category": "LAUNDRY",
     "code": "IRON",
     "label": { "ko": "다리미", "en": "Iron" }
+  },
+  {
+    "_id": "LAUNDRY:NONE",
+    "category": "LAUNDRY",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
   },
   {
     "_id": "KITCHEN:SHARED_REFRIGERATOR",
@@ -186,6 +198,12 @@
     "label": { "ko": "정수기", "en": "Water Purifier" }
   },
   {
+    "_id": "KITCHEN:NONE",
+    "category": "KITCHEN",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
+  },
+  {
     "_id": "LIVING_AMENITY:WIFI",
     "category": "LIVING_AMENITY",
     "code": "WIFI",
@@ -234,6 +252,12 @@
     "label": { "ko": "공용 PC", "en": "Shared PC" }
   },
   {
+    "_id": "LIVING_AMENITY:NONE",
+    "category": "LIVING_AMENITY",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
+  },
+  {
     "_id": "SECURITY_FEATURE:CCTV",
     "category": "SECURITY_FEATURE",
     "code": "CCTV",
@@ -268,6 +292,12 @@
     "category": "SECURITY_FEATURE",
     "code": "SECURITY_GUARD",
     "label": { "ko": "경비원", "en": "Security Guard" }
+  },
+  {
+    "_id": "SECURITY_FEATURE:NONE",
+    "category": "SECURITY_FEATURE",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
   },
   {
     "_id": "COMMON_SPACE:SHARED_KITCHEN",
@@ -312,6 +342,12 @@
     "label": { "ko": "옥상", "en": "Rooftop" }
   },
   {
+    "_id": "COMMON_SPACE:NONE",
+    "category": "COMMON_SPACE",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
+  },
+  {
     "_id": "PROVIDED_SUPPLY:BEDDING",
     "category": "PROVIDED_SUPPLY",
     "code": "BEDDING",
@@ -346,6 +382,12 @@
     "category": "PROVIDED_SUPPLY",
     "code": "TOWEL",
     "label": { "ko": "수건", "en": "Towel" }
+  },
+  {
+    "_id": "PROVIDED_SUPPLY:NONE",
+    "category": "PROVIDED_SUPPLY",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
   },
   {
     "_id": "CONDITION_TAG:MOVE_IN_NOW",
@@ -414,12 +456,6 @@
     "label": { "ko": "일본어", "en": "Japanese" }
   },
   {
-    "_id": "SUPPORTED_LANGUAGE:OTHER",
-    "category": "SUPPORTED_LANGUAGE",
-    "code": "OTHER",
-    "label": { "ko": "기타", "en": "Other" }
-  },
-  {
     "_id": "NEARBY_FACILITY:CONVENIENCE_STORE",
     "category": "NEARBY_FACILITY",
     "code": "CONVENIENCE_STORE",
@@ -448,6 +484,12 @@
     "category": "NEARBY_FACILITY",
     "code": "LAUNDROMAT",
     "label": { "ko": "세탁소", "en": "Laundromat" }
+  },
+  {
+    "_id": "NEARBY_FACILITY:NONE",
+    "category": "NEARBY_FACILITY",
+    "code": "NONE",
+    "label": { "ko": "없음", "en": "None" }
   },
   {
     "_id": "CITY:SEOUL",

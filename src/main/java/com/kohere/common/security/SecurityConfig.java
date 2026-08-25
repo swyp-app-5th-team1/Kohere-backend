@@ -74,6 +74,21 @@ public class SecurityConfig {
                     // PublicPaths.ALL에도 같은 두 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
                     .requestMatchers(HttpMethod.POST, "/api/v1/auth/signup", "/api/v1/auth/login")
                     .permitAll()
+                    // 임대인 웹 계정 복구(US-1-16·US-1-17, #272) — 로그인 ID를 모르거나 비밀번호를 잊어
+                    // "로그인하지 못해서" 들어오는 자리라 주체가 없다. 여섯 경로 모두 POST이며, 재설정 링크가
+                    // 겨누는 곳은 백엔드가 아니라 SPA 페이지다 — GET 링크형 엔드포인트를 만들면 SameSite=Lax가
+                    // top-level GET 내비게이션에 쿠키를 실어 csrf.disable() 전제가 그 자리에서 깨진다.
+                    // PublicPaths.ALL에도 같은 여섯 경로를 등록해야 한다(만료 토큰 401 방지 — #181).
+                    // 이 화면들은 "로그인이 안 돼서 오는" 자리라 만료 토큰이 남아 있을 확률이 가장 높다.
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/auth/phone/find-email/verification-code",
+                        "/api/v1/auth/phone/find-email/verify",
+                        "/api/v1/auth/email/find",
+                        "/api/v1/auth/password/reset-link",
+                        "/api/v1/auth/password/reset-token/verify",
+                        "/api/v1/auth/password/reset")
+                    .permitAll()
                     // WebSocket handshake는 통로만 만드는 HTTP upgrade 요청이다. 실제 사용자는 직후
                     // STOMP CONNECT의 Bearer JWT로 다시 인증하므로 이 한 경로만 공개한다.
                     .requestMatchers("/actuator/health", "/swagger-ui/**", "/ws/chat")
@@ -120,6 +135,18 @@ public class SecurityConfig {
                     // 세입자 이메일 인증은 온보딩 완료 후 호출하는 API라 정식 토큰 전용이다(#192).
                     .requestMatchers("/api/v1/users/me")
                     .hasRole("USER")
+                    // 관리자 매물 심사 — ACTIVE(ROLE_USER)만 통과시키고 userType=ADMIN 여부는
+                    // 서비스에서 재검사한다(403). 임대인 게이트와 같은 이중 인가이며, 토큰에
+                    // 관리자 여부를 담지 않으므로 권한 회수가 즉시 반영된다.
+                    // 명시하지 않으면 anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING
+                    // 토큰이 컨트롤러까지 도달한다.
+                    .requestMatchers("/api/v1/admin/**")
+                    .hasRole("USER")
+                    // 커뮤니티 — 지금까지 명시 매처가 없어 anyRequest().authenticated()로 떨어져
+                    // 있었다(온보딩 토큰이 컨트롤러에 닿는다). 관리자 차단은 서비스의 허용 목록
+                    // 게이트가 하지만, 온보딩 토큰이 새는 것은 여기서 막는 것이 맞다.
+                    .requestMatchers("/api/v1/community/**")
+                    .hasRole("USER")
                     .requestMatchers(
                         HttpMethod.POST,
                         "/api/v1/auth/email/verification-code",
@@ -148,6 +175,16 @@ public class SecurityConfig {
                         "/api/v1/users/me/recent-listings",
                         "/api/v2/users/me/favorites",
                         "/api/v2/users/me/recent-listings")
+                    .hasRole("USER")
+                    // 임대인 「내 매물」 조회 — 정확 경로 나열이라 자동으로 덮이지 않는다. 이 경로를
+                    // /api/v2/listings/mine에 두면 위의 GET /api/v2/listings/* permitAll에 먼저 걸려
+                    // 비로그인에 열린다. 임대인 여부와 소유권은 서비스에서 재검사한다(403/404).
+                    .requestMatchers(
+                        HttpMethod.GET, "/api/v2/users/me/listings", "/api/v2/users/me/listings/*")
+                    .hasRole("USER")
+                    // 매물 수정 — GET 한정 permitAll에 걸리지 않지만, 명시하지 않으면
+                    // anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING 토큰이 컨트롤러까지 닿는다.
+                    .requestMatchers(HttpMethod.PUT, "/api/v2/listings/*")
                     .hasRole("USER")
                     // 매물 예약(신청) — ACTIVE(ROLE_USER) 세입자만. TENANT 여부는 서비스에서 재검사한다.
                     .requestMatchers(HttpMethod.POST, "/api/v1/listings/*/bookings")

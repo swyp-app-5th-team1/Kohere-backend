@@ -13,7 +13,7 @@
 
 | 모듈 | 스토어 | 테이블/컬렉션(키스페이스) | MVP |
 | --- | --- | --- | --- |
-| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
+| [`auth`](#4-1-auth) | **Redis** + **MySQL** | `refresh:{tokenHash}`·`refresh:user:{userId}`·`email-verify:code:{userId}`·`email-verify:verified:{userId}`·`phone-verify:code:{userId}`·`phone-verify:verified:{userId}`·`signup-phone:code:{정규화번호}`·`signup-phone:verified:{정규화번호}`·`signup-phone:rate:phone:{정규화번호}`·`signup-phone:rate:ip:{IP}`(가입용 SMS 인증·레이트리밋)·`find-email:code:{정규화번호}`·`find-email:verified:{정규화번호}`·`find-email:rate:phone:{정규화번호}`·`find-email:rate:ip:{IP}`(이메일 찾기, US-1-16)·`pwd-reset:{tokenHash}`·`pwd-reset:rate:email:{소문자이메일}`·`pwd-reset:rate:ip:{IP}`(비밀번호 재설정=잠금 해제, US-1-17) / `social_accounts`·`local_accounts`(웹 로컬 자격증명) | ✅ |
 | [`user`](#4-2-user) | **MySQL** | `users`·`user_blocks`(사용자 차단, US-4-8)·`countries`·`nickname_adjectives`·`nickname_nouns` | ✅ |
 | [`listing`](#4-3-listing) | **MongoDB** | `listings`·`favorites`·`recentListings` | ✅ |
 | [`diagnosis`](#4-4-diagnosis) | **MongoDB** | `diagnoses`(제출 결과)·`diagnosisQuestions`(문항·선택지 카탈로그)·`diagnosisSuggestions`(추천 조정 제안)·`diagnosisFlowSessions`(v2 서버 주도 진행 세션) — 인라인 언어-키 맵 번역, US-2-5·US-2-6·US-2-7 | ✅ |
@@ -46,7 +46,7 @@
 | 식별자 | MySQL `id BIGINT PK AUTO_INCREMENT` · Mongo `_id ObjectId` · Redis 키 자체 | 외부 노출 식별자는 store별 네이티브 타입을 따른다. **예외: `diagnoses._id`는 ObjectId가 아니라 Long 순번**(`diagnosisSequences` 카운터 채번 — §4-4) |
 | 생성시각 | 전 애그리거트 `created_at`/`createdAt`(또는 의미상 `submitted_at` 등) (UTC) | MySQL `DATETIME(6)` / Mongo ISODate |
 | 수정시각 | **가변** 애그리거트 `updated_at`/`updatedAt` | `user`·`listings`·`posts` 등 |
-| 소프트삭제 | **`community`만** `deleted`+`deleted_at` · **예외: `booking`은 참여자별** `tenant_deleted_at`+`landlord_deleted_at`(아래 註) | 그 외는 상태 enum으로 표현(`user.status=WITHDRAWN`, `listing.status=DELETED/PAUSED`, `booking.status=CANCELED`=취소 — 단 취소는 **삭제가 아니다**, 아래 註) |
+| 소프트삭제 | **`community`만** `deleted`+`deleted_at` · **예외: `booking`은 참여자별** `tenant_deleted_at`+`landlord_deleted_at`(아래 註) | 그 외는 상태 enum으로 표현(`user.status=WITHDRAWN`, `listing.status`=심사 상태 4종(`PENDING`/`PUBLISHED`/`REJECTED`/`UPDATE_PENDING`)뿐이라 **삭제·중지를 뜻하는 값이 없다**, `booking.status=CANCELED`=취소 — 단 취소는 **삭제가 아니다**, 아래 註) |
 
 - **`booking` 참여자별 소프트삭제 예외(#169 · US-4-7)**: 위 규약("소프트삭제는 `community`만, 그 외는 상태 enum")의 **유일한 예외**다. `bookings`는 세입자(`tenant_id`)와 임대인(`landlord_id`)이 **공유하는 1행**이라 단일 `deleted` flag로는 "누구의 목록에서 숨겼는가"를 표현할 수 없다 — 한쪽이 지우면 상대의 예약 기록까지 함께 사라지는 **데이터 손실**이 된다. 공유 필드인 `status`도 같은 이유로 못 쓴다(`status=CANCELED`는 **예약 취소**라는 별개 사실이지 "내 목록에서 숨김"이 아니고, 취소를 포함한 상태 전이 자체가 현재 미구현이라 생성 시 `REQUESTED` 고정이다 — §4-5). 그래서 `booking`만 **참여자별 삭제 시각 2컬럼**(`tenant_deleted_at`·`landlord_deleted_at`)을 두고 요청자 역할에 해당하는 컬럼만 채우며, 상대에겐 그 예약이 그대로 보인다. 행 전체를 감추는 `community`의 `deleted`+`deleted_at`와는 목적이 다르다.
 
@@ -64,7 +64,7 @@
 | 값 객체(VO) | 컬럼 묶음으로 평탄화 | 임베드 객체 | 임베드/평탄화 |
 | 좌표 | — | GeoJSON `Point`(`[lng,lat]`) + `2dsphere` | — |
 
-- **enum**: 문자열 **UPPER_SNAKE** 저장. MySQL 네이티브 `ENUM` 미사용(값 추가 진화 용이). 값 카탈로그는 [domain-model](../architecture/domain-model.md) 각 모듈 "상태(enum)". 회원 역할 `UserType`은 `TENANT`(세입자/외국인)·`LANDLORD`(임대인) 두 값이며 `users.user_type`에 `VARCHAR(16)`로 저장한다(DEFAULT `TENANT`, 온보딩 제출로 확정·불변).
+- **enum**: 문자열 **UPPER_SNAKE** 저장. MySQL 네이티브 `ENUM` 미사용(값 추가 진화 용이). 값 카탈로그는 [domain-model](../architecture/domain-model.md) 각 모듈 "상태(enum)". 회원 역할 `UserType`은 `TENANT`(세입자/외국인)·`LANDLORD`(임대인)·`ADMIN`(관리자) 세 값이며 `users.user_type`에 `VARCHAR(16)`로 저장한다(DEFAULT `TENANT`). `TENANT`·`LANDLORD`는 온보딩 제출로 확정·불변이고, **`ADMIN`만 예외로 온보딩 이후 운영자의 수동 `UPDATE`로 부여**한다 — 가입 경로가 없다.
 - **금액**: 원(KRW) 정수, 소수점 없음.
 - **시각**: UTC ISO-8601, 저장도 UTC([api-design-guide §6](../api/api-design-guide.md)).
 
@@ -167,8 +167,51 @@
 - **레이트리밋 한도**(`app.auth.signup-phone.*`): **번호 5회/1시간 · IP 20회/1시간**(#229 D6). 카운터는 `INCR` + 첫 증가에서만 `EXPIRE`를 거는 **고정 창**이고, **발송 성공이 아니라 시도**를 센다 — 성공분만 세면 provider 장애를 반복시키는 것만으로 한도를 무력화할 수 있다. IP는 리버스 프록시(Caddy) 뒤라 `X-Forwarded-For` 최좌측 값을 쓰며, 그 값은 호출자가 위조할 수 있으므로 **IP 한도는 비용 가드이지 인가가 아니다**(우회 불가한 방어는 번호 한도·쿨다운).
 - **검증**: 입력 인증번호 해시가 `codeHash`와 일치하고 미만료·시도 미초과면 `signup-phone:verified:{정규화번호}`에 마커를 남기고 코드 키를 삭제한다. **챌린지 부재·불일치·만료·시도 상한 초과가 모두 `422 AUTH_PHONE_VERIFICATION_FAILED`** 로, 시도 초과를 `429`로 구분하는 (A-3)과 다르다 — 비로그인 경로에서는 응답의 차이 자체가 챌린지 존재·시도 잔량을 알려 주는 신호가 된다.
 - **계정 존재 여부 비노출**: 발송·확인 어느 쪽도 `users`를 조회하지 않는다. 가입 이력이 있는 번호든 없는 번호든 같은 응답이며, 연동 판정은 가입 제출 시점에만 이뤄진다.
+- **이 마커는 다른 용도로 재사용하지 않는다**: 값이 상수 `"1"`이라 **무슨 용도로 인증했는지가 값에 없고**, 그 전제는 소비처가 웹 회원가입 하나뿐이라서 성립한다. 이메일 찾기(US-1-16)가 같은 마커를 세우면 전제가 깨져 **이메일을 찾으려고 받은 인증번호 하나로 회원가입까지 통과**하게 된다 — 인증의 인가 범위가 조용히 넓어지는 것이다. 그래서 값에 용도 필드를 더하는 대신 **키스페이스를 갈랐다**(아래 **(A-6)** `find-email:*`) — 필드로 갈라도 소비처 한쪽이 그 필드를 안 보면 같은 사고가 나지만, 키가 다르면 애초에 잘못 쓸 수 없다.
 - **앱 심사용 고정 인증번호 우회(`FixedVerificationPolicy`) 미적용**: 그 우회는 `userId` + Google 소셜 계정으로 판정하는데 가입 전 단계에는 둘 다 없다. 이 경로는 프로파일과 무관하게 항상 실제 발급·발송을 타며, 로컬은 `LoggingVerificationSmsSender`가 인증번호를 콘솔에 찍는다.
 - **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답·로그의 번호는 마스킹(예 `010-****-5678`), 인증번호 원문은 보관·로그하지 않는다(해시만).
+
+#### (A-6) Redis — 이메일 찾기용 연락처 인증(임대인 웹·비로그인)
+
+가입한 이메일을 잊은 임대인이 **번호 소유를 먼저 증명하고** 자기 이메일을 마스킹 형태로 돌려받는 경로(US-1-16)다. 인증번호 정책(6자리·코드 TTL 5분·검증 마커 30분·검증 시도 5회·재발송 간격 60초 — `app.phone.*`)·발송 포트 `VerificationSmsSender`·해시(SHA-256+pepper)·permitAll·`422` 한 코드 통일까지 **(A-5)와 전부 같다**. 다른 것은 **키스페이스 하나**이고, 그 하나가 이 절이 따로 있는 이유다 — (A-5)의 `signup-phone:verified:*`는 용도 구분 필드가 없어(그쪽 소비처가 하나뿐이라 필요가 없었다) **재사용하면 이메일 찾기용 인증 하나로 회원가입까지 통과**한다. 인가 범위가 조용히 넓어지는 종류의 사고라 **키를 갈라 잘못 쓸 수 없게** 만든다.
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `find-email:code:{정규화번호}` | Hash | `codeHash` · `attempts`(int) · `issuedAt` · `expiresAt` | 인증번호 만료((A-5)와 동일 — 5분) | 이메일 찾기용 인증번호 발송·검증. 대조 대상 번호는 (A-5)와 같이 **값이 아니라 키**다 |
+| `find-email:verified:{정규화번호}` | String | 상수 `"1"`(존재 자체가 의미) | 검증 마커 만료((A-5)와 동일 — 30분, `app.phone.verified-ttl-seconds`) | `POST /api/v1/auth/email/find`가 대조하고 **성공 시 소비(삭제)** 한다. 이 마커도 소비처가 하나뿐이라 용도 필드가 없다 — **키스페이스가 곧 용도**다 |
+| `find-email:rate:phone:{정규화번호}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 같은 번호로의 발송 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `find-email:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 번호를 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **레이트리밋 버킷도 (A-5)와 나눠 쓴다**(`app.auth.find-email.*` — 번호 5회/1시간 · IP 20회/1시간): 버킷을 공유하면 이메일을 찾느라 한도를 태운 사람이 **회원가입 인증번호를 못 받는**, 즉 한쪽 남용이 다른 쪽 정상 흐름을 막는 결합이 생긴다. 카운터 방식(고정 창 `INCR` + 첫 증가에서만 `EXPIRE`, 성공이 아니라 **시도**를 셈)과 판정 순서(재발송 쿨다운 — 번호·IP 한도)는 (A-5)와 같다.
+- **가입 여부를 노출하지 않는다**: 발송·확인 어느 쪽도 `users`·`local_accounts`를 조회하지 않는다 — 가입 이력이 있는 번호든 없는 번호든 같은 응답이다. 계정 존재 판정은 마커를 소비하는 `email/find` **한 곳에서만** 일어나고, 거기서는 호출자가 **소유를 증명한 자기 번호**로만 조회할 수 있어 `404 AUTH_WEB_ACCOUNT_NOT_FOUND`로 존재를 드러내도 열거 표면이 열리지 않는다.
+- **이름 대조는 `local_accounts.name` 단독**([§4-1 C](#4-1-auth)): `users.name`으로 폴백하지 않는다. 폼 스냅샷이라 정본과 다를 수 있다는 것을 알면서도 그렇게 두는 이유는, 대조 대상을 둘로 늘리면 **"둘 중 하나만 맞아도 통과"** 가 되어 대조가 느슨해지기 때문이다. **이름 불일치와 계정 미존재는 같은 `404`로 수렴**시킨다 — 가르면 번호 소유자에게 "이 번호의 이름은 무엇인가"를 맞혀 보게 해 주는 오라클이 된다.
+- **성공하면 마커를 소비한다**: 조회에 성공한 순간 `find-email:verified:*`를 지운다. 남겨 두면 마커 하나로 30분 동안 무제한 반복 조회가 되어, 이름을 바꿔 가며 대조를 시도할 수 있다.
+- **민감정보**: 번호·IP가 **키에 실리지만** 전부 TTL(코드 5분·마커 30분·카운터 1시간)로 소멸해 영속하지 않는다. 응답의 이메일은 마스킹(예 `ki***@work.com`), 번호도 마스킹(예 `010-****-5678`)해 내보내고 인증번호 원문은 보관·로그하지 않는다(해시만).
+
+#### (A-7) Redis — 비밀번호 재설정 토큰(임대인 웹·비로그인 · 잠금 해제 겸용)
+
+비밀번호를 잊었거나 10회 연속 실패로 **잠긴**([§4-1 C](#4-1-auth) `locked_at`) 임대인이 메일로 받은 일회용 링크로 자격증명을 되찾는 경로(US-1-17)다. **"비밀번호 찾기"와 "계정 잠금 해제"는 같은 API**이고 화면만 둘이다 — 잠금을 풀 자격이 "새 비밀번호를 세울 수 있는 메일함 소유자"와 정확히 같아서, 해제 전용 API를 따로 두면 **같은 증명으로 열리는 문이 둘**이 되고 둘 다 영원히 같이 관리해야 한다. **`app.auth.web.password-reset.enabled` 토글 뒤에 있으며 local·dev만 켠다**(prod 미배포).
+
+토큰은 **불투명 난수**(`"pr_" + Base64Url(SecureRandom 32바이트)` — refresh의 `rt_`와 같은 모양)이고, 서버는 **`SHA-256(토큰 + pepper)`만** 키에 담는다(원문 비저장). pepper는 refresh·인증번호가 쓰는 `app.auth.email-pepper`를 그대로 재사용해 **새로 배선할 시크릿이 없다**. MySQL 컬럼이 아니라 Redis에 두는 이유는 **만료가 곧 삭제**여야 하기 때문이다 — 30분짜리 일회용 토큰을 컬럼으로 두면 만료 레코드 청소가 별도 배치가 된다. 잠금(`locked_at`)이 반대로 컬럼인 것과 짝을 이룬다: **잠금은 저절로 풀리면 안 되고, 토큰은 저절로 죽어야 한다.**
+
+**키스페이스** (Redis · AWS ElastiCache)
+
+| 키 패턴 | 자료구조 | 값(필드) | TTL | 용도 |
+| --- | --- | --- | --- | --- |
+| `pwd-reset:{tokenHash}` | String(JSON) | `userId`(→ users.id) · `email` · `issuedAt` · `expiresAt` | 토큰 만료(`app.auth.web.password-reset.token-ttl-seconds` — 30분) | 링크 사전 확인이 **읽기만** 하고, 재설정 확정이 **원자 소비**한다 |
+| `pwd-reset:rate:email:{소문자이메일}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 한 사람 메일함에 링크를 퍼붓는 남용 차단 — 초과 시 `429 TOO_MANY_REQUESTS` |
+| `pwd-reset:rate:ip:{IP}` | String(counter) | 1시간 창의 발송 **시도** 수 | 1시간(첫 `INCR`에서 `EXPIRE`) | 이메일을 바꿔가며 발송비를 태우는 남용 차단 — 초과 시 `429` |
+
+- **Hash가 아니라 값 하나(JSON)다 — 원자 소비 때문이다.** 필드를 Hash로 쪼개면 소비가 `HGETALL` + `DEL` 두 명령이 되어 원자적일 수 없고, 같은 링크를 동시에 두 번 눌렀을 때 둘 다 통과해 **일회용이 아니게 된다**(메일 클라이언트 prefetch·더블클릭이 흔하다). 값 하나로 두면 `GETDEL` 한 명령이 읽기와 삭제를 함께 끝낸다 — Lua 스크립트를 들이지 않고 같은 보장을 얻는다.
+- **소비는 원자적이어야 한다**: 확정 시 `GETDEL`(또는 Lua) **한 번**으로 읽고 지운다. `find` → 검증 → `delete`로 쪼개면 동시에 들어온 두 요청이 같은 토큰으로 통과해 **한 링크가 두 번 쓰인다**.
+- **사전 확인은 소비하지 않는다**: 메일 클라이언트·보안 스캐너가 링크를 미리 여는 일이 흔해, 확인 단계에서 지우면 **사용자가 클릭하기도 전에 링크가 죽는다**. 사전 확인이 돌려주는 `expiresIn`은 고정값이 아니라 그 키의 **남은 TTL**이다.
+- **확정 순서가 계약이다**: 토큰 원자 소비 → `local_accounts.password_hash` 교체(MySQL) → 그 사용자 refresh 전량 무효화(Redis, (A) `refresh:user:{userId}`) → 로그인 시도 레이트리밋 카운터 삭제(Redis). MySQL과 Redis에 걸친 원자성은 불가능하므로([§2-4](#2-4-제약무결성-공통) 교차 스토어 트랜잭션 금지), 중간에 끊겼을 때 **남는 상태가 "토큰만 소비됨"**(사용자가 링크를 다시 요청하면 그만)이 되도록 이 순서를 지킨다. 뒤집으면 비밀번호는 이미 바뀌었는데 토큰이 살아 있는 **재사용 창**이 남는다.
+- **잠금 해제는 컬럼 갱신으로 일어난다**: 비밀번호를 교체하는 같은 트랜잭션에서 `failed_login_attempts=0`·`locked_at=NULL`로 되돌린다([§4-1 C](#4-1-auth)) — 잠긴 채로 새 비밀번호만 세워지면 재설정을 마치고도 `423`으로 막혀 사용자가 같은 링크를 다시 요구하게 된다.
+- **새 세션은 발급하지 않는다**: 재설정 응답에 refresh 쿠키를 싣지 않고 로그인 화면으로 보낸다. 메일함이 털린 경우 "비밀번호가 바뀐다"와 "공격자가 즉시 로그인된 세션을 쥔다"는 피해 크기가 다르고, 로그인 한 번을 더 요구하는 비용이 그보다 싸다.
+- **발송은 계정 존재를 가르지 않는다**: 가입되지 않은 이메일에도 **같은 200**을 준다(키를 만들지 않고 메일만 보내지 않는다). 이 엔드포인트는 선행 게이트가 없어 임의 이메일로 부를 수 있어서, 응답을 가르는 순간 **완전한 열거 오라클**이 된다. 다만 발송이 동기라 **가입 계정은 SMTP 왕복 시간이 들고 `502`가 날 수 있는 반면 미가입은 즉시 200**이라 응답 시간·status 분포로는 존재가 드러난다 — 레이트리밋은 이 누출의 완화책이 아니라 발송비·남용 방어다. 이 한계는 **받아들인다**.
+- **민감정보**: 토큰 원문은 저장·로그하지 않고(해시만), 값의 `email`은 사전 확인 응답에서 마스킹해 내보낸다. 키·값·카운터 전부 TTL로 소멸해 영속하지 않는다.
 
 #### (B) MySQL — 소셜 연동(`social_accounts`)
 
@@ -208,8 +251,8 @@
 | `password_hash` | VARCHAR(100) | NOT NULL · **BCrypt 해시**(60자 + 여유) · 원문은 저장·로그 어디에도 남기지 않는다 |
 | `name` | VARCHAR(200) | NULL · 가입 폼이 준 이름(**폼 스냅샷**) — `users.name`(정본)과 별개 · 민감정보(PII) |
 | `birth_date` | DATE | NULL · 가입 폼이 준 생년월일(**폼 스냅샷**) · 민감정보(PII) |
-| `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 성공 시 0으로 초기화 |
-| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 5회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED` |
+| `failed_login_attempts` | INT | NOT NULL DEFAULT 0 · 연속 로그인 실패 횟수 · 로그인 성공·비밀번호 재설정 확정 시 0으로 초기화 |
+| `locked_at` | DATETIME(6) | NULL · 잠금 시각 — 10회 연속 실패 시 기록. 채워져 있으면 **비밀번호가 맞아도** `423 AUTH_ACCOUNT_LOCKED`. 비밀번호 재설정 확정이 `NULL`로 되돌린다(US-1-17 — 이것이 유일한 애플리케이션 해제다) |
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
@@ -219,7 +262,9 @@
 - **`uq_local_accounts_user_id`가 지키는 불변식**: 번호로 찾은 기존 계정에 자격증명을 덧붙이는 **연동 경로**(US-1-11)는 "조회 후 INSERT"라 동시 요청에 check-then-act가 깨지는데, 두 번째 INSERT가 이 제약에서 막힌다. 선검사에서 걸리는 경우가 `409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS`다.
 - **정본은 `users`, 이 테이블은 스냅샷**: `name`·`birth_date`는 가입 폼 값의 사본이라 NULL 허용이며, **연동 시 `users`의 프로필을 갱신하지 않으므로 두 값이 다를 수 있다**. 모든 응답의 `name`·`email`은 `users`에서 나가고 이 표의 사본은 어떤 응답에도 싣지 않는다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) §6). `social_accounts.email`·`name`(provider 스냅샷)과 같은 취급이다.
 - **이메일 중복 검사는 이 테이블에만**: 웹 가입의 이메일 중복(`409 AUTH_EMAIL_ALREADY_REGISTERED`)은 `local_accounts.email`만 본다. **`users.email`에는 UNIQUE를 걸지 않는다** — 걸면 "본인이 본인 소셜 이메일로 웹 가입"이라는 가장 흔한 정상 경로가 막힌다([§4-2](#4-2-user)). 신규 가입일 때만 폼 이메일을 `users.email`에도 기록하고, 연동일 때는 소셜 진본을 유지한다.
-- **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 만료와 함께 잠금이 저절로 풀려 "해제 기능 없음"이라는 정책(US-1-12)이 깨진다. 해제 경로는 없고 운영자가 `locked_at`을 비우는 것이 유일하다(수용된 제약).
+- **잠금은 컬럼이지 Redis TTL이 아니다**: `failed_login_attempts`·`locked_at`을 TTL 키로 두면 **만료와 함께 잠금이 저절로 풀린다** — 시간 경과 자동 해제는 지금도 없는 정책이므로 이 근거는 그대로 유효하다. 해제 경로가 생긴(US-1-17 비밀번호 재설정) 뒤로는 근거가 하나 더 정확해진다: **해제가 언제 일어났는지가 행에 남아야 한다.** 컬럼이면 `locked_at`이 `NULL`로 되돌아간 시각이 `updated_at`에 찍혀 "잠겼다가 본인 재설정으로 풀렸다"를 사후에 확인할 수 있지만, TTL 키는 **아무도 아무것도 하지 않아도 사라지므로** 해제와 방치를 구분할 수 없다. 잠금은 사고 조사 대상이라 그 차이가 곧 감사 가능성이다. 운영자가 `locked_at`을 직접 비우는 경로는 재설정 토글(`app.auth.web.password-reset.enabled`)이 꺼진 구간에서 여전히 유일한 해제로 남는다.
+- **V22 주석은 옛 근거인 채로 남는다**: [`V22__create_local_accounts.sql`](../../src/main/resources/db/migration/V22__create_local_accounts.sql)의 주석은 잠금을 컬럼으로 둔 이유를 "해제 기능 없음 정책"으로 적고 있지만, **이미 적용된 마이그레이션은 체크섬이 고정이라 주석 한 줄도 고칠 수 없다**(고치면 Flyway `validate`가 기동을 막는다 — [migration-policy](./migration-policy.md)). 근거의 정본은 이 문서이고 그 주석은 **낡은 사본으로 남는다** — 파일을 읽고 정책을 되짚지 않도록 여기 적어 둔다.
+- **계정 복구는 스키마를 바꾸지 않는다**: 이메일 찾기(US-1-16)·비밀번호 재설정(US-1-17)은 **새 테이블도 새 컬럼도 만들지 않는다** — 읽는 것은 이미 있는 `email`·`name`이고 쓰는 것은 `password_hash`·`failed_login_attempts`·`locked_at`이며, 새로 생기는 상태(인증 마커·재설정 토큰·레이트리밋 카운터)는 전부 **TTL이 있는 Redis 키**([§4-1](#4-1-auth) A-6·A-7)라 이 테이블에 남지 않는다. 그래서 이번 기능에는 Flyway 마이그레이션이 없다.
 - **연동 매핑은 불변, 자격증명은 가변**: `user_id`·`email`은 생성 이후 바뀌지 않지만 `password_hash`·실패 카운터·`locked_at`은 갱신되므로 `social_accounts`와 달리 `updated_at`을 둔다([§2-2](#2-2-공통-컬럼-표준)).
 - **탈퇴 시 이 행도 함께 지운다**: 탈퇴는 `users` PII 익명화([ADR-0014](../adr/0014-withdrawal-pii-anonymization.md)) + `social_accounts` 삭제 + **`local_accounts` 삭제** + refresh 무효화다(`UserWithdrawnEventListener` — 자격증명 두 채널을 같은 자리에서 지운다). 남기면 두 가지가 동시에 무너진다 — ① 탈퇴는 `users` 행을 지우지 않고 `user_type`도 `LANDLORD` 그대로라, 남은 웹 자격증명으로 **권한이 온전한 세션을 다시 받는다**(앱 소셜이 그렇지 않은 것은 `social_accounts`를 지우기 때문이다) ② `uq_local_accounts_email`이 살아남아 **본인이 같은 이메일로 재가입할 수 없다**(409 `AUTH_EMAIL_ALREADY_REGISTERED`). 웹 계정이 없는 세입자·앱 전용 임대인은 0행 삭제라 무해하다.
 - **민감정보**: `email`·`name`·`birth_date`는 로그·응답 마스킹 대상이고(응답에는 애초에 `users` 값만 나간다), 비밀번호는 **해시만** 보관한다. 컬럼 암호화 도입 시 길이 재산정([§6](#6-결정-필요-open-questions)).
@@ -255,9 +300,9 @@
 | 필드 | 타입 | 키/제약 |
 | --- | --- | --- |
 | `id` | BIGINT | PK, AUTO_INCREMENT |
-| `user_type` | VARCHAR(16) (enum `UserType`) | NOT NULL DEFAULT `TENANT` · 온보딩 제출 엔드포인트로 확정·이후 불변 · INDEX(아래 註) |
+| `user_type` | VARCHAR(16) (enum `UserType`) | NOT NULL DEFAULT `TENANT` · 온보딩 제출 엔드포인트로 확정·이후 불변(**`ADMIN` 수동 승격만 예외** — 아래 註) · INDEX(아래 註) |
 | `name` | VARCHAR(200) | NULL · VO `FullName`→단일 컬럼 · **세입자·임대인 공통** 전체 이름(PII — 아래 註) · **소셜 로그인 시점에 요청 `name`으로 채움**(검증 대상 아님 — 아래 註) · 세입자 `first_name`+`last_name` 분리·임대인 `first_name` 재사용 편법은 #192에서 폐지 |
-| `phone_number` | VARCHAR(20) | NULL · **UNIQUE**(`uq_users_phone_number` — 같은 번호는 계정 하나, V23 · 아래 註) · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값이며 입력 경로에서 **숫자만 남겨 정규화**한다(기존 행 백필 없음 — 아래 註). 세입자는 NULL · 길이/형식 확인 필요 |
+| `phone_number` | VARCHAR(20) | NULL · **UNIQUE**(`uq_users_phone_number` — `(user_type, phone_number)` 복합키, V28 · 아래 註) · **임대인**(PII — 로그·타 사용자 노출 시 마스킹, 예 `010-****-5678`). 온보딩 전 `auth` SMS 인증(§4-1 A-3 `VERIFIED`)을 거친 값이며 입력 경로에서 **숫자만 남겨 정규화**한다(기존 행 백필 없음 — 아래 註). 세입자는 NULL · 길이/형식 확인 필요 |
 | `business_registration_number_hash` | VARCHAR(64) | NULL · **임대인** 사업자등록번호 SHA-256 해시(원문 비저장·로그 비저장·마스킹, 예 `****567890`) · 세입자는 NULL · **온보딩에서도 매물 등록에서도 채우지 않아 항상 NULL** — 임대인이 입력한 사업자등록번호는 매물 문서(`listings.businessRegistrationNumber`)가 원문으로 보유한다(아래 註) · 컬럼명·유니크 제약·저장 방식 확인 필요 |
 | `nickname` | VARCHAR(50) | NULL · **UNIQUE** · 시스템 배정(`형용사 + 사물`) · 탈퇴 시 익명화 |
 | `gender` | VARCHAR(16) (enum `Gender`) | NULL(PII) |
@@ -277,11 +322,21 @@
 | `created_at` | DATETIME(6) | NOT NULL |
 | `updated_at` | DATETIME(6) | NOT NULL |
 
-**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / **UNIQUE `phone_number`**(`uq_users_phone_number` — 「같은 번호면 같은 계정」을 DB가 지킨다; NULL 다중 허용이라 세입자·탈퇴자는 무영향. 번호로 기존 임대인 계정을 찾는 연동·병합 조회의 등치 인덱스도 겸한다 — 아래 註) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
+**인덱스**: PK `id`(`findById`) / **UNIQUE `nickname`**(닉네임 전역 유일·중복 배정 차단; NULL은 다중 허용이라 온보딩 전 `PENDING` 다건 무방) / **UNIQUE `(user_type, phone_number)`**(`uq_users_phone_number` — 「같은 번호면 **유형별로** 같은 계정」을 DB가 지킨다; NULL 다중 허용이라 세입자·탈퇴자는 무영향. 번호로 기존 임대인 계정을 찾는 연동·병합 조회의 인덱스도 겸한다 — 아래 註) / INDEX `user_type`(역할별 조회·집계) / (선택) INDEX `status`(상태별 배치 — MVP 조회는 PK 단건뿐이라 보류 가능).
 
 - **이메일 두 종류**: 소셜 제공자 이메일은 **auth `social_accounts.email`** 소관(역할 무관·소셜 연동 메타데이터)이고, `users.email`은 **소셜 로그인 시 provider email(요청 `email`↔토큰 `email` 클레임 대조로 확정)로 세팅**되는 연락 이메일이다(#192 — 온보딩 입력·인증이 아니며, 계정 생성 시 둘은 같은 provider 값에서 나온다). **역할과 무관하게** 세입자·임대인 모두 소셜 로그인에서 캡처된 provider email을 `users.email`에 보유한다([ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 '임대인 이메일 미수집' 결정은 #192로 개정 — 수집 폼이 아니라 소셜 로그인 provider 값 보유이고, 이메일 인증(신원 확인)이 없어진 지금 email은 '미검증 연락처'일 뿐이다). 이메일 인증 API(§4-1 A-2)는 **온보딩 완료(`ACTIVE`) 이후 접근 전용**이고, 그 *인증 흔적*은 Redis에만 단명 보관하며 **실제 `users.email` 변경 반영은 후속 이슈**(#192 범위 밖 — 이번엔 접근 제한만). **이름도 같은 이중 관리**다 — `social_accounts.name`(provider 스냅샷)과 `users.name`(사용자 값). `social_accounts`의 `email`·`name`은 로그인마다 provider 값으로 upsert되지만 `users`는 최초 로그인에만 세팅되고 이후 사용자 편집(name=`PATCH /users/me`)만 반영한다 — 재로그인 시 provider 변경은 `social_accounts`에만 반영하고 `users`는 덮지 않는다.
 - **닉네임**: 시스템이 `형용사 + 사물`로 무작위 배정하며 `UNIQUE`로 중복을 막는다(충돌 시 재시도). 사용자 입력·수정 대상이 아니다.
 - **상태 흐름·컬럼 채움 시점**: `status`는 `PENDING`(소셜 검증) → `TERMS_AGREED`(약관 동의) → `ACTIVE`(온보딩 완료) → `WITHDRAWN`. **`name`과 `email`은 소셜 로그인 시점**(User 생성, `PENDING`)에 요청 `name`·provider `email`로 채워지고(#192 — 온보딩이 아니며 세입자·임대인 역할 무관), **동의 컬럼**(`terms_of_service_agreed`·`privacy_policy_agreed`·`marketing_agreed`·`agreed_at`·`terms_version`)은 **약관 동의 단계**(`PENDING`→`TERMS_AGREED`)에 채워지며, **프로필 컬럼**(세입자: `nickname`·성별·생년월일·`country`·`lang`(선택 — 미전송이면 저장하지 않고 NULL, 표시 시 `en` 폴백)·`occupation`(선택 — 미전송이면 저장하지 않고 NULL, #187)·`visa_type` / 임대인: `nickname`·`phone_number`·`birth_date`·`country`=`KR`·`lang`=`ko`(둘 다 서버 고정, 사용자 미입력))은 **온보딩 단계**(`TERMS_AGREED`→`ACTIVE`)에 채워진다(임대인 `business_registration_number_hash`는 온보딩에서 수집하지 않아 이 단계엔 채우지 않고, **매물 등록 시점에도 채우지 않는다** — 사업자등록번호 원문은 매물 문서가 보유한다; enum 값 정본은 [domain-model](../architecture/domain-model.md)).
+- **관리자(`ADMIN`) 승격**: 관리자는 **가입 경로가 없다.** 운영자가 관리자 전용 계정을 임대인 웹 가입 흐름으로 만든 뒤 아래로 승격한다. 로그인·계정 연동 방식은 임대인과 완전히 동일하며 관리자 전용 인증 경로를 두지 않는다.
+
+  ```sql
+  -- ACTIVE 계정에만 적용한다. 온보딩 미완료 계정을 승격하면 ROLE_ONBOARDING 토큰만 받아
+  -- 보안 매처를 통과하지 못한 채 권한만 갖는 계정이 된다. 코드 경로가 없으므로 이 조건이 유일한 방어선이다.
+  UPDATE users SET user_type = 'ADMIN' WHERE id = ? AND status = 'ACTIVE';
+  ```
+
+  **활동 중인 임대인·세입자 계정을 승격하지 않는다** — `ADMIN`은 병존하지 않는 제3의 유형이라 승격하면 이전 역할을 잃고(매물 등록 불가·임대인 연동 조회에서 제외), 매물을 보유한 임대인을 승격하면 자기 매물을 자기가 심사할 수 있게 된다.
+- **번호 UNIQUE가 유형별인 이유**: `V23`은 `phone_number` 단독 UNIQUE였다. 관리자 승격이 생기면서 **승격된 계정이 번호를 계속 점유해** 같은 사람이 그 번호로 임대인 계정을 따로 만들 수 없게 되므로, `V28`에서 `(user_type, phone_number)` 복합키로 **완화**했다. **제약 이름은 `uq_users_phone_number` 그대로 둔다** — `GlobalExceptionHandler`가 제약 이름 화이트리스트로 이 위반을 `409 RESOURCE_CONFLICT`로 번역하므로, 이름을 바꾸면 그 경합이 `500 INTERNAL_ERROR`로 떨어진다. `V23`이 막으려던 경쟁 — 웹 임대인 가입과 앱 임대인 온보딩이 동시에 들어와 각자 `ACTIVE`·`LANDLORD` 행을 만드는 것 — 은 **두 INSERT가 모두 `LANDLORD`** 라 복합키로도 그대로 막힌다. 애플리케이션 조회는 이미 `userType`으로 필터하므로 코드 변경이 없다([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md) Amended).
 - **역할(`user_type`) 분기**: `user_type`은 **온보딩 제출 엔드포인트**(세입자 `POST /api/v1/auth/onboarding` / 임대인 `POST /api/v1/auth/landlord/onboarding`)로 확정되며 **이후 불변**이다. 소셜 로그인·약관 동의까지 두 역할 공통이고 이후 온보딩에서 분기한다(임대인 온보딩엔 연락처 SMS 인증이 있고, 세입자 이메일 인증은 온보딩 단계가 아니라 `ACTIVE` 이후 전용 접근이다 — §4-1 A-2). 임대인은 user 별도 모듈이 아니라 **같은 `users` 애그리거트**다 — 본인 프로필 조회·수정(`GET`/`PATCH /users/me`)은 세입자와 동일 경로로 제공하되 `user_type`에 따라 응답·수정 가능 컬럼이 갈린다(임대인 응답은 `name`·`nickname`·`birth_date`·`phone_number`·`email`·`country`(=`KR`, 표시명·국기 포함)·`status`·동의 컬럼·`created_at`만 — 세입자 전용 컬럼 `gender`·`occupation`·`visa_type`는 제외(`birth_date`·`country`는 임대인도 보유·반환 — `country`는 서버 고정값이라 수집하지 않지만 응답엔 나오고, `email`은 소셜 로그인 provider 값이라 임대인도 보유·반환한다); 수정은 `name`·`phone_number`·`marketing_agreed`만(임대인 `birth_date`는 온보딩 확정·조회 전용이고 `country`·`lang`은 서버 고정이라 변경 불가 — `lang` 변경은 세입자 전용), `business_registration_number_hash`·`user_type`·`nickname`은 불변).
 - **이름 저장(세입자·임대인 통일)**: 세입자·임대인 모두 단일 `name` 컬럼에 전체 이름을 저장한다 — 과거 세입자 `first_name`(이름)+`last_name`(성) 분리·임대인 `first_name` 재사용(단일 name을 `first_name`에, `last_name`은 NULL) 편법은 **#192에서 폐지**했다(API는 예전부터 단일 `name` 필드였고 이제 DB 컬럼도 `name` 하나라 `name`↔`first_name` 매핑이 사라진다). `name`은 온보딩이 아니라 **소셜 로그인 시점에 요청 `name`으로 채운다**(네이티브 SDK가 준 값 신뢰 — 토큰 검증 대상 아님, Apple은 이름을 최초 1회만 주므로 백엔드가 토큰에서 못 얻는다). 임대인은 추가로 `phone_number`·`birth_date`를 온보딩에서 채우고, 세입자는 `gender`·`country`·`lang`(선택)·`occupation`(선택, #187)·`visa_type`·`birth_date`를 온보딩에서 채운다(임대인은 `gender`·`occupation`·`visa_type`는 미수집·NULL, `birth_date`는 세입자·임대인 공통 수집, `country`·`lang`은 사용자 입력이 아니라 **서버가 `KR`·`ko`로 심는다**). NOT NULL 제약이 아니라 역할별 채움은 **상태·역할 불변식**(앱·서버 검증)이다.
 - **표시 언어(`lang`)**: 사용자가 고른 표시 언어를 영속하는 컬럼이며 다국어 표시의 **1순위 출처**다([ADR-0029](../adr/0029-diagnosis-i18n-strategy.md) 개정(#141)). 값은 ISO 639-1 **소문자 코드**이고(DB 컬럼은 이 코드를 저장), 서버는 닫힌 집합 `Language` enum으로 모델링·검증해 **지원 목록 `en`·`ko`·`ja`** 밖이면 `400 INVALID_INPUT`이다(세 언어 밖은 어느 카탈로그에도 콘텐츠가 시드되지 않아 빈 선택지를 노출하지 않는다). 채움·변경 규칙은 역할별로 갈린다 — **세입자**만 온보딩·`PATCH /users/me`로 보낼 수 있고(둘 다 **선택 필드**라 미전송이면 저장하지 않고 NULL로 두고 표시 시 `en`으로 폴백한다), **임대인**은 온보딩 시 서버가 `ko`를 심고 이후 변경 경로가 없다(임대인 프로필 수정은 `lang`을 읽지 않는다). `PATCH /users/me`에 `country`만 오고 `lang`이 없으면 `lang`은 그대로 두고(국적을 바꿔도 표시 언어는 바뀌지 않는다), `lang`을 명시 전송하면 그 값을 저장한다. `lang`만 보내면 `country`는 그대로다.
@@ -449,8 +504,8 @@
 | `title` | object | NOT NULL · 매물 고유 표시명 `{ko,en}` |
 | `type` | string (enum `ListingType`) | NOT NULL · `GOSHIWON`/`CO_LIVING`/`SHARE_HOUSE` |
 | `rentalType` | string (enum `RentalType`) | 매물 공통 임대 방식 · `MONTHLY_RENT` 단일값 |
-| `status` | string (enum `ListingStatus`) | NOT NULL · `PENDING`/`PUBLISHED`/`REJECTED`/`PAUSED`/`DELETED` |
-| `rejectionReason` | string | nullable · 관리자 반려 사유 · `REJECTED`에서만 채운다 |
+| `status` | string (enum `ListingStatus`) | NOT NULL · `PENDING`/`PUBLISHED`/`REJECTED`/`UPDATE_PENDING` · 값 집합의 정본은 validator다(changeUnit `0121`이 3종으로 조이고 `0122`가 `UPDATE_PENDING`을 더한다 — [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인)). `UPDATE_PENDING`은 공개 중이던 매물을 임대인이 수정해 재심사를 기다리는 상태이며, 세입자 조회는 전부 `PUBLISHED` equality라 이 값이면 자동으로 빠진다 |
+| `rejectionReason` | string | nullable · 관리자 반려 사유 · `REJECTED`와 고쳐서 재심사 중인 `PENDING`에 값이 있고 승인 시 지운다 · 임대인 수정 요청은 이 필드를 싣지 않으며 수정이 성공하면 서버가 무조건 비운다 |
 | `genderPolicy` | string (enum `GenderPolicy`) | 매물 공통 성별 정책 |
 | `languagesSupported` | string[] (enum `SupportedLanguage`) | 임대인이 응대 가능한 언어 코드 |
 | `arcRequired` | string (enum `ArcRequirement`) | NOT NULL · `REQUIRED`/`NOT_REQUIRED` · 매물 공통 ARC 요구 여부(아래 註) |
@@ -476,9 +531,14 @@
 | `roomOffers[].pricing` | object | `monthlyRent`·`deposit`·`maintenanceFee`·`currency`(KRW 정수, 단일값) |
 | `roomOffers[].filterTags` | string[] (enum `ConditionTag`) | 등록 폼의 방 옵션 선택값 · 응답 태그와 1:1(파생 태그 없음) |
 | `roomOffers[].roomImageUrls` | string[] | 방 상품 전용 이미지 · 2~5개 · 등록 확정 시 복사한 CDN URL(`listings/{listingId}/rooms/{roomOfferId}/{uuid}.{ext}`) |
-| `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註) |
-| `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註) |
+| `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
+| `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
 | `serviceFeedback` | string | nullable · 임대인 설문 — 서비스 개선 의견 · 응답 비노출(아래 註) |
+| `consents` | object | **필수** · 매물 이용약관 동의(changeUnit `0120`) |
+| `consents.privacyPolicyAgreed` | bool | 필수 · 개인정보 수집·이용 동의 |
+| `consents.listingExposureAgreed` | bool | 필수 · 매물 정보 제공 및 노출 동의 |
+| `consents.version` | string | 필수 · 동의한 약관 버전(서버 설정값 `app.terms.listing-consent-version`) |
+| `consents.agreedAt` | date | 필수 · 동의 시각 |
 
 > `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 DB에 저장하지 않고, 상세 응답을 만들 때 활성 `roomOffers[].filterTags`의 합집합으로 계산한다. 필터는 반드시 같은 `roomOffers[]` 원소가 가격·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다 — `MOVE_IN_NOW`도 `filterTags`의 태그 하나일 뿐이라 별도 재고 조건을 보지 않는다.
 
@@ -495,7 +555,7 @@
 
 **인덱스**: UNIQUE `(category, code)`. `displayOrder`·`active`는 현재 MVP 요구가 없어 저장하지 않는다.
 
-저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·105건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(4 — `ETC` 포함)·`COMMON_SPACE`(7)·`CONDITION_TAG`(8)·`DISTRICT`(10 — `ETC` 포함)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(2)·`KITCHEN`(9)·`LAUNDRY`(4)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(8)·`NEARBY_FACILITY`(5)·`PROVIDED_SUPPLY`(6)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(6)·`SUPPORTED_LANGUAGE`(4)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
+저장 예시는 [`listing-catalog-example.json`](examples/listing-catalog-example.json)을 참고한다. 실제 시드는 예시 몇 건이 아니라 Listing UI가 사용하는 전체 공통 코드 **19종 카테고리·112건**이다 — `ARC_REQUIREMENT`(2)·`BUILDING_TYPE`(7)·`CITY`(4 — `ETC` 포함)·`COMMON_SPACE`(8 — `NONE` 포함)·`CONDITION_TAG`(8)·`DISTRICT`(10 — `ETC` 포함)·`GENDER_POLICY`(4)·`HEATING_SYSTEM`(3 — `NONE` 포함)·`KITCHEN`(10 — `NONE` 포함)·`LAUNDRY`(5 — `NONE` 포함)·`LISTING_TYPE`(3)·`LIVING_AMENITY`(9 — `NONE` 포함)·`NEARBY_FACILITY`(6 — `NONE` 포함)·`PROVIDED_SUPPLY`(7 — `NONE` 포함)·`RENTAL_TYPE`(1)·`SECURITY_FEATURE`(7 — `NONE` 포함)·`SUPPORTED_LANGUAGE`(3)·`TRANSIT_TYPE`(1)·`UNIVERSITY`(14). `status`(`ListingStatus`)는 임대인에게만 보이는 관리 상태라 번역 대상이 아니고, 대응하는 카탈로그 카테고리도 없다.
 
 `universities`
 
@@ -516,7 +576,7 @@
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
 - **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. 이어 `0116 listing-location-required`가 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. `0118 listing-university-collection`이 `universities` validator를 세우고([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)), `0119 listing-contact-sms-drop`이 담당자 연락처에서 `sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제) — **다섯 다 스키마만 다루고 문서를 넣지 않는다**. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
-- **시드(`listings` 2건 · `listingCatalog` 105건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
+- **시드(`listings` 2건 · `listingCatalog` 112건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 
 > **장소 후보 검색(`GET /api/v1/listings/places`) — 무상태, 컬렉션 없음**: 지도 검색창 키워드는 네이버 지역 검색 API로 조회한다(아웃바운드 포트 `PlaceSearchClient`, 인프라 어댑터 `NaverPlaceSearchClient`, 설정 `NaverSearchProperties`(prefix `app.naver.search`)). 결과(최대 5개 장소 후보)를 서버에 저장하지 않으므로 이 절엔 관련 스키마가 없다. **경로가 `/api/v1`인 이유**: 매물 조회 계열은 `/api/v2`로 이관되고 `/api/v1` 조회는 DB에 닿지 않는 `deprecated` 스텁이 됐지만, 이 엔드포인트만은 매물 데이터를 쓰지 않아 영향을 받지 않으므로 `/api/v1`에 그대로 둔다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md) · [03-listings-favorites](../api/specs/03-listings-favorites.md)).
@@ -547,9 +607,10 @@
 | --- | --- | --- | --- |
 | `listings.location` | `location` | **2dsphere** | bbox 지도 마커 조회·거리순(`$geoWithin`/`$near`, 반경 검색은 별도 API 확정 시 사용, [ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
 | `listings_status_type_rent` | `status, type, roomOffers.pricing.monthlyRent` | 복합/multikey | 공개 매물·유형·방 상품 월세 필터 |
-| `listings_landlord_status_updated` | `landlordId, status, updatedAt desc` | 복합 | 임대인의 매물 관리 목록 |
+| `listings_landlord_status_updated` | `landlordId, status, updatedAt desc` | 복합 | 임대인 전용 매물 조회(`GET /api/v2/users/me/listings`) — `landlordId` equality + `status` `$in` + `updatedAt` 최신순 |
 | `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |
 | `listings_status_arc_requirement` | `status, arcRequired` | 복합 | ARC 미보유 사용자 추천/필터 |
+| `listings_status_created_at` | `status, createdAt desc` | 복합 | 관리자 심사 목록 — 상태로 좁힌 뒤 등록 최신순 |
 | `search_places_active_priority_name` | `active, priority desc, name` | 복합 | 활성 POI 후보 목록 조회 |
 | `favorites_user_listing` | `userId, listingId` | UNIQUE | 중복 찜 불가·토글 멱등 |
 | `favorites_user_favoritedAt` | `userId, favoritedAt` | 복합(desc) | 내 찜 목록 |
@@ -558,6 +619,7 @@
 
 > 인덱스는 부트스트랩(`ListingMongoIndexInitializer`)이 소유해 기동 시 멱등 생성한다. `listings_status_arc_requirement`는 옛 `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)와 **키가 달라 새 이름으로 만든다** — 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다. 옛 인덱스 2건(`listings_status_arc_required`·`listings_status_room_available_count`)의 삭제만 changeUnit `0115`가 1회 수행한다([migration-policy §8](./migration-policy.md#8-mongodb-변경-관리)).
 
+- **임대인 전용 조회는 인덱스를 추가하지 않는다**: `listings_landlord_status_updated`가 그 조회가 요구하는 키(`landlordId, status, updatedAt desc`)를 이미 그대로 갖고 있다. 다만 **`status`가 equality·`$in`으로 묶였을 때만** 접두가 이어져 정렬까지 인덱스로 처리된다 — 상태 필터 없는 기본 호출은 중간 키가 열려 blocking SORT로 떨어진다(`listings_status_created_at`의 상태 없는 전체 조회도 같은 성질이다). 임대인 1인당 매물이 수십 건 규모라는 가정에서 감수하며, 그 가정이 깨지면 기존 인덱스의 키를 고치지 말고 `listings_landlord_updated`(`landlordId, updatedAt desc`)를 **새 이름으로** 추가한다(같은 이름·다른 키는 `IndexOptionsConflict`).
 - **교차 스토어/모듈 no-FK**: `landlordId`·`favorites.userId`·`recentListings.userId`는 user(MySQL)를 값으로만 참조한다. `listingId`는 Mongo `_id ObjectId` 값 참조이며 API에서는 문자열로 노출한다.
 - **유니크/멱등**: 찜 토글 멱등(신규 201/기존 200, 해제 항상 200). 최근본 재조회는 upsert.
 - **카운트 정합**: `favoriteCount`는 `favorites` 집계의 비정규화 캐시다. 현재 찜 문서 insert/delete와 카운터 증감은 같은 MongoDB에서 순차적으로 별도 실행하며 트랜잭션·배치 재계산은 구현되어 있지 않다. 두 번째 쓰기 실패 시 차이가 생길 수 있는 현재 운영 제약이다.
@@ -702,7 +764,7 @@
 > `landlord_id` 컬럼과 `(landlord_id, created_at)` 인덱스는 임대인 조회 분기(US-4-6)를 위한 것으로, `bookings`는 이미 배포된 `V9__bookings.sql`이라 **구현 시 별도 신규 마이그레이션**(예: `V11__add_bookings_landlord_id.sql` — 컬럼 추가 + 인덱스, 확장 변경)으로 넣는다([migration-policy](migration-policy.md)). 기존 예약 행이 있으면 `landlord_id`를 매물 소유자로 백필해야 하나(cross-store라 앱레벨), MVP는 booking 테이블이 신규라 사실상 비어 있다. 소유권은 `bookings` 행(`landlord_id`)에서 판정하며 `listing::api` 소유권 조회는 불요다(아래 교차 모듈 no-FK 참조).
 
 - **중복 방지(동일 세입자–동일 방 상품 활성 1건)**: 같은 세입자(`tenant_id`)가 같은 방 상품(`room_offer_id`)에 내는 예약(신청)은 **1건만 허용**된다 — `bookings`에 **UNIQUE `uq_bookings_tenant_room_offer (tenant_id, room_offer_id)`**를 두고 재신청은 `409 BOOKING_ALREADY_EXISTS`로 거절한다. 이 에러코드는 `ErrorCode`·메시지 번들("이미 신청한 매물입니다")에 **이미 선언돼 있으나 여태 아무도 던지지 않던 코드**로, 이 결정으로 **실제 사용(live)** 으로 전환된다(신규 코드 아님). 상태 전이(수락/거절/취소)가 **미구현이라 모든 예약이 `REQUESTED`(=활성)** 이므로 "활성 1건"이 곧 "전체 1건"이라 **조건 없는 `UNIQUE (tenant_id, room_offer_id)`** 로 규칙이 정확히 표현된다. ⚠️ **caveat**: 향후 상태 전이가 도입되면 `REJECTED`·`CANCELED` 건이 그 방 재신청을 **영구 차단**하므로 **활성 상태만 대상으로 하는 부분 유니크**로 교체해야 한다 — MySQL은 부분 유니크 인덱스를 지원하지 않아(예: `active_room_offer_id` nullable 컬럼 + UNIQUE 트릭, 또는 앱 레벨 검사) 표현 방식은 그때 정한다.
-- **교차 모듈 no-FK**: `tenant_id`·`landlord_id`·`listing_id`·`room_offer_id` 모두 값 참조(FK 없음). `listing_id`·`room_offer_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 매물·방 상품 존재·공개 여부 확인과 **생성 시 소유자(`landlord_id`) 캡처**는 `listing :: api` 공개 쿼리로 한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md)). `move_in_date`는 과거 날짜만 거른다 — 매물이 입주 가능일을 보유하지 않아 대조할 값이 없다. 조회 엔드포인트의 **임대인 분기**(`userType=LANDLORD`)는 "내 매물에 신청됨"을 booking 행의 `landlord_id`로 직접 스코핑한다 — 목록 `landlord_id = 요청자`, 단건 상세는 `booking.landlord_id == 요청자` 행 단위 확인(미소유/부재는 `404 BOOKING_NOT_FOUND` 통일). `landlord_id`는 매물 상태와 무관하게 저장돼 `PAUSED` 매물의 신청도 포함되며, 생성 시점 스냅샷이라 소유권 이전 시 백필이 필요하다(이전은 MVP 범위 밖). `chat_rooms`의 `landlord_id` 비정규화 선례와 일치한다.
+- **교차 모듈 no-FK**: `tenant_id`·`landlord_id`·`listing_id`·`room_offer_id` 모두 값 참조(FK 없음). `listing_id`·`room_offer_id`는 Mongo ObjectId 문자열이라 자동증가 숫자가 아니다. 매물·방 상품 존재·공개 여부 확인과 **생성 시 소유자(`landlord_id`) 캡처**는 `listing :: api` 공개 쿼리로 한다(cross-store 조인 금지, [ADR-0005](../adr/0005-polyglot-persistence.md)). `move_in_date`는 과거 날짜만 거른다 — 매물이 입주 가능일을 보유하지 않아 대조할 값이 없다. 조회 엔드포인트의 **임대인 분기**(`userType=LANDLORD`)는 "내 매물에 신청됨"을 booking 행의 `landlord_id`로 직접 스코핑한다 — 목록 `landlord_id = 요청자`, 단건 상세는 `booking.landlord_id == 요청자` 행 단위 확인(미소유/부재는 `404 BOOKING_NOT_FOUND` 통일). `landlord_id`는 매물 상태와 무관하게 저장돼 **세입자에게 더는 보이지 않는 매물**(`REJECTED`·`UPDATE_PENDING`)의 신청도 그대로 포함되며, 생성 시점 스냅샷이라 소유권 이전 시 백필이 필요하다(이전은 MVP 범위 밖). 이미 성사된 예약의 **카드 표시**에 필요한 매물명·사진·금액은 `bookings`에 없어 매번 `listing :: api`로 물어보므로, 그 조회만은 **매물 상태·방 상태를 모두 무시하는 전용 쿼리**로 읽는다 — 공개 여부를 묻는 쿼리를 그대로 쓰면 비공개로 넘어간 매물의 예약 카드가 제목·금액이 빈 채로 렌더된다. 신규 예약 **생성**은 계속 공개 매물만 대상으로 한다. `chat_rooms`의 `landlord_id` 비정규화 선례와 일치한다.
 - **가격·성명 비영속(조회 시점 조인)**: 보증금·월세·총 금액·매물 요약·예약자 성명은 예약에 **스냅샷 저장하지 않는다** — 단건 상세(US-4-2) 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listing_id, room_offer_id)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 가져온다. **총 금액 = 보증금 + 월세 × 계약 개월수(`contract_period` 정수)**(**관리비 제외**)이며 가격 변경 시 상세는 **현재가 기준**(스냅샷 아님)이다. → 모듈 의존 `booking → { listing :: api, user :: api }`.
 - **참여자별 소프트삭제**(#169 · US-4-7 — 종전 "소프트삭제 불요: 취소는 `status=CANCELED`" 개정): 예약 내역 삭제는 **`status=CANCELED`로 표현할 수 없다.** ① `status`는 두 참여자가 **공유하는 1행의 공유 필드**라 한쪽이 지우면 상대 목록에서도 예약이 사라진다(데이터 손실). ② **취소 ≠ 숨김**이다 — 취소는 "예약을 없던 일로 한다"는 양쪽에 보이는 사실이고, 삭제는 "내 목록에서만 안 보이게 한다"는 참여자 개인의 표시 상태다. ③ 애초에 **상태 전이 자체가 현재 미구현**이라(생성 시 `REQUESTED` 고정, 수락/거절/취소는 여전히 범위 밖) 취소로 삭제를 대신할 수단이 없다. 그래서 참여자별 삭제 시각 2컬럼(`tenant_deleted_at`·`landlord_deleted_at`)을 두며, 이는 §2-2 공통 컬럼 표준("소프트삭제는 `community`만")의 **명시적 예외**다. 요청자 역할에 맞는 컬럼만 채우고(세입자→`tenant_deleted_at`, 임대인→`landlord_deleted_at`) 상대 컬럼은 건드리지 않는다. 삭제는 **멱등**이라 이미 채워져 있어도 재삭제가 오류가 아니다. 상태 전이가 도입되면 그때 `updated_at`을 추가한다(삭제 시각 자체가 삭제 이벤트의 타임스탬프라 `updated_at` 없이 성립한다).
 - **삭제·차단 필터는 조회 술어**(응용 계층 후처리 아님): 목록·상세 조회는 `tenant_deleted_at IS NULL`(임대인 분기는 `landlord_deleted_at IS NULL`) **그리고** 상대 식별자가 차단 목록에 없을 것을 **리포지토리 술어로** 내린다 — 목록이 별도 count 쿼리로 `totalPages`/`hasNext`를 유도하므로 조회 후 걸러내면 페이지네이션이 어긋난다. 차단 식별자는 `user :: api`의 공개 쿼리(`findBlockedUserIds`)로 받아 **애플리케이션 레벨 조인**하며, `booking`이 `user_blocks`(§4-2)를 직접 조인하지 않는다([ADR-0005](../adr/0005-polyglot-persistence.md)·[ADR-0002](../adr/0002-inter-module-communication-via-events.md)). **차단 목록이 비면 어댑터 내부에서 sentinel `-1L` 한 건으로 정규화**해 술어에 넘긴다 — `NOT IN ()`은 문법 오류이고 `NOT IN (null)`은 UNKNOWN이라 **모든 행이 사라져** 차단이 0건인 사용자가 목록을 통째로 잃는다. `-1L`은 `users.id`가 `BIGINT AUTO_INCREMENT`(§2-2 공통 컬럼 표준 — 양의 정수만 발급)라 **실제 식별자와 충돌할 수 없어** 안전한 자리표시자다. 반대로 **변이·신고 경로(삭제·차단·신고)는 필터되지 않은 조회**를 쓴다 — 필터된 조회를 쓰면 두 번째 삭제 요청이 `404`가 되어 멱등이 깨지고, 이미 삭제한 예약을 신고할 수 없게 된다.

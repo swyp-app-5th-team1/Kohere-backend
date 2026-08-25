@@ -21,6 +21,7 @@ import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppUserOnlyException;
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailMismatchException;
 import com.kohere.auth.domain.EmailRequiredException;
@@ -360,7 +361,8 @@ class AuthServiceTest {
 
   @Test
   void sendEmailVerificationCode_delegatesAndMasksEmail() {
-    // 정식(ACTIVE) 전용 게이트는 SecurityConfig(ROLE_USER)가 담당하므로 서비스는 상태 조회 없이 발송에 위임한다(#192).
+    // 정식(ACTIVE) 전용 게이트는 SecurityConfig(ROLE_USER)가 담당한다(#192). 서비스는 회원 유형만 확인한다.
+    when(userAccountService.getUserType(40L)).thenReturn("TENANT");
     when(emailVerificationService.sendCode(40L, "minh@example.com")).thenReturn(300L);
 
     EmailVerificationCodeResponse response =
@@ -374,12 +376,39 @@ class AuthServiceTest {
 
   @Test
   void verifyEmail_delegatesAndReturnsVerified() {
+    when(userAccountService.getUserType(40L)).thenReturn("TENANT");
+
     EmailVerifyResponse response =
         authService.verifyEmail(40L, new EmailVerifyRequest("minh@example.com", "482915"));
 
     assertThat(response.verified()).isTrue();
     assertThat(response.email()).isEqualTo("mi***@example.com");
     verify(emailVerificationService).verify(40L, "minh@example.com", "482915");
+  }
+
+  @Test
+  void sendEmailVerificationCode_admin_throwsForbiddenAndDoesNotSend() {
+    when(userAccountService.getUserType(40L)).thenReturn("ADMIN");
+
+    assertThatThrownBy(
+            () ->
+                authService.sendEmailVerificationCode(
+                    40L, new EmailVerificationCodeRequest("minh@example.com")))
+        .isInstanceOf(AppUserOnlyException.class);
+
+    verify(emailVerificationService, never()).sendCode(anyLong(), any());
+  }
+
+  @Test
+  void verifyEmail_admin_throwsForbiddenAndDoesNotVerify() {
+    when(userAccountService.getUserType(40L)).thenReturn("ADMIN");
+
+    assertThatThrownBy(
+            () ->
+                authService.verifyEmail(40L, new EmailVerifyRequest("minh@example.com", "482915")))
+        .isInstanceOf(AppUserOnlyException.class);
+
+    verify(emailVerificationService, never()).verify(anyLong(), any(), any());
   }
 
   @Test

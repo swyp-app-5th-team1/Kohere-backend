@@ -67,7 +67,9 @@ import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static com.kohere.docs.DocsTokens.forgedAccessToken;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
@@ -164,6 +166,9 @@ class ChatDocsTest {
   /** 매 테스트가 실제 Security filter와 REST Docs 설정을 통과하도록 MockMvc를 구성한다. */
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
+    // 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돈다. userType 을 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 경로에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())

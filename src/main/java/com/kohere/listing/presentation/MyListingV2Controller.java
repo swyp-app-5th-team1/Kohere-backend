@@ -3,12 +3,19 @@ package com.kohere.listing.presentation;
 import com.kohere.common.response.ApiResponse;
 import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.AuthPrincipal;
+import com.kohere.listing.application.LandlordListingService;
 import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
+import com.kohere.listing.application.dto.LandlordListingDetailResponse;
+import com.kohere.listing.application.dto.LandlordListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
+import com.kohere.listing.presentation.dto.LandlordListingSearchRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyListingV2Controller {
 
   private final ListingService listingService;
+  private final LandlordListingService landlordListingService;
 
   /**
    * 로그인 사용자의 찜 목록을 조회한다.
@@ -51,5 +59,27 @@ public class MyListingV2Controller {
   public ApiResponse<RecentListingsResponse> getRecentListings(
       @AuthenticationPrincipal AuthPrincipal principal) {
     return ApiResponse.success(listingService.getRecentListings(principal.userId()));
+  }
+
+  /**
+   * 임대인이 자기 매물을 조회한다(US-3-8). <b>상태와 무관하게</b> 자기 것만 나온다.
+   *
+   * <p>이 경로가 {@code /api/v2/listings/mine}이 아닌 이유는 {@code GET /api/v2/listings/*}가 {@code
+   * permitAll} 이기 때문이다 — 그 아래 두면 비로그인에 열린다. 임대인 여부와 소유권은 서비스가 다시 본다.
+   */
+  @GetMapping("/listings")
+  public ApiResponse<PageResponse<LandlordListingSummaryResponse>> getMyListings(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @Valid @ModelAttribute LandlordListingSearchRequest request) {
+    return ApiResponse.success(
+        landlordListingService.list(
+            principal.userId(), request.status(), request.page(), request.size()));
+  }
+
+  /** 수정 화면이 폼을 채우는 데 쓰는 내 매물 상세다. 남의 매물이면 {@code 404}다. */
+  @GetMapping("/listings/{listingId}")
+  public ApiResponse<LandlordListingDetailResponse> getMyListing(
+      @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String listingId) {
+    return ApiResponse.success(landlordListingService.detail(principal.userId(), listingId));
   }
 }

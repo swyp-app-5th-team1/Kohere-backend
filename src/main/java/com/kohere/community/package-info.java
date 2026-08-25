@@ -11,6 +11,11 @@
  *
  * <p>TODO: 작성자 닉네임·국적·탈퇴 여부 마스킹은 user 모듈의 공개 API·이벤트로 받아온다(직접 의존 금지).
  *
+ * <p>TODO: 구현 시 <b>세입자·임대인 허용 목록 게이트</b>를 함께 넣는다(US-3-7). 관리자({@code userType=ADMIN})는 관리자 전용 API만
+ * 호출할 수 있는데, {@code hasRole("USER")} 매처는 회원 유형을 보지 않아 관리자도 통과한다. 다른 모듈의 {@code AppUserGuard}와 같은
+ * 모양이며 {@code allowedDependencies}에 {@code user :: api}를 더해야 한다. 지금은 전 메서드가 스텁이라 게이트를 붙일 대상이 없어
+ * 보류한다.
+ *
  * <p>TODO: 채팅 차단({@code POST_CHAT_BLOCKED})은 report 모듈의 차단 모델에 의존한다(확정 후 공개 API·이벤트로 연결).
  */
 @org.springframework.modulith.ApplicationModule(

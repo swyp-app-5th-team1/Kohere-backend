@@ -1,0 +1,571 @@
+# Kohere — 임대인 매물 수정·전용 조회 로컬 수동 테스트 — #267
+# 흐름: 로그인 → 내 매물 목록·상세 → 반려 매물 수정(→ 심사 대기) → 승인 → 공개 매물 수정(→ 수정 심사 대기) → 경계 확인
+# 스펙: docs/api/specs/03-listings-favorites.md 「임대인 매물 관리」
+# 유저스토리: US-3-8(임대인 전용 조회) · US-3-9(임대인 매물 수정)
+#
+# 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
+#   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
+#   2) 앱:      ./gradlew bootRun
+#   3) 계정·시드: admin-listing-review.http 의 「관리자 계정 만들기」·「시드」를 먼저 끝낸다.
+#      이 파일은 그 파일로 **매물 하나를 등록해 반려까지 해 둔 상태**에서 이어 쓴다.
+#      임대인·세입자는 **마스터 계정**(app.auth.test-login.enabled=true 로 시드된다)을 쓰므로 따로
+#      가입할 것이 없고, admin-listing-review.http 의 임대인과 같은 계정이라 매물이 그대로 보인다.
+#      관리자만 소셜 경로가 없어 웹 가입 + DB 승격이 필요하다.
+#   4) 0번부터 순서대로 "Send Request" — 토큰·매물 id·사진 키가 이름붙은 응답으로 자동 전달된다.
+#
+# ★ 이 파일의 핵심 두 가지
+#   · 수정은 **전체 교체**다. 등록 때 보낸 속성을 그대로 다시 보낸다 — 빠뜨린 필드는 지워진다.
+#   · 사진은 **임시 키와 기존 확정 키를 섞어** 보낸다. 그대로 둘 사진은 상세 응답의 `imageKeys` 를
+#     그대로 되돌려 보내고(아래에서 자동 참조한다), 새로 올린 것만 `uploads/…` 키로 보낸다.
+#
+# ⚠️ **수정할 때마다 상세를 먼저 다시 읽는다.** 수정이 성공하면 사진 확정 키가 바뀌므로, 옛 응답을
+#    참조하면 400 LISTING_IMAGE_KEY_NOT_FOUND 가 난다. 이 파일은 그래서 수정 직전마다 상세를
+#    새 이름으로 읽는다 — 5번(myListing) → 7번 수정, 11번(publishedListing) → 12번 수정,
+#    18번(latest) → 19~21·28번 경계 케이스.
+
+@host = http://localhost:8080
+# 임대인은 마스터 계정을 쓴다 — admin-listing-review.http 와 같은 계정이라 그 파일이 만든
+# 매물을 그대로 이어받는다. 시크릿은 local 기본값이며 dev 는 SSM(TEST_LOGIN_SECRET) 값으로 바꾼다.
+@secret = local-dev-test-login-secret
+# 관리자는 소셜 경로가 없다 — 웹 가입 후 DB 승격이 유일한 생성 방법이다(admin-listing-review.http).
+@adminEmail = admin@kohere.test
+@adminPassword = Kohere1!
+
+### 0. 관리자 웹 로그인 (승인 단계에서 쓴다)
+# @name adminLogin
+POST {{host}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+### 1. 임대인(LANDLORD) 마스터 로그인 → 정식 토큰
+# 실제 소셜 로그인 없이 미리 시드된 마스터 계정으로 받는다(dev·local 전용 — test-master-login.http).
+# admin-listing-review.http 의 임대인과 **같은 계정**이라 그 파일이 등록·반려해 둔 매물을 그대로 본다.
+# @name landlordLogin
+POST {{host}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:landlord:{{secret}}"
+}
+
+### 2. 내 매물 목록 — 상태 무관 전체
+# 최근 수정순 고정이다. sort 파라미터는 없다.
+GET {{host}}/api/v2/users/me/listings
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 3. 내 매물 목록 — 반려된 것만
+# 이 응답의 첫 건을 이후 단계가 수정 대상으로 쓴다.
+# @name rejectedList
+GET {{host}}/api/v2/users/me/listings?status=REJECTED
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 4. 내 매물 목록 — 상태 여러 개(콤마)
+GET {{host}}/api/v2/users/me/listings?status=PENDING,UPDATE_PENDING&page=0&size=20
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 5. 내 매물 상세 — 수정 폼 프리필용
+# 이 응답의 imageKeys · rooms[].roomOfferId · rooms[].roomImageKeys 를 7번이 그대로 되돌려 보낸다.
+# 비활성 방도 rooms 에 나온다(listing.roomOffers 는 활성만).
+# @name myListing
+GET {{host}}/api/v2/users/me/listings/{{rejectedList.response.body.$.data.content[0].listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 6. 새 사진 한 장 올리기 — 커버 한 장을 교체하는 시나리오다
+# @name newCover
+POST {{host}}/api/v2/listings/images
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: multipart/form-data; boundary=----KohereBoundary
+
+------KohereBoundary
+Content-Disposition: form-data; name="file"; filename="branch-2.jpg"
+Content-Type: image/jpeg
+
+< ./images/branch-2.jpg
+------KohereBoundary--
+
+### 7. 반려 매물 수정 → 심사 대기(PENDING)
+#    ※ 시설 8종은 해당하는 것이 하나도 없으면 ["NONE"] 하나만 보낸다.
+#      NONE 을 다른 코드와 같이 보내면 400 INVALID_INPUT 이고 errors[].field 에 필드명이 실린다.
+#      아래 laundry 를 ["NONE"] 으로 바꿔 보면 8번 상세에서 { "code": "NONE", "label": "없음" } 으로 되돌아온다.
+#    ※ 설문 2종(preferredNationalities · contractDifficulties)은 **선택**이다 — 키를 빼도 된다.
+#      다만 수정은 전체 교체라 **보내지 않으면 저장돼 있던 값이 [] 로 지워진다**(blogUrl · serviceFeedback 과 같다).
+#      지우고 싶지 않으면 5번 상세가 준 값을 그대로 다시 실으면 된다. 지워진 것은 8번에서 확인한다.
+# imageKeys = 5번의 첫 커버 키(유지) + 6번의 임시 키(신규) 혼합.
+# roomImageKeys = 5번의 방 사진 확정 키 두 장을 그대로 유지.
+PUT {{host}}/api/v2/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "코히어 고시원 (수정본)",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{myListing.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": {
+    "fullAddress": "서울특별시 서대문구 신촌로 1",
+    "detail": "3층",
+    "lat": 37.5595,
+    "lng": 126.9425
+  },
+  "building": {
+    "type": "COMMERCIAL_BUILDING",
+    "totalFloors": 8,
+    "usedFloorRange": "3~5",
+    "parkingAvailable": false,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["SHARED_KITCHEN"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다. (수정본)",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": [
+    "{{myListing.response.body.$.data.imageKeys[0]}}",
+    "{{newCover.response.body.$.data.key}}"
+  ],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{myListing.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실 (수정본)",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 520000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{myListing.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{myListing.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 8. 수정 직후 상태 확인 — status 가 PENDING 이다
+# ★ rejectionReason 은 **그대로 남는다.** 심사를 기다리는 동안 임대인이 무엇을 고치라고 했는지
+#   다시 볼 수 있어야 하고, 재심사하는 관리자도 이전 반려 맥락을 본다.
+#   지우는 것은 승인 시점뿐이다(10번 뒤에 사라진 것을 11번에서 확인할 수 있다).
+GET {{host}}/api/v2/users/me/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 9. 심사 중에는 다시 수정할 수 없다 — 422 LISTING_NOT_EDITABLE
+# 8번에서 상태가 PENDING 이 됐다. 관리자가 심사를 마칠 때까지 임대인은 손댈 수 없다.
+# ★ 본문은 **형식만 갖추면 된다.** 요청 본문 검증(Bean Validation)이 컨트롤러 진입 전에 돌아서
+#   필수 필드가 빠지면 이 케이스를 보기도 전에 400 INVALID_INPUT 이 난다. 반대로 사진 키 검사는
+#   아래 게이트들보다 **뒤**라, 더미 키를 넣어도 여기까지 오지 않는다.
+PUT {{host}}/api/v2/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "다시 수정 시도",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "1112233344",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["uploads/0/dummy.jpg"],
+  "roomOffers": [
+    {
+      "roomOfferId": null,
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["uploads/0/dummy-1.jpg", "uploads/0/dummy-2.jpg"]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 10. 관리자 승인 → PUBLISHED
+POST {{host}}/api/v1/admin/listings/{{myListing.response.body.$.data.listing.listingId}}/approval
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 11. 공개 매물 수정 준비 — **사진 확정 키**가 바뀌었으므로 상세를 다시 읽는다
+# 승인됐으므로 status=PUBLISHED 이고 rejectionReason 이 사라진 것을 여기서 확인한다.
+# ★ listingId 와 기존 roomOfferId 는 **바뀌지 않는다**(수정은 그 값을 승계한다).
+#   7번에서 커버 한 장을 갈아 끼웠으므로 imageKeys 만 달라졌다 — 새로 올린 사진이 확정 위치로
+#   복사되면서 새 키를 얻고, 교체된 옛 키는 저장 성공 뒤에 지워진다. 옛 키를 다시 보내면 400 이다.
+# @name publishedListing
+GET {{host}}/api/v2/users/me/listings/{{myListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 12. 공개 매물 수정 → 수정 심사 대기(UPDATE_PENDING)
+# ★ 이 시점부터 세입자 조회에서 사라진다 — 의도된 동작이다(13번으로 확인).
+# 사진은 전부 유지한다(신규 업로드 없음) — 확정 키만 되돌려 보내는 경우다.
+PUT {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "코히어 고시원 (공개 후 수정)",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{publishedListing.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": {
+    "fullAddress": "서울특별시 서대문구 신촌로 1",
+    "detail": "3층",
+    "lat": 37.5595,
+    "lng": 126.9425
+  },
+  "building": {
+    "type": "COMMERCIAL_BUILDING",
+    "totalFloors": 8,
+    "usedFloorRange": "3~5",
+    "parkingAvailable": false,
+    "elevatorAvailable": true
+  },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": {
+    "heatingSystem": ["INDIVIDUAL"],
+    "kitchen": ["INDUCTION"],
+    "laundry": ["WASHER"],
+    "livingAmenities": ["WIFI"],
+    "securityFeatures": ["CCTV"],
+    "commonSpaces": ["SHARED_KITCHEN"],
+    "providedSupplies": ["BEDDING"]
+  },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "공개 후 고친 소개 문구입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{publishedListing.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{publishedListing.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 550000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{publishedListing.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{publishedListing.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 13. 세입자 조회에서 사라졌는지 — 404 LISTING_NOT_FOUND (토큰 없이 호출한다)
+GET {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+
+### 14. 임대인 조회에는 그대로 보인다 — 200, status=UPDATE_PENDING
+GET {{host}}/api/v2/users/me/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 15. 관리자 목록에서 수정 심사 건을 최근 수정순으로 본다
+# 수정 재심사 건은 원래 오래된 매물이라 등록 최신순 큐의 바닥에 가라앉는다.
+GET {{host}}/api/v1/admin/listings?status=UPDATE_PENDING&sort=updatedAt,desc
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 16. 관리자 승인 → 다시 공개. 찜 수·찜 문서·최근 본 기록이 그대로 복구된다
+POST {{host}}/api/v1/admin/listings/{{publishedListing.response.body.$.data.listing.listingId}}/approval
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 17. 세입자 조회에 다시 나타난다 — 200
+GET {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+
+# ─────────────────────────────── 경계 확인 ───────────────────────────────
+# 아래는 17번까지 끝낸 상태에서 개별로 보내면 된다. 실행 전 18번으로 상세를 한 번 더 읽는다.
+
+### 18. 최신 상세 다시 읽기 (경계 케이스가 참조한다)
+# @name latest
+GET {{host}}/api/v2/users/me/listings/{{publishedListing.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 19. 동의 누락 — 422 LISTING_REQUIRED_AGREEMENT_MISSING
+# 수정에도 등록과 같은 게이트가 그대로 걸린다. 나머지 본문은 유효하다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "동의 없이 수정",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": false, "listingExposureAgreed": true }
+}
+
+### 20. 방 사진 키를 커버 자리에 — 400 LISTING_IMAGE_KEY_NOT_FOUND
+# 문서에 **실재하는** 키지만 그 자리의 것이 아니다. 대표사진으로 쓰려면 다시 업로드해야 한다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "사진 자리 교차",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 21. 모든 방을 INACTIVE 로 — 400
+# 상태만 공개인데 목록·상세에는 나타나지 않는 매물이 만들어지는 것을 막는다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "전 방 비활성",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["{{latest.response.body.$.data.imageKeys[0]}}"],
+  "roomOffers": [
+    {
+      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
+      "status": "INACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": [
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
+        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
+      ]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 22. 남의 매물 수정 — 404 LISTING_NOT_FOUND (403 이 아니다)
+# 존재 여부를 누설하지 않으려고 「없는 매물」과 같은 코드로 통일한다.
+# ★ 본문은 **형식만 갖추면 된다.** 요청 본문 검증(Bean Validation)이 컨트롤러 진입 전에 돌아서
+#   필수 필드가 빠지면 이 케이스를 보기도 전에 400 INVALID_INPUT 이 난다. 반대로 사진 키 검사는
+#   아래 게이트들보다 **뒤**라, 더미 키를 넣어도 여기까지 오지 않는다.
+PUT {{host}}/api/v2/listings/000000000000000000000000
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "남의 매물",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "1112233344",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["uploads/0/dummy.jpg"],
+  "roomOffers": [
+    {
+      "roomOfferId": null,
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["uploads/0/dummy-1.jpg", "uploads/0/dummy-2.jpg"]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}
+
+### 23. 남의 매물 조회 — 404 LISTING_NOT_FOUND
+GET {{host}}/api/v2/users/me/listings/000000000000000000000000
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 24. ObjectId 형식이 아닌 id — 404 LISTING_NOT_FOUND
+GET {{host}}/api/v2/users/me/listings/not-an-object-id
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+
+### 25. 토큰 없이 내 매물 조회 — 401 UNAUTHENTICATED
+GET {{host}}/api/v2/users/me/listings
+
+### 26. 세입자(TENANT) 마스터 로그인 — 27번이 쓴다
+# @name tenantLogin
+POST {{host}}/api/v1/auth/social-login
+Content-Type: application/json
+
+{
+  "provider": "GOOGLE",
+  "idToken": "master:tenant:{{secret}}"
+}
+
+### 27. 세입자 토큰으로 내 매물 조회 — 403 FORBIDDEN
+# 정식 회원이지만 임대인이 아니다. 보안 매처는 통과하고 서비스의 재검사가 막는다.
+GET {{host}}/api/v2/users/me/listings
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+
+### 28. 세입자 토큰으로 매물 수정 — 403 FORBIDDEN
+# 임대인 재검사가 소유권 확인보다 앞이라 매물 id 는 무엇이든 상관없다.
+# ★ 본문은 **형식만 갖추면 된다.** 요청 본문 검증(Bean Validation)이 컨트롤러 진입 전에 돌아서
+#   필수 필드가 빠지면 이 케이스를 보기도 전에 400 INVALID_INPUT 이 난다. 반대로 사진 키 검사는
+#   아래 게이트들보다 **뒤**라, 더미 키를 넣어도 여기까지 오지 않는다.
+PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
+Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{
+  "title": "세입자가 수정 시도",
+  "type": "GOSHIWON",
+  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
+  "businessRegistrationNumber": "1112233344",
+  "blogUrl": null,
+  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
+  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
+  "genderPolicy": "ANY",
+  "languagesSupported": ["ENGLISH"],
+  "ageRange": "20~35",
+  "arcRequired": "NOT_REQUIRED",
+  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
+  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
+  "nearbyFacilities": ["CONVENIENCE_STORE"],
+  "description": "역세권 고시원입니다.",
+  "extraNotes": "취사는 공용 주방만 가능합니다.",
+  "refundPolicy": "입주 7일 전까지 전액 환불",
+  "imageKeys": ["uploads/0/dummy.jpg"],
+  "roomOffers": [
+    {
+      "roomOfferId": null,
+      "status": "ACTIVE",
+      "name": "스탠다드 1인실",
+      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
+      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
+      "filterTags": ["MOVE_IN_NOW"],
+      "roomImageKeys": ["uploads/0/dummy-1.jpg", "uploads/0/dummy-2.jpg"]
+    }
+  ],
+  "preferredNationalities": ["JAPAN"],
+  "contractDifficulties": ["LANGUAGE"],
+  "serviceFeedback": null,
+  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+}

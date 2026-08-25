@@ -45,6 +45,8 @@ class ChatRoomListServiceTest {
   private static final long COUNTERPART_ID = 42L;
   private static final Instant NOW = Instant.parse("2026-08-20T10:00:00Z");
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private MessageRepository messageRepository;
@@ -60,6 +62,7 @@ class ChatRoomListServiceTest {
     service =
         new ChatRoomListService(
             chatRoomRepository,
+            appUserGuard,
             memberRepository,
             messageRepository,
             translationRepository,

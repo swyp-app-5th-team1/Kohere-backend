@@ -27,6 +27,14 @@ final class PublicPaths {
     // 무관하다. 두 화면 모두 로그아웃 후 다시 들어오는 경로라 만료된 access 토큰이 남아 있기 쉽다.
     "/api/v1/auth/signup",
     "/api/v1/auth/login",
+    // 임대인 웹 계정 복구(US-1-16·US-1-17, #272) — 이메일 찾기 3경로 + 비밀번호 재설정 3경로.
+    // 로그인하지 못해 들어오는 화면이라 만료된 access 토큰이 남아 있을 확률이 가장 높은 자리다.
+    "/api/v1/auth/phone/find-email/verification-code",
+    "/api/v1/auth/phone/find-email/verify",
+    "/api/v1/auth/email/find",
+    "/api/v1/auth/password/reset-link",
+    "/api/v1/auth/password/reset-token/verify",
+    "/api/v1/auth/password/reset",
     "/actuator/health",
     "/swagger-ui/**",
     // WebSocket handshake는 인증 결과를 만들지 않는 transport 진입점이다. 실수로 남은 HTTP

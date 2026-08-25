@@ -1,8 +1,12 @@
 [
   {
-    "_id": { "$oid": "68e0000000000000000000a1" },
+    "_id": {
+      "$oid": "68e0000000000000000000a1"
+    },
     "schemaVersion": 4,
-    "landlordId": { "$numberLong": "11" },
+    "landlordId": {
+      "$numberLong": "11"
+    },
     "contact": {
       "managerName": "김운영",
       "phone": "+82) 10-1234-5678"
@@ -11,27 +15,41 @@
     "blogUrl": "https://blog.naver.com/kohere-goshiwon",
     "ageMin": 20,
     "ageMax": 35,
-    "title": { "ko": "신림 스테이", "en": "Sillim Stay" },
+    "title": {
+      "ko": "신림 스테이",
+      "en": "Sillim Stay"
+    },
     "type": "GOSHIWON",
     "rentalType": "MONTHLY_RENT",
     "status": "PUBLISHED",
-    "rejectionReason": null,
     "genderPolicy": "FEMALE_ONLY",
-    "languagesSupported": ["ENGLISH", "CHINESE"],
+    "languagesSupported": [
+      "ENGLISH",
+      "CHINESE"
+    ],
     "arcRequired": "NOT_REQUIRED",
     "favoriteCount": 0,
-    "imageUrls": ["https://cdn.kohere.app/listings/68e0000000000000000000a1/1.jpg"],
-    "nearbyUniversityCodes": ["SNU", "CAU", "SOONGSIL"],
-    "createdAt": { "$date": "2026-08-01T00:00:00.000Z" },
-    "updatedAt": { "$date": "2026-08-01T00:00:00.000Z" },
+    "imageUrls": [
+      "https://cdn.kohere.app/listings/68e0000000000000000000a1/1.jpg"
+    ],
+    "nearbyUniversityCodes": [
+      "SNU",
+      "CAU",
+      "SOONGSIL"
+    ],
+    "createdAt": {
+      "$date": "2026-08-01T00:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2026-08-01T00:00:00.000Z"
+    },
     "address": {
       "city": "SEOUL",
       "district": "GWANAK_GU",
       "fullAddress": {
         "ko": "서울특별시 관악구 신림동 나로 56-15",
         "en": "56-15 Na-ro, Sillim-dong, Gwanak-gu, Seoul"
-      },
-      "detail": null
+      }
     },
     "building": {
       "type": "VILLA",
@@ -50,21 +68,66 @@
       "en": "No cooking inside rooms. Quiet hours after 11 PM."
     },
     "facilities": {
-      "heatingSystem": ["CENTRAL"],
-      "kitchen": ["SHARED_REFRIGERATOR", "MICROWAVE", "INDUCTION", "WATER_PURIFIER"],
-      "laundry": ["WASHER", "DRYER", "IRON"],
-      "livingAmenities": ["WIFI", "TV", "SOFA", "AIR_CONDITIONER", "AIR_PURIFIER"],
-      "securityFeatures": ["CCTV", "ENTRANCE_DOOR_LOCK", "DOOR_LOCK", "FIRE_EXTINGUISHER"],
-      "commonSpaces": ["SHARED_KITCHEN", "SHARED_TOILET", "SHARED_BATH", "STUDY_ROOM"],
-      "providedSupplies": ["BEDDING", "TISSUE", "SLIPPERS", "LAUNDRY_DETERGENT"]
+      "heatingSystem": [
+        "CENTRAL"
+      ],
+      "kitchen": [
+        "SHARED_REFRIGERATOR",
+        "MICROWAVE",
+        "INDUCTION",
+        "WATER_PURIFIER"
+      ],
+      "laundry": [
+        "WASHER",
+        "DRYER",
+        "IRON"
+      ],
+      "livingAmenities": [
+        "WIFI",
+        "TV",
+        "SOFA",
+        "AIR_CONDITIONER",
+        "AIR_PURIFIER"
+      ],
+      "securityFeatures": [
+        "CCTV",
+        "ENTRANCE_DOOR_LOCK",
+        "DOOR_LOCK",
+        "FIRE_EXTINGUISHER"
+      ],
+      "commonSpaces": [
+        "SHARED_KITCHEN",
+        "SHARED_TOILET",
+        "SHARED_BATH",
+        "STUDY_ROOM"
+      ],
+      "providedSupplies": [
+        "BEDDING",
+        "TISSUE",
+        "SLIPPERS",
+        "LAUNDRY_DETERGENT"
+      ]
     },
-    "location": { "type": "Point", "coordinates": [126.951422, 37.459471] },
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        126.951422,
+        37.459471
+      ]
+    },
     "nearestTransit": {
       "type": "SUBWAY",
-      "name": { "ko": "서울대입구역", "en": "Seoul Nat'l Univ. Sta." },
+      "name": {
+        "ko": "서울대입구역",
+        "en": "Seoul Nat'l Univ. Sta."
+      },
       "walkMinutes": 5
     },
-    "nearbyFacilities": ["CONVENIENCE_STORE", "MART", "HOSPITAL_PHARMACY"],
+    "nearbyFacilities": [
+      "CONVENIENCE_STORE",
+      "MART",
+      "HOSPITAL_PHARMACY"
+    ],
     "refundPolicy": {
       "ko": "입주 7일 전 취소 시 전액 환불, 이후 50% 환불",
       "en": "Full refund if cancelled at least 7 days before move-in; 50% afterwards."
@@ -72,11 +135,27 @@
     "roomOffers": [
       {
         "roomOfferId": "68e0000000000000000001a1",
-        "name": { "ko": "스탠다드 1인실", "en": "Standard Single Room" },
+        "name": {
+          "ko": "스탠다드 1인실",
+          "en": "Standard Single Room"
+        },
         "status": "ACTIVE",
-        "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-        "pricing": { "monthlyRent": 380000, "deposit": 300000, "maintenanceFee": 0, "currency": "KRW" },
-        "filterTags": ["MOVE_IN_NOW", "FEMALE_ONLY", "ADDRESS_REGISTRATION", "NO_MAINT_FEE"],
+        "contract": {
+          "minStayMonths": 1,
+          "maxStayMonths": 12
+        },
+        "pricing": {
+          "monthlyRent": 380000,
+          "deposit": 300000,
+          "maintenanceFee": 0,
+          "currency": "KRW"
+        },
+        "filterTags": [
+          "MOVE_IN_NOW",
+          "FEMALE_ONLY",
+          "ADDRESS_REGISTRATION",
+          "NO_MAINT_FEE"
+        ],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/68e0000000000000000000a1/room/1.jpg",
           "https://cdn.kohere.app/listings/68e0000000000000000000a1/room/2.jpg"
@@ -84,46 +163,95 @@
       },
       {
         "roomOfferId": "68e0000000000000000001a2",
-        "name": { "ko": "프리미엄 1인실", "en": "Premium Single Room" },
+        "name": {
+          "ko": "프리미엄 1인실",
+          "en": "Premium Single Room"
+        },
         "status": "ACTIVE",
-        "contract": { "minStayMonths": 3, "maxStayMonths": 24 },
-        "pricing": { "monthlyRent": 520000, "deposit": 500000, "maintenanceFee": 20000, "currency": "KRW" },
-        "filterTags": ["FEMALE_ONLY", "PRIVATE_BATH", "ADDRESS_REGISTRATION", "ENGLISH_OK"],
+        "contract": {
+          "minStayMonths": 3,
+          "maxStayMonths": 24
+        },
+        "pricing": {
+          "monthlyRent": 520000,
+          "deposit": 500000,
+          "maintenanceFee": 20000,
+          "currency": "KRW"
+        },
+        "filterTags": [
+          "FEMALE_ONLY",
+          "PRIVATE_BATH",
+          "ADDRESS_REGISTRATION",
+          "ENGLISH_OK"
+        ],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/68e0000000000000000000a1/room/3.jpg",
           "https://cdn.kohere.app/listings/68e0000000000000000000a1/room/4.jpg"
         ]
       }
     ],
-    "preferredNationalities": ["JAPAN", "CHINA", "SOUTHEAST_ASIA"],
-    "contractDifficulties": ["LANGUAGE", "PAYMENT"],
-    "serviceFeedback": "외국인 임차인과의 계약서 번역 지원이 있으면 좋겠습니다."
+    "preferredNationalities": [
+      "JAPAN",
+      "CHINA",
+      "SOUTHEAST_ASIA"
+    ],
+    "contractDifficulties": [
+      "LANGUAGE",
+      "PAYMENT"
+    ],
+    "serviceFeedback": "외국인 임차인과의 계약서 번역 지원이 있으면 좋겠습니다.",
+    "consents": {
+      "privacyPolicyAgreed": true,
+      "listingExposureAgreed": true,
+      "version": "v1.0",
+      "agreedAt": {
+        "$date": "2026-08-01T00:00:00.000Z"
+      }
+    }
   },
   {
-    "_id": { "$oid": "68e0000000000000000000b1" },
+    "_id": {
+      "$oid": "68e0000000000000000000b1"
+    },
     "schemaVersion": 4,
-    "landlordId": { "$numberLong": "12" },
+    "landlordId": {
+      "$numberLong": "12"
+    },
     "contact": {
       "managerName": "박매니저",
       "phone": "+82) 10-2222-3333"
     },
     "businessRegistrationNumber": "9876543210",
-    "blogUrl": null,
     "ageMin": 22,
     "ageMax": 40,
-    "title": { "ko": "홍대 코리빙 하우스", "en": "Hongdae Co-living House" },
+    "title": {
+      "ko": "홍대 코리빙 하우스",
+      "en": "Hongdae Co-living House"
+    },
     "type": "CO_LIVING",
     "rentalType": "MONTHLY_RENT",
     "status": "PUBLISHED",
-    "rejectionReason": null,
     "genderPolicy": "ANY",
-    "languagesSupported": ["ENGLISH", "JAPANESE", "OTHER"],
+    "languagesSupported": [
+      "ENGLISH",
+      "JAPANESE"
+    ],
     "arcRequired": "REQUIRED",
     "favoriteCount": 0,
-    "imageUrls": ["https://cdn.kohere.app/listings/68e0000000000000000000b1/1.jpg"],
-    "nearbyUniversityCodes": ["HONGIK", "YONSEI", "EWHA"],
-    "createdAt": { "$date": "2026-08-05T00:00:00.000Z" },
-    "updatedAt": { "$date": "2026-08-05T00:00:00.000Z" },
+    "imageUrls": [
+      "https://cdn.kohere.app/listings/68e0000000000000000000b1/1.jpg"
+    ],
+    "nearbyUniversityCodes": [
+      "HONGIK",
+      "YONSEI",
+      "EWHA"
+    ],
+    "createdAt": {
+      "$date": "2026-08-05T00:00:00.000Z"
+    },
+    "updatedAt": {
+      "$date": "2026-08-05T00:00:00.000Z"
+    },
     "address": {
       "city": "SEOUL",
       "district": "MAPO_GU",
@@ -131,7 +259,10 @@
         "ko": "서울특별시 마포구 와우산로 94",
         "en": "94 Wausan-ro, Mapo-gu, Seoul"
       },
-      "detail": { "ko": "3동 201호", "en": "Bldg. 3, Unit 201" }
+      "detail": {
+        "ko": "3동 201호",
+        "en": "Bldg. 3, Unit 201"
+      }
     },
     "building": {
       "type": "MIXED_USE",
@@ -150,21 +281,69 @@
       "en": "No pets allowed. No deposit required at move-in."
     },
     "facilities": {
-      "heatingSystem": ["INDIVIDUAL"],
-      "kitchen": ["SHARED_REFRIGERATOR", "GAS_STOVE", "MICROWAVE", "ELECTRIC_KETTLE", "RICE_COOKER", "COFFEE_MACHINE"],
-      "laundry": ["WASHER", "DRYER", "DRYING_RACK"],
-      "livingAmenities": ["WIFI", "TV", "SOFA", "GYM_EQUIPMENT", "PROJECTOR", "SHARED_PC"],
-      "securityFeatures": ["CCTV", "ENTRANCE_DOOR_LOCK", "FIRE_ALARM", "SECURITY_GUARD"],
-      "commonSpaces": ["SHARED_KITCHEN", "LOUNGE", "STUDY_ROOM", "MEETING_ROOM", "ROOFTOP"],
-      "providedSupplies": ["BEDDING", "TOWEL", "SEASONING"]
+      "heatingSystem": [
+        "INDIVIDUAL"
+      ],
+      "kitchen": [
+        "SHARED_REFRIGERATOR",
+        "GAS_STOVE",
+        "MICROWAVE",
+        "ELECTRIC_KETTLE",
+        "RICE_COOKER",
+        "COFFEE_MACHINE"
+      ],
+      "laundry": [
+        "WASHER",
+        "DRYER",
+        "DRYING_RACK"
+      ],
+      "livingAmenities": [
+        "WIFI",
+        "TV",
+        "SOFA",
+        "GYM_EQUIPMENT",
+        "PROJECTOR",
+        "SHARED_PC"
+      ],
+      "securityFeatures": [
+        "CCTV",
+        "ENTRANCE_DOOR_LOCK",
+        "FIRE_ALARM",
+        "SECURITY_GUARD"
+      ],
+      "commonSpaces": [
+        "SHARED_KITCHEN",
+        "LOUNGE",
+        "STUDY_ROOM",
+        "MEETING_ROOM",
+        "ROOFTOP"
+      ],
+      "providedSupplies": [
+        "BEDDING",
+        "TOWEL",
+        "SEASONING"
+      ]
     },
-    "location": { "type": "Point", "coordinates": [126.925320, 37.552870] },
+    "location": {
+      "type": "Point",
+      "coordinates": [
+        126.92532,
+        37.55287
+      ]
+    },
     "nearestTransit": {
       "type": "SUBWAY",
-      "name": { "ko": "홍대입구역", "en": "Hongik Univ. Sta." },
+      "name": {
+        "ko": "홍대입구역",
+        "en": "Hongik Univ. Sta."
+      },
       "walkMinutes": 7
     },
-    "nearbyFacilities": ["CONVENIENCE_STORE", "PARK", "LAUNDROMAT"],
+    "nearbyFacilities": [
+      "CONVENIENCE_STORE",
+      "PARK",
+      "LAUNDROMAT"
+    ],
     "refundPolicy": {
       "ko": "입주 14일 전까지 전액 환불, 이후 환불 불가",
       "en": "Full refund until 14 days before move-in; non-refundable afterwards."
@@ -172,19 +351,49 @@
     "roomOffers": [
       {
         "roomOfferId": "68e0000000000000000001b1",
-        "name": { "ko": "2인실 A타입", "en": "Double Room Type A" },
+        "name": {
+          "ko": "2인실 A타입",
+          "en": "Double Room Type A"
+        },
         "status": "ACTIVE",
-        "contract": { "minStayMonths": 3, "maxStayMonths": 12 },
-        "pricing": { "monthlyRent": 650000, "deposit": 1000000, "maintenanceFee": 50000, "currency": "KRW" },
-        "filterTags": ["DOUBLE_ROOM", "ENGLISH_OK", "MEALS_INCLUDED", "MOVE_IN_NOW"],
+        "contract": {
+          "minStayMonths": 3,
+          "maxStayMonths": 12
+        },
+        "pricing": {
+          "monthlyRent": 650000,
+          "deposit": 1000000,
+          "maintenanceFee": 50000,
+          "currency": "KRW"
+        },
+        "filterTags": [
+          "DOUBLE_ROOM",
+          "ENGLISH_OK",
+          "MEALS_INCLUDED",
+          "MOVE_IN_NOW"
+        ],
         "roomImageUrls": [
           "https://cdn.kohere.app/listings/68e0000000000000000000b1/room/1.jpg",
           "https://cdn.kohere.app/listings/68e0000000000000000000b1/room/2.jpg"
         ]
       }
     ],
-    "preferredNationalities": ["USA", "EUROPE"],
-    "contractDifficulties": ["CULTURE", "IDENTITY", "COMMUNICATION_CHANNEL"],
-    "serviceFeedback": null
+    "preferredNationalities": [
+      "USA",
+      "EUROPE"
+    ],
+    "contractDifficulties": [
+      "CULTURE",
+      "IDENTITY",
+      "COMMUNICATION_CHANNEL"
+    ],
+    "consents": {
+      "privacyPolicyAgreed": true,
+      "listingExposureAgreed": true,
+      "version": "v1.0",
+      "agreedAt": {
+        "$date": "2026-08-05T00:00:00.000Z"
+      }
+    }
   }
 ]

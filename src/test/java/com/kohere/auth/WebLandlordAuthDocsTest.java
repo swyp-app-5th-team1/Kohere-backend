@@ -14,7 +14,6 @@ import static com.kohere.docs.AuthDocsFields.SIGNUP_PHONE_VERIFY_422;
 import static com.kohere.docs.AuthDocsFields.SIGNUP_PHONE_VERIFY_DESCRIPTION;
 import static com.kohere.docs.AuthDocsFields.SIGNUP_PHONE_VERIFY_SUMMARY;
 import static com.kohere.docs.AuthDocsFields.WEB_LOGIN_400;
-import static com.kohere.docs.AuthDocsFields.WEB_LOGIN_401;
 import static com.kohere.docs.AuthDocsFields.WEB_LOGIN_423;
 import static com.kohere.docs.AuthDocsFields.WEB_LOGIN_429;
 import static com.kohere.docs.AuthDocsFields.WEB_LOGIN_DESCRIPTION;
@@ -52,6 +51,7 @@ import com.kohere.auth.application.AuthProperties;
 import com.kohere.auth.domain.SmsDispatchException;
 import com.kohere.auth.domain.VerificationSmsSender;
 import com.kohere.docs.ApiDocsTags;
+import com.kohere.docs.AuthDocsFields;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.BeforeEach;
@@ -110,7 +110,7 @@ class WebLandlordAuthDocsTest {
 
   private static final String WRONG_PASSWORD = "Wrong99!";
 
-  /** 정책 위반 예시 — 숫자·특수문자가 없고 길이도 미달이라 400 INVALID_INPUT(errors[].field=password)이다. */
+  /** 정책 위반 예시 — 길이(11자)는 맞지만 숫자·특수문자가 없어 400 INVALID_INPUT(errors[].field=password)이다. */
   private static final String WEAK_PASSWORD = "onlyletters";
 
   private static final String NAME = "김임대";
@@ -133,15 +133,20 @@ class WebLandlordAuthDocsTest {
   /** 인증번호를 한 번도 발송하지 않는 번호 — 확인 422와 가입 422(미인증) 예시에 쓴다. */
   private static final String UNVERIFIED_PHONE = "01055550007";
 
+  /** 비밀번호 불일치 401의 error.details 예시 전용 계정 — 잠금 예시와 카운터가 섞이면 안 된다. */
+  private static final String WRONG_PASSWORD_PHONE = "01055550010";
+
+  private static final String WRONG_PASSWORD_EMAIL = "err-web-wrongpw@work.example";
+
   private static final String LOCKED_PHONE = "01055550008";
   private static final String LOCKED_EMAIL = "err-web-locked@work.example";
 
-  /** 시도 한도(이메일 10회/시간)를 실제로 넘기는 전용 이메일. 계정은 만들지 않는다 — 한도는 조회보다 먼저 판정된다. */
+  /** 시도 한도(이메일 한도/시간)를 실제로 넘기는 전용 이메일. 계정은 만들지 않는다 — 한도는 조회보다 먼저 판정된다. */
   private static final String RATE_LIMITED_EMAIL = "err-web-ratelimit@work.example";
 
   /**
-   * 시도를 대량으로 쌓는 케이스 전용 IP. 기본 remote address(127.0.0.1)에 몰면 같은 컨테이너를 쓰는 다른 케이스가 IP 한도(로그인 30회/시간)를
-   * 나눠 쓰게 되어, 관계없는 단정이 429로 깨진다.
+   * 시도를 대량으로 쌓는 케이스 전용 IP. 기본 remote address(127.0.0.1)에 몰면 같은 컨테이너를 쓰는 다른 케이스가 IP 한도를 나눠 쓰게 되어,
+   * 관계없는 단정이 429로 깨진다.
    */
   private static final String RATE_LIMIT_TEST_IP = "203.0.113.77";
 
@@ -487,19 +492,31 @@ class WebLandlordAuthDocsTest {
         WEB_LOGIN_DESCRIPTION,
         WEB_LOGIN_400);
 
-    // 등록되지 않은 이메일 — 비밀번호 불일치와 완전히 같은 401이다(계정 존재 비노출).
-    perform(
+    // 등록되지 않은 이메일 — 코드·status·문구는 비밀번호 불일치와 같고 error.details만 없다.
+    // 필드 기술자를 optional로 낮춘 만큼 부재를 단정으로 되메운다(ADR-0017).
+    performWith401Fields(
         post("/api/v1/auth/login")
             .contentType(MediaType.APPLICATION_JSON)
             .content(loginJson("err-web-nobody@work.example", PASSWORD)),
-        status().isUnauthorized(),
-        "AUTH_INVALID_CREDENTIALS",
         "auth-login-invalid-credentials",
-        WEB_LOGIN_SUMMARY,
-        WEB_LOGIN_DESCRIPTION,
-        WEB_LOGIN_401);
+        jsonPath("$.error.details").doesNotExist());
+
+    // 비밀번호 불일치 — 누적 실패 횟수와 상한이 실린다. 위 401과 같은 (path, method, status)라
+    // 반드시 같은 필드 기술자를 쓴다(dedup·last-wins).
+    verifyPhone(WRONG_PASSWORD_PHONE);
+    signup(WRONG_PASSWORD_PHONE, WRONG_PASSWORD_EMAIL, PASSWORD).andExpect(status().isOk());
+    performWith401Fields(
+        post("/api/v1/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(loginJson(WRONG_PASSWORD_EMAIL, WRONG_PASSWORD)),
+        "auth-login-wrong-password",
+        jsonPath("$.error.details.failedAttempts").value(1),
+        jsonPath("$.error.details.maxFailedAttempts")
+            .value(authProperties.getWeb().getLoginMaxFailedAttempts()));
 
     // 연속 실패 상한까지 틀린 뒤 → 맞는 비밀번호로도 423. 잠금 판정이 자격증명 대조보다 먼저다.
+    // 상한+1회를 같은 이메일로 보내므로 이메일 시도 한도가 상한보다 커야 이 시나리오가 성립한다
+    // (한도 이하면 423 대신 429가 나온다 — 두 설정값은 함께 움직인다).
     verifyPhone(LOCKED_PHONE);
     signup(LOCKED_PHONE, LOCKED_EMAIL, PASSWORD).andExpect(status().isOk());
     for (int i = 0; i < authProperties.getWeb().getLoginMaxFailedAttempts(); i++) {
@@ -509,7 +526,8 @@ class WebLandlordAuthDocsTest {
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(loginJson(LOCKED_EMAIL, WRONG_PASSWORD)))
           .andExpect(status().isUnauthorized())
-          .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIALS"));
+          .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIALS"))
+          .andExpect(jsonPath("$.error.details.failedAttempts").value(i + 1));
     }
     perform(
         post("/api/v1/auth/login")
@@ -589,6 +607,31 @@ class WebLandlordAuthDocsTest {
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value(expectedCode))
         .andDo(errorSnippet(identifier, ApiDocsTags.AUTH, summary, description, errorCodes));
+  }
+
+  /**
+   * 웹 로그인 401 스니펫 1건. {@code error.details}가 실리는 케이스와 아닌 케이스가 <b>같은 기술자 한 벌</b>을 쓰도록 묶는다 — 응답 스키마는
+   * {@code (path, type)} dedup·last-wins라 한쪽만 상세를 선언하면 승자가 파일 순회 순서에 좌우된다.
+   */
+  private void performWith401Fields(
+      MockHttpServletRequestBuilder request, String identifier, ResultMatcher... extraMatchers)
+      throws Exception {
+    ResultActions actions =
+        mockMvc
+            .perform(request)
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.success").value(false))
+            .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIALS"));
+    for (ResultMatcher matcher : extraMatchers) {
+      actions.andExpect(matcher);
+    }
+    actions.andDo(
+        errorSnippet(
+            identifier,
+            ApiDocsTags.AUTH,
+            WEB_LOGIN_SUMMARY,
+            WEB_LOGIN_DESCRIPTION,
+            AuthDocsFields.webLogin401Fields()));
   }
 
   /** 가입용 SMS 인증 완주(발송 → 확인) — 가입 제출이 소비할 검증 마커를 남긴다. */

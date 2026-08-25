@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ChatRoomDeletionService {
 
   private final ChatRoomRepository chatRoomRepository;
+  private final AppUserGuard appUserGuard;
   private final ChatRoomMemberRepository memberRepository;
 
   /**
@@ -36,6 +37,7 @@ public class ChatRoomDeletionService {
    */
   @Transactional
   public void deleteRoom(long userId, long roomId) {
+    appUserGuard.requireAppUser(userId);
     ChatRoom room =
         chatRoomRepository.findByIdForUpdate(roomId).orElseThrow(ChatRoomNotFoundException::new);
 

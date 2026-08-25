@@ -62,6 +62,8 @@ class ListingServiceTest {
   private static final String SECOND_ROOM_OFFER_ID = "6858e2000000000000000103";
   private static final String INACTIVE_ROOM_OFFER_ID = "6858e2000000000000000104";
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ListingRepository listingRepository;
   @Mock private FavoriteRepository favoriteRepository;
   @Mock private RecentListingRepository recentListingRepository;
@@ -78,7 +80,8 @@ class ListingServiceTest {
             favoriteRepository,
             recentListingRepository,
             new ListingLocalizationService(catalogRepository),
-            userAccountService);
+            userAccountService,
+            appUserGuard);
   }
 
   /** 최근 본 저장이 실패해도 상세 조회 응답은 정상 반환하고, 이후 정리 작업은 시도하지 않는다. */

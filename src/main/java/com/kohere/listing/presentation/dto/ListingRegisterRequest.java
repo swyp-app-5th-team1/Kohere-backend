@@ -69,9 +69,23 @@ public record ListingRegisterRequest(
     @NotBlank String refundPolicy,
     @NotEmpty List<String> imageKeys,
     @NotEmpty @Valid List<RoomOfferRequest> roomOffers,
-    @NotEmpty Set<Nationality> preferredNationalities,
-    @NotEmpty Set<ContractDifficulty> contractDifficulties,
-    String serviceFeedback) {
+    Set<Nationality> preferredNationalities,
+    Set<ContractDifficulty> contractDifficulties,
+    String serviceFeedback,
+    @NotNull @Valid ConsentsRequest consents)
+    implements ListingWriteRequest {
+
+  /**
+   * 매물 이용약관 동의 2종이다. <b>둘 다 {@code true}여야 등록된다</b> — 하나라도 빠지거나 {@code false}면 {@code 422
+   * LISTING_REQUIRED_AGREEMENT_MISSING}이다.
+   *
+   * <p>{@code Boolean}(박스 타입)으로 받는 이유는 <b>키 누락과 {@code false}를 구분</b>하기 위해서다. {@code boolean}이면 키가
+   * 없을 때 조용히 {@code false}가 되어 "동의 안 함"과 "필드를 안 보냄"이 같은 값으로 접힌다.
+   *
+   * <p>약관 버전과 동의 시각은 요청에 없다 — 서버가 설정값과 현재 시각으로 채운다.
+   */
+  public record ConsentsRequest(
+      @NotNull Boolean privacyPolicyAgreed, @NotNull Boolean listingExposureAgreed) {}
 
   /**
    * 세입자에게 공개하는 매물 담당자 연락처다. {@code phone}은 지점 대표 전화다.

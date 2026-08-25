@@ -30,8 +30,10 @@ import static com.kohere.docs.BookingDocsFields.listQueryParameters;
 import static com.kohere.docs.BookingDocsFields.listResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.post;
@@ -112,6 +114,9 @@ class BookingDocsTest {
 
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
+    // 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돈다. userType 을 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 경로에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())
@@ -160,6 +165,8 @@ class BookingDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
     String body =
         mockMvc
             .perform(
@@ -183,6 +190,8 @@ class BookingDocsTest {
   void createBooking_success() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
 
     mockMvc
@@ -215,6 +224,8 @@ class BookingDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
 
     performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
@@ -232,6 +243,8 @@ class BookingDocsTest {
   void getMyBookings_success() throws Exception {
     createBooking();
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
 
     mockMvc
@@ -262,6 +275,8 @@ class BookingDocsTest {
   void getBooking_success() throws Exception {
     long bookingId = createBooking();
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
     given(userAccountService.getUserName(TENANT_ID)).willReturn("길동 홍");
 
@@ -299,6 +314,8 @@ class BookingDocsTest {
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
     given(userAccountService.getUserName(TENANT_ID)).willReturn("길동 홍");
 
     mockMvc
@@ -327,6 +344,8 @@ class BookingDocsTest {
     long bookingId = createBooking();
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
     given(userAccountService.getApplicantProfile(TENANT_ID))
         .willReturn(
@@ -376,6 +395,8 @@ class BookingDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.empty());
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
+        .willReturn(Optional.empty());
 
     performCreateError(
         post("/api/v1/listings/{listingId}/bookings", LISTING_ID)
@@ -392,6 +413,8 @@ class BookingDocsTest {
   void createBooking_pastMoveInDate_unprocessable() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
 
     performCreateError(

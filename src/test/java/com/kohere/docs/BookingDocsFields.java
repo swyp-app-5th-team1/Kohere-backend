@@ -200,6 +200,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   public static final String[] LIST_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -264,6 +265,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 조회 권한 밖(세입자: 타인 예약 / 임대인: 내 소유 매물 신청 아님)이거나, 요청자가 이미 삭제했거나 상대를 차단한 예약 — 전부 404로 통일한다(존재 비노출) |
       """;
 
@@ -337,7 +339,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`). 해당 예약의 참여자(세입자 또는 임대인)만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -354,6 +356,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
@@ -378,7 +381,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -400,6 +403,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 404로 통일한다(존재 비노출) |
       """;
 
@@ -424,7 +428,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`). 해당 예약의 참여자만 호출할 수 있고, 세입자·임대인 공통이라 역할 403은 없다.
 
       **요청 주의사항**
 
@@ -448,6 +452,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `BOOKING_NOT_FOUND` | 요청자가 참여자가 아니거나 없는 예약 — 403이 아니라 404로 통일한다(존재 비노출) |
       """;
 
@@ -497,7 +502,7 @@ public final class BookingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 역할 분기가 없다.
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`). 역할 분기가 없다.
 
       **요청 주의사항**
 
@@ -516,6 +521,7 @@ public final class BookingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비 `ACTIVE`) |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   public static final String[] REPORT_REASONS_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};

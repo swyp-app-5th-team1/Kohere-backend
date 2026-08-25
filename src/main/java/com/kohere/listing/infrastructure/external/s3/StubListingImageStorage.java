@@ -4,6 +4,7 @@ import com.kohere.listing.domain.image.ListingImageStorage;
 import com.kohere.listing.domain.image.ListingImageUpload;
 import com.kohere.listing.domain.image.StoredListingImage;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 저장소 없이 기동해야 하는 환경(test·MinIO를 띄우지 않은 로컬)용 {@link ListingImageStorage} 폴백이다.
@@ -31,6 +32,19 @@ public class StubListingImageStorage implements ListingImageStorage {
   public StoredListingImage copy(String sourceKey, String targetKey) {
     // 올린 적이 없으니 옮길 것도 없다. 등록 흐름은 실제와 같은 형태의 URL을 그대로 받는다.
     return new StoredListingImage(targetKey, "%s/%s".formatted(publicBaseUrl, targetKey));
+  }
+
+  @Override
+  public Optional<String> keyOf(String url) {
+    // 실제 저장소와 같은 형태로 만들어 준 URL이므로 역변환도 같은 규칙을 따른다.
+    if (url == null) {
+      return Optional.empty();
+    }
+    String prefix = publicBaseUrl + "/";
+    if (!url.startsWith(prefix) || url.length() == prefix.length()) {
+      return Optional.empty();
+    }
+    return Optional.of(url.substring(prefix.length()));
   }
 
   @Override

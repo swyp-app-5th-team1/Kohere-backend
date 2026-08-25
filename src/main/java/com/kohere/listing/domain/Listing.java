@@ -58,7 +58,15 @@ public class Listing {
   /** 매물의 게시/심사 상태다. */
   private final ListingStatus status;
 
-  /** 관리자가 심사에서 반려한 사유다. {@link ListingStatus#REJECTED}일 때만 채워진다. 임대인만 읽는 값이라 번역하지 않는다. */
+  /**
+   * 관리자가 심사에서 반려한 사유다. 임대인만 읽는 값이라 번역하지 않는다.
+   *
+   * <p><b>{@code REJECTED}에서만 살아 있는 값이 아니다.</b> 임대인이 고쳐 다시 올리면 상태는 {@code PENDING}으로 가지만 이 값은 그대로
+   * 남는다 — 임대인은 심사를 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고, 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 알 수 있다. 상태가 「지금 고쳐야
+   * 한다({@code REJECTED})」와 「고쳐서 재심사 중({@code PENDING})」을 이미 구분해 주므로 값이 남아도 혼동되지 않는다.
+   *
+   * <p>지워지는 것은 <b>승인 시점</b>뿐이다({@link #approve}). 공개된 매물이 지난 반려 사유를 달고 다니지 않게 한다.
+   */
   private final String rejectionReason;
 
   /** 성별 입주 제한 또는 분리 운영 정책이다. */
@@ -128,6 +136,100 @@ public class Listing {
   /** 임대인이 서비스에 남긴 의견이다. 등록 폼 설문 응답이라 세입자 응답에 포함하지 않는다. */
   private final String serviceFeedback;
 
+  /**
+   * 등록 시점에 받은 매물 이용약관 동의다. 세입자 응답에 포함하지 않는다.
+   *
+   * <p>등록 게이트가 두 동의를 모두 {@code true}로 강제하므로 <b>저장된 매물은 예외 없이 동의를 마친 매물</b>이다 — 심사 단계가 동의 여부를 판단
+   * 기준으로 다시 쓰지 않는다.
+   */
+  private final Consents consents;
+
+  /**
+   * 심사를 통과시켜 공개 상태로 만든다.
+   *
+   * <p><b>상태를 가리지 않는다.</b> 심사 대기 매물의 승인뿐 아니라 <b>잘못 반려한 매물을 되살리는</b> 경로({@code REJECTED →
+   * PUBLISHED})도 정상이다 — 관리자의 오판을 되돌릴 수단이 서버에 있어야 하기 때문이다. 임대인이 고쳐서 다시 올리는 경로({@link #afterEdit})와
+   * 별개로, 관리자 단독으로도 되살릴 수 있다.
+   *
+   * <p>이미 공개 중인 매물을 다시 승인하면 <b>아무 일도 일어나지 않는다</b>. 같은 값으로 저장해도 결과는 같지만 {@code updatedAt}이 바뀌면 세입자
+   * 목록의 기본 정렬(찜 수 → 최신 수정순)에서 그 매물만 위로 올라간다 — 눈에 띄지 않는 부작용이라 아예 손대지 않는다.
+   *
+   * <p>반려됐다 다시 올라온 매물이면 이전 사유가 남아 있다. 공개되는 매물이 지난 반려 사유를 달고 다니지 않도록 여기서 지운다.
+   *
+   * @param now 상태를 바꾼 시각
+   * @return 공개 상태가 된 매물. 이미 공개 중이었다면 자기 자신
+   */
+  public Listing approve(Instant now) {
+    if (status == ListingStatus.PUBLISHED) {
+      return this;
+    }
+    return toBuilder().status(ListingStatus.PUBLISHED).rejectionReason(null).updatedAt(now).build();
+  }
+
+  /**
+   * 사유와 함께 반려한다. 사유는 임대인만 읽는 값이라 번역하지 않는다.
+   *
+   * <p><b>상태를 가리지 않는다.</b> 심사 대기 매물의 1차 반려뿐 아니라, 공개 후 문제가 발견된 매물을 내리는 <b>사후 반려</b>({@code PUBLISHED
+   * → REJECTED})와 이미 반려한 매물의 <b>사유 정정</b>({@code REJECTED → REJECTED})이 모두 정상 경로다. 승인과 달리 같은 상태로의
+   * 재반려도 사유를 덮어써야 하므로 무시하지 않는다.
+   *
+   * @param reason 반려 사유
+   * @param now 상태를 바꾼 시각
+   * @return 반려 상태가 된 새 매물
+   */
+  public Listing reject(String reason, Instant now) {
+    return toBuilder()
+        .status(ListingStatus.REJECTED)
+        .rejectionReason(reason)
+        .updatedAt(now)
+        .build();
+  }
+
+  /** 이 매물이 이 계정의 소유인지 본다. 임대인 전용 조회·수정의 소유권 게이트가 쓴다. */
+  public boolean isOwnedBy(long userId) {
+    return landlordId != null && landlordId == userId;
+  }
+
+  /**
+   * 지금 임대인이 수정할 수 있는 상태인지 확인한다. 아니면 {@link ListingNotEditableException}이다.
+   *
+   * <p>사진을 확정 위치로 복사하기 <b>전에</b> 부른다 — 거절될 요청이 확정 위치에 흔적을 남기지 않게 하려는 것으로, 등록이 사진 키 검사를 가장 앞에 두는 것과
+   * 같은 이유다.
+   */
+  public void requireEditable() {
+    nextStatusAfterEdit();
+  }
+
+  /**
+   * 수정이 반영된 빌더를 받아 전이를 마무리한다.
+   *
+   * <p><b>전이 상태를 서비스가 아니라 여기서 정한다.</b> 서비스가 정하게 하면 다음에 생기는 수정 경로가 규칙을 다시 쓰게 된다.
+   *
+   * <p><b>반려 사유는 건드리지 않는다.</b> 고쳐서 다시 올린 매물이 {@code PENDING}으로 가면서 사유를 그대로 들고 가는 것이 의도다 — 임대인은 심사를
+   * 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고, 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 알 수 있다. 상태가 두 경우를 이미 구분하므로 값이 남아도
+   * 혼동되지 않는다. 지우는 것은 {@link #approve} 하나뿐이다.
+   *
+   * @param edited 수정 요청이 반영된 빌더. 상태·수정 시각은 아직 이 매물의 값이다
+   * @param now 수정한 시각
+   */
+  public Listing afterEdit(ListingBuilder edited, Instant now) {
+    return edited.status(nextStatusAfterEdit()).updatedAt(now).build();
+  }
+
+  /**
+   * 수정 후 넘어갈 상태를 정한다.
+   *
+   * <p><b>{@code default}를 두지 않는다.</b> 상태가 하나 더 늘면 컴파일이 깨져 여기서 결정을 강제한다 — 조용히 어느 한쪽으로 떨어지면 새 상태의 수정
+   * 가능 여부가 아무도 정하지 않은 채 정해진다.
+   */
+  private ListingStatus nextStatusAfterEdit() {
+    return switch (status) {
+      case REJECTED -> ListingStatus.PENDING;
+      case PUBLISHED -> ListingStatus.UPDATE_PENDING;
+      case PENDING, UPDATE_PENDING -> throw new ListingNotEditableException();
+    };
+  }
+
   /** 매물의 심사·게시 상태다. 임대인과 관리자만 읽으므로 번역 대상이 아니다. */
   public enum ListingStatus {
     /** 등록 직후 관리자 승인을 기다리는 상태다. 조회 API에 노출되지 않는다. */
@@ -139,11 +241,13 @@ public class Listing {
     /** 관리자가 반려한 상태다. 사유는 {@link Listing#getRejectionReason()}에 담긴다. */
     REJECTED,
 
-    /** 임대인이 일시적으로 공개를 중단한 상태다. */
-    PAUSED,
-
-    /** 삭제 처리되어 일반 조회에서 제외되는 상태다. */
-    DELETED
+    /**
+     * 공개 중이던 매물을 임대인이 수정해 재심사를 기다리는 상태다.
+     *
+     * <p>세입자 조회에서 <b>빠진다</b> — 심사를 거치지 않은 내용이 세입자에게 도달하지 않게 하려는 것이다. 조회 경로들이 {@code PUBLISHED}만
+     * 통과시키므로 <b>아무것도 하지 않아도</b> 그렇게 되며, 승인되면 찜 수·찜 문서·최근 본 기록이 그대로 복구된다.
+     */
+    UPDATE_PENDING
   }
 
   /** 가장 가까운 대중교통 수단 유형이다. */
@@ -182,7 +286,10 @@ public class Listing {
     CENTRAL,
 
     /** 개별난방 방식이다. */
-    INDIVIDUAL
+    INDIVIDUAL,
+
+    /** 난방시설이 없다. <b>단독으로만</b> 보낼 수 있다. */
+    NONE
   }
 
   /** 방 상품의 판매 가능 상태다. */
@@ -242,8 +349,31 @@ public class Listing {
     MEETING_ROOM,
 
     /** 입주자가 함께 사용할 수 있는 옥상 공간이다. */
-    ROOFTOP
+    ROOFTOP,
+
+    /** 공용공간이 없다. <b>단독으로만</b> 보낼 수 있다. */
+    NONE
   }
+
+  /**
+   * 매물 등록 시 받은 이용약관 동의다.
+   *
+   * <p>등록 게이트가 두 값을 모두 {@code true}로 강제하므로 저장된 값은 항상 {@code true}다. 그럼에도 함께 저장하는 이유는 <b>동의 사실의 입증
+   * 책임이 사업자에게 있어</b> "코드가 막는다"는 주장만으로는 부족하기 때문이다 — 실제 증빙은 {@code agreedAt}과 {@code version}이 진다.
+   *
+   * <p>{@code version}은 회원 약관 버전({@code users.terms_version})과 <b>별개 값</b>이다. 그쪽은 계정 단위로 가입 시 1회
+   * 기록되지만 매물 동의는 매물마다 등록 시점이라, 같은 임대인의 매물이 서로 다른 버전을 가질 수 있다.
+   *
+   * @param privacyPolicyAgreed 개인정보 수집·이용 동의
+   * @param listingExposureAgreed 매물 정보 제공 및 노출 동의
+   * @param version 동의한 약관 버전(서버 설정값)
+   * @param agreedAt 동의 시각
+   */
+  public record Consents(
+      boolean privacyPolicyAgreed,
+      boolean listingExposureAgreed,
+      String version,
+      Instant agreedAt) {}
 
   /**
    * 세입자가 매물 문의에 사용할 담당자 연락처다.

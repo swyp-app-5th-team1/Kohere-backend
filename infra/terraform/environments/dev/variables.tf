@@ -133,6 +133,12 @@ variable "domain_name" {
   type        = string
 }
 
+variable "web_base_url" {
+  description = "임대인 웹(SPA) 오리진 — 비밀번호 재설정 링크 base URL(#272). dev는 Caddy가 한 도메인에서 API와 SPA를 함께 내므로 스킴을 붙인 domain_name 과 같다(끝 슬래시 없이). 계정 복구가 켜진 채 비면 앱이 기동을 거부한다"
+  type        = string
+  default     = ""
+}
+
 variable "route53_zone_id" {
   description = "Route53 호스팅 영역 ID — 필수"
   type        = string

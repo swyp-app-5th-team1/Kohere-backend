@@ -37,8 +37,10 @@ import static com.kohere.docs.BookingDocsFields.reportRequestFields;
 import static com.kohere.docs.BookingDocsFields.reportResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -119,6 +121,9 @@ class BookingManagementDocsTest {
 
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
+    // 사용자용 API 허용 목록 게이트(세입자·임대인만 통과)가 실제로 돈다. userType 을 스텁하지 않으면
+    // mock 이 null 을 돌려줘 403 이 나고, 정작 검증하려던 경로에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())
@@ -154,6 +159,8 @@ class BookingManagementDocsTest {
   private long createBooking() throws Exception {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
     String body =
         mockMvc
@@ -235,6 +242,8 @@ class BookingManagementDocsTest {
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
 
     mockMvc
         .perform(get("/api/v1/bookings").header(HttpHeaders.AUTHORIZATION, token(TENANT_ID)))
@@ -286,6 +295,8 @@ class BookingManagementDocsTest {
     // 차단 후 같은 상대(매물 소유자) 매물에 신규 신청 → 403(양방향 가드, 블랙홀 예약 방지)
     given(userAccountService.getUserType(TENANT_ID)).willReturn("TENANT");
     given(listingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offerView()));
     // 이 스니펫만은 예약 "생성" 오퍼레이션에 병합된다 — 문구·path 파라미터·코드 배열을 공유 상수에서 가져온다.
     perform(

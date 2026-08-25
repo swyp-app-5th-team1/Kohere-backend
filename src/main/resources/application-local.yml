@@ -43,11 +43,17 @@ app:
   jwt:
     # HS256 시크릿: 최소 256bit(32byte). 운영은 prod 프로파일이 폴백 없이 JWT_SECRET을 강제한다.
     secret: ${JWT_SECRET:local-dev-only-hs256-secret-please-override-32bytes-min!!}
+  # 임대인 웹(SPA) 오리진 — 재설정 링크 base URL(#272). 로컬 SPA 개발 서버 기본값이며 .env 로 덮어쓸 수 있다.
+  web:
+    base-url: ${APP_WEB_BASE_URL:http://localhost:5173}
   auth:
     refresh-pepper: ${REFRESH_PEPPER:local-dev-refresh-pepper} # SHA-256(token+pepper) (ADR-0006)
-    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper
+    email-pepper: ${EMAIL_PEPPER:local-dev-email-pepper} # 이메일 인증번호 해시 pepper(재설정 토큰 해시도 이 pepper를 쓴다 — #272)
     phone-pepper: ${PHONE_PEPPER:local-dev-phone-pepper} # 연락처 인증번호 해시 pepper
     web:
+      password-reset:
+        # 임대인 웹 SPA 가 이 환경에 있으므로 계정 복구를 켠다(base 는 false — 운영에 임대인 웹이 없다).
+        enabled: true
       refresh-cookie:
         # 로컬은 평문 http라 Secure 쿠키를 브라우저가 저장·전송하지 않는다 → 재발급이 조용히 깨지고 서버 로그엔
         # "refresh 없음"으로만 남는다. base는 안전한 쪽(true)을 기본으로 두고 여기서만 내린다(ADR-0048 §2).

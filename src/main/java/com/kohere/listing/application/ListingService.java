@@ -63,6 +63,7 @@ public class ListingService {
   private final RecentListingRepository recentListingRepository;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
+  private final AppUserGuard appUserGuard;
 
   /**
    * 지도 범위와 필터 조건을 적용해 목록 카드 페이지를 반환한다.
@@ -138,6 +139,7 @@ public class ListingService {
    * {@code DELETED} 같은 비공개 매물은 목록과 총 개수에서 제외하므로, 화면의 페이지 정보는 실제 표시 가능한 카드 수와 일치한다.
    */
   public PageResponse<FavoriteListingResponse> getMyFavorites(Long userId, int page, int size) {
+    appUserGuard.requireAppUser(userId);
     validatePage(page, size);
     ListingLocalizationContext localization = localizationFor(userId);
     PageResponse<FavoriteListing> favorites =
@@ -156,6 +158,7 @@ public class ListingService {
    * 비공개/삭제/노출중지 매물은 사용자가 과거에 봤더라도 목록에서 숨긴다.
    */
   public RecentListingsResponse getRecentListings(Long userId) {
+    appUserGuard.requireAppUser(userId);
     ListingLocalizationContext localization = localizationFor(userId);
     List<RecentListingView> recentListings =
         recentListingRepository.findPublishedByUserIdOrderByViewedAtDesc(
@@ -181,6 +184,7 @@ public class ListingService {
    * 반환한다.
    */
   public FavoriteToggleResult addFavorite(Long userId, String listingId) {
+    appUserGuard.requireAppUser(userId);
     Listing listing = requirePublishedListing(listingId);
     if (favoriteRepository.findByUserIdAndListingId(userId, listingId).isPresent()) {
       return new FavoriteToggleResult(
@@ -209,6 +213,7 @@ public class ListingService {
    * LISTING_NOT_FOUND}가 된다.
    */
   public FavoriteToggleResponse removeFavorite(Long userId, String listingId) {
+    appUserGuard.requireAppUser(userId);
     Listing listing = requirePublishedListing(listingId);
     boolean deleted = favoriteRepository.deleteByUserIdAndListingId(userId, listingId);
     int favoriteCount =

@@ -6,6 +6,7 @@ import com.kohere.listing.domain.image.ListingImageUpload;
 import com.kohere.listing.domain.image.ListingImageUploadException;
 import com.kohere.listing.domain.image.StoredListingImage;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -91,6 +92,18 @@ public class S3ListingImageStorage implements ListingImageStorage {
         log.error("매물 사진 보상 삭제 실패 — 참조 없는 객체가 남는다. key={}", key, e);
       }
     }
+  }
+
+  @Override
+  public Optional<String> keyOf(String url) {
+    if (url == null) {
+      return Optional.empty();
+    }
+    String prefix = properties.publicBaseUrl() + "/";
+    if (!url.startsWith(prefix) || url.length() == prefix.length()) {
+      return Optional.empty();
+    }
+    return Optional.of(url.substring(prefix.length()));
   }
 
   /** 버킷이 비공개(OAC)라 읽기 주소는 업로드 주소가 아니라 CDN 기준으로 만든다. */

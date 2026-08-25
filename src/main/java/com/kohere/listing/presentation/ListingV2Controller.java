@@ -6,8 +6,10 @@ import com.kohere.common.security.AuthPrincipal;
 import com.kohere.listing.application.ListingImageUploadService;
 import com.kohere.listing.application.ListingRegisterService;
 import com.kohere.listing.application.ListingService;
+import com.kohere.listing.application.ListingUpdateService;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
+import com.kohere.listing.application.dto.LandlordListingDetailResponse;
 import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingImageUploadResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
@@ -16,6 +18,7 @@ import com.kohere.listing.domain.image.PendingListingImage;
 import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingRegisterRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
+import com.kohere.listing.presentation.dto.ListingUpdateRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -50,6 +54,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ListingV2Controller {
 
   private final ListingService listingService;
+  private final ListingUpdateService listingUpdateService;
   private final ListingRegisterService listingRegisterService;
   private final ListingImageUploadService listingImageUploadService;
 
@@ -125,6 +130,22 @@ public class ListingV2Controller {
    *
    * <p>여기서 만들어지는 것은 매물이 아니라 임시 사진이다. 응답의 {@code key}를 등록 요청에 담아야 매물에 붙고, 참조되지 않은 사진은 만료 규칙이 치운다.
    */
+  /**
+   * 임대인이 자기 매물을 고쳐 다시 심사에 올린다(US-3-9).
+   *
+   * <p><b>전체 교체다</b> — 등록 때 보낸 속성을 그대로 다시 보낸다. 반려된 매물은 심사 대기로, 공개 중인 매물은 수정 심사 대기로 넘어가며 <b>심사가 끝날
+   * 때까지 세입자 조회에서 빠진다</b>. 심사 중({@code PENDING}·{@code UPDATE_PENDING})에는 수정할 수 없다.
+   *
+   * <p>자원을 만드는 것이 아니라 통째로 바꾸는 것이라 {@code 201}이 아니라 {@code 200}이다.
+   */
+  @PutMapping("/{listingId}")
+  public ApiResponse<LandlordListingDetailResponse> update(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @PathVariable String listingId,
+      @Valid @RequestBody ListingUpdateRequest request) {
+    return ApiResponse.success(listingUpdateService.update(principal.userId(), listingId, request));
+  }
+
   @PostMapping(path = "/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @ResponseStatus(HttpStatus.CREATED)
   public ApiResponse<ListingImageUploadResponse> uploadImage(

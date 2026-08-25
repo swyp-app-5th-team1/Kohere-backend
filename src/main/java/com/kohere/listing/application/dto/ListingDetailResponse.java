@@ -75,8 +75,12 @@ public record ListingDetailResponse(
       boolean parkingAvailable,
       boolean elevatorAvailable) {}
 
-  /** 환불 정책 코드는 기존 의미를 유지하고 설명 문장만 사용자 언어로 선택한다. */
-  /** 시설 그룹별 공통 코드를 모두 code/label 형태로 내려주는 상세 응답이다. */
+  /**
+   * 시설 그룹별 공통 코드를 모두 code/label 형태로 내려주는 상세 응답이다.
+   *
+   * <p>해당 시설이 하나도 없는 그룹은 <b>{@code NONE} 하나만</b> 담긴다 — 빈 배열이 아니다. 「없음」도 카탈로그가 라벨을 주는 정상 코드라 화면은 다른
+   * 값과 똑같이 칩을 그리면 된다.
+   */
   public record FacilitiesResponse(
       List<CodeLabelResponse> heatingSystem,
       List<CodeLabelResponse> kitchen,
@@ -86,7 +90,6 @@ public record ListingDetailResponse(
       List<CodeLabelResponse> commonSpaces,
       List<CodeLabelResponse> providedSupplies) {}
 
-  /** 공용공간 종류의 code/label과, 데이터가 있는 경우에만 사용하는 개수를 담는다. */
   /**
    * 동일 가격·조건을 공유하는 실제 방 묶음 하나다.
    *

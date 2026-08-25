@@ -15,7 +15,7 @@ Proposed · **Amended(온보딩 분리·무상태, 2026-07-01)** · **Amended(�
 
 > **개정(2026-08-12, [ADR-0039](./0039-listing-schema-v4-registration-form.md))**: **"원문 비저장·해시로만 영속"을 매물 문서 한정으로 개정**한다. 매물 스키마 v4는 임대인이 등록 폼에 입력한 사업자등록번호를 `listings` 문서의 `businessRegistrationNumber`에 **원문**으로 저장한다(세입자 응답에서는 제외). **온보딩·`users` 테이블에는 여전히 미채택**이며, `user.business_registration_number_hash`는 **매물 등록 시점에도 채우지 않는다** — 원문이 매물 문서에 있어 해시 사본이 불필요하다. `auth`의 **무상태 검증(§1·§3, 검증 결과 미저장)은 그대로 유지**된다. 아래 **§5·대안 D·Consequences는 이 항목으로 갈음한다**.
 
-> **개정(2026-08-12, 매물 등록 API)**: **매물 등록 시점에는 이 검증을 호출하지 않는다** — 등록 API(`POST /api/v2/listings`)는 사업자등록번호를 **형식만 검증해 저장**하고, 진위는 **관리자가 승인 심사에서 수동으로 확인**한다. `POST /api/v1/auth/business/verify`는 임대인이 필요할 때 직접 호출하는 무상태 검증 엔드포인트로 **그대로 유지**된다. §1·§2·§3의 인가·판정·무상태 결정은 **그대로 유지**되고, 바뀌는 것은 **호출 시점뿐**이다 — 본문에서 "매물 등록 시점에 호출한다"로 적힌 서술은 이 항목으로 갈음한다. 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API는 후속이다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
+> **개정(2026-08-12, 매물 등록 API)**: **매물 등록 시점에는 이 검증을 호출하지 않는다** — 등록 API(`POST /api/v2/listings`)는 사업자등록번호를 **형식만 검증해 저장**하고, 진위는 **관리자가 승인 심사에서 수동으로 확인**한다. `POST /api/v1/auth/business/verify`는 임대인이 필요할 때 직접 호출하는 무상태 검증 엔드포인트로 **그대로 유지**된다. §1·§2·§3의 인가·판정·무상태 결정은 **그대로 유지**되고, 바뀌는 것은 **호출 시점뿐**이다 — 본문에서 "매물 등록 시점에 호출한다"로 적힌 서술은 이 항목으로 갈음한다. 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API는 그 뒤 `POST /api/v1/admin/listings/{listingId}/approval`·`/rejection`으로 **나왔고**, 진위 확인은 예정대로 그 심사에서 **수동**으로 이뤄진다 — 임대인이 매물을 수정해 다시 심사에 올리는 경로(`PUT /api/v2/listings/{listingId}`)에서도 판정 주체는 같다([ADR-0039](./0039-listing-schema-v4-registration-form.md)).
 
 ## Context
 

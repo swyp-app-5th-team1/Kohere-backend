@@ -4,6 +4,7 @@
 # 유저스토리: US-1-11(웹 회원가입) · US-1-12(웹 로그인) · US-1-13(가입 전 연락처 인증) · US-1-15(앱 온보딩 시 병합)
 # 결정: ADR-0047(웹 로컬 자격증명 분리 · 휴대폰 번호 계정 공유) · ADR-0048(refresh HttpOnly 쿠키 채널)
 # (앱 소셜 트랙은 auth-onboarding-landlord.http — 이쪽은 소셜 로그인이 없다)
+# (계정 복구 — 이메일 찾기 · 비밀번호 재설정 = 계정 잠금 해제 — 는 auth-web-recovery.http)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis
@@ -79,7 +80,7 @@
 @phone = 01012345678
 # ↓ 웹 로그인 ID. local_accounts.email UNIQUE 라 재실행마다 새 값이어야 한다
 @email = kim@work.com
-# ↓ 비밀번호 정책: 영문자 1+ · 숫자 1+ · ASCII 특수문자 1+ · 길이 8~10 · 공백/한글 불가
+# ↓ 비밀번호 정책: 영문자 1+ · 숫자 1+ · ASCII 특수문자 1+ · 길이 8~20 · 공백/한글 불가
 @password = Kohere1!
 @name = 김임대
 @birthDate = 1990-01-01
@@ -135,7 +136,7 @@ Content-Type: application/json
 
 ### 4. 로그인 (비로그인) — 이메일·비밀번호. 응답은 3번에서 linked 만 뺀 모양이고 refresh 는 다시 쿠키로 온다
 #    잠금 판정이 비밀번호 대조보다 먼저다 — 잠긴 계정은 비밀번호가 맞아도 423 이다.
-#    시도 레이트리밋이 조회·해시보다 먼저 걸린다: 같은 IP 30회/1시간 · 같은 이메일 10회/1시간 → 429.
+#    시도 레이트리밋이 조회·해시보다 먼저 걸린다: 같은 IP 60회/1시간 · 같은 이메일 20회/1시간 → 429.
 # @name login
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
@@ -198,7 +199,8 @@ Authorization: Bearer {{login.response.body.$.data.accessToken}}
 
 # ══════════════════════════════ 에러 케이스 ══════════════════════════════
 # 아래는 각각 독립 요청이다. 순서대로 다 보내지 말고 필요한 것만 클릭한다 —
-# 특히 E6(계정 잠금)은 **되돌릴 수 없다**(해제 API 가 없다 — 그 절의 경고를 먼저 읽는다).
+# 특히 E6(계정 잠금)은 **본인이 되돌릴 수 있지만 저절로 풀리지는 않는다**(비밀번호 재설정으로 해제한다.
+# 복구는 auth-web-recovery.http 흐름 B — 그 절의 안내를 먼저 읽는다).
 
 # ── E1: 이메일 중복(409) ──
 # 가입 게이트 순서가 「인증 마커 → 약관 → 이메일 중복 → 웹 계정 중복」이라, 이메일 중복까지 도달하려면
@@ -303,7 +305,7 @@ Content-Type: application/json
 }
 
 ### E4. 비밀번호 정책 위반 → 400 INVALID_INPUT (errors[].field=password)
-#    아래 "kohere12" 는 특수문자가 없다. 다른 위반도 같은 코드다 — 8자 미만·11자 이상·공백 포함·한글 포함.
+#    아래 "kohere12" 는 특수문자가 없다. 다른 위반도 같은 코드다 — 8자 미만·21자 이상·공백 포함·한글 포함.
 #    (형식 위반이라 400 이고, 약관 미동의 같은 비즈니스 규칙 위반은 422 다.)
 #    ※ 게이트 순서상 Bean Validation 이 가장 먼저라 인증 마커가 없어도 이 400 이 먼저 난다.
 POST {{baseUrl}}/api/v1/auth/signup
@@ -337,11 +339,11 @@ Content-Type: application/json
   "marketingAgreed": false
 }
 
-### E5. 비밀번호 불일치 → 401 AUTH_INVALID_CREDENTIALS
-#    **등록되지 않은 이메일도 똑같은 401 이다** — 응답을 가르면 그 자체가 "이 이메일은 가입돼 있다"는
-#    계정 열거 신호가 된다. 그래서 계정이 없어도 서버는 비밀번호를 한 번 해싱하고 버린다(타이밍 차 제거).
-#    ※ 이 요청은 **본 계정(@email)의 실패 카운터를 1 올린다.** 5번 누르면 본 계정이 잠긴다(해제 불가) —
-#      한 번만 눌러 401 을 확인하고, 반복은 E6 의 일회용 계정으로 한다. 성공 로그인은 카운터를 0으로 되돌린다.
+### E5. 비밀번호 불일치 → 401 AUTH_INVALID_CREDENTIALS (+ error.details)
+#    응답에 남은 시도가 실린다:  "details": { "failedAttempts": 1, "maxFailedAttempts": 10 }
+#    ※ 이 요청은 **본 계정(@email)의 실패 카운터를 1 올린다.** 10번 누르면 본 계정이 잠기고, 푸는 데 메일함을
+#      한 번 다녀와야 한다(auth-web-recovery.http 흐름 B) — 한 번만 눌러 401 을 확인하고, 반복은 E6 의 일회용
+#      계정으로 한다. 성공 로그인은 카운터를 0으로 되돌린다.
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
 
@@ -350,16 +352,40 @@ Content-Type: application/json
   "password": "Wrong99!"
 }
 
-# ── ☠☠☠ E6: 5회 연속 실패 → 계정 잠금 423 AUTH_ACCOUNT_LOCKED ☠☠☠ ──
+### E5-b. 등록되지 않은 이메일 → 같은 401 인데 **error.details 가 없다**
+#    code·status·문구는 E5 와 글자 하나 같고 details 키만 빠진다 — 올릴 카운터가 없기 때문이다.
+#    ★ **그래서 이 두 응답을 비교하면 가입 여부를 알 수 있다**(계정 열거). 해제 경로가 생긴 뒤에도 이 필드는
+#      그대로 둔다 — 풀 수 있다는 것과 잠기지 않는 것은 다르고, 잠근 뒤에 메일함을 다녀오게 하는 것보다
+#      **잠기기 전에 "두 번 남았다"를 보여 주어 멈추게 하는 편이 낫다**고 보고 열거를 다시 한 번 수용한 것이다
+#      (잠긴 계정의 423 이 이미 계정 존재를 드러내고 있다). 서버는 그래도 비밀번호를 한 번 해싱하고 버려
+#      **응답 시간**은 같게 유지한다.
+#      ※ 재설정 링크 발송(auth-web-recovery.http 7번)은 같은 선택을 하지 않는다 — 거기엔 선행 게이트가 없어
+#        임의의 이메일로 부를 수 있으므로 미가입 이메일에도 같은 200 을 준다.
+#    ※ 이 요청은 어느 계정의 카운터도 올리지 않는다 — 안심하고 반복해도 된다(이메일 축 한도에는 걸린다).
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "nobody-{{$timestamp}}@work.com",
+  "password": "Wrong99!"
+}
+
+# ── ☠ E6: 10회 연속 실패 → 계정 잠금 423 AUTH_ACCOUNT_LOCKED ☠ ──
 #
-#   ★★ 경고: **잠금 해제 경로가 없다.** 해제 API 도, 시간 경과 자동 해제도 없다.
-#      한 번 잠기면 그 계정은 **영영 로그인할 수 없다** — 유일한 복구는 DB 에서 직접 비우는 것이다:
+#   ★★ 경고: **가만히 두면 절대 풀리지 않는다.** 시간 경과 자동 해제는 없고, 해제는 언제나 본인의 명시적 행위여야 한다.
+#      푸는 길은 **비밀번호 재설정**이다 — 확정 한 번이 비밀번호 교체와 함께 locked_at·failed_login_attempts 를
+#      되돌린다. 해제 전용 API 는 따로 없다: 잠긴 사람이 아는 비밀번호는 이미 틀린 비밀번호라, 해제만 해 주면
+#      같은 오타로 곧 다시 잠기기 때문이다.
+#          → **auth-web-recovery.http 의 흐름 B(7~10번)** 를 이 계정 이메일(@lockEmail)로 돌린다.
+#            토큰이 메일로만 나가므로 docker compose up -d mailhog 가 필요하다.
+#      메일함 접근까지 잃어 링크를 받을 수 없는 계정만 운영자가 DB 에서 직접 비운다(운영 문의 경로 그대로):
 #          docker compose exec mysql mysql -ukohere -pkohere kohere \
 #            -e "UPDATE local_accounts SET locked_at = NULL WHERE email = 'lock-test@work.com';"
 #      (기본 자격증명 기준 — .env 로 바꿨으면 그 값으로. locked_at 만 비우면 그것으로 완전한 해제다.
 #       failed_login_attempts 는 함께 지우지 않아도 된다 — 잠기지 않았는데 카운터가 상한 이상인 계정은
 #       다음 실패를 1부터 다시 세므로 오타 한 번에 재잠금되지 않는다.)
-#      그러니 **본 계정(@email)으로 시도하지 않는다.** 아래는 잠겨도 되는 일회용 계정을 따로 만들어 쓴다.
+#      그래도 **본 계정(@email)으로 시도하지 않는 편이 낫다** — 복구가 되긴 하지만 메일함을 한 번 다녀와야 한다.
+#      아래는 잠겨도 되는 일회용 계정을 따로 만들어 쓴다.
 #
 #   ※ 잠금은 **등록된 계정에만** 걸린다 — 없는 이메일로 아무리 틀려도 401 만 반복되고 잠기지 않는다
 #     (올릴 카운터가 없다). 그래서 E6-a~c 로 일회용 계정을 먼저 가입시킨다.
@@ -402,12 +428,15 @@ Content-Type: application/json
   "marketingAgreed": false
 }
 
-### E6-d. 틀린 비밀번호로 반복 로그인 → 1~5회 401, **6회째부터 423 AUTH_ACCOUNT_LOCKED**
-#    5회째 요청이 카운터를 5로 올리며 locked_at 을 기록하지만, 그 요청 자체의 응답은 아직 401 이다
-#    (잠금 검사는 요청 진입 시점에 하고 기록은 대조 실패 후이므로 한 박자 늦다). 6회째부터 423 이다.
+### E6-d. 틀린 비밀번호로 반복 로그인 → 1~10회 401, **11회째부터 423 AUTH_ACCOUNT_LOCKED**
+#    10회째 요청이 카운터를 10으로 올리며 locked_at 을 기록하지만, 그 요청 자체의 응답은 아직 401 이다
+#    (잠금 검사는 요청 진입 시점에 하고 기록은 대조 실패 후이므로 한 박자 늦다). 11회째부터 423 이다.
+#    ★ 그 401 응답의 error.details 를 보면 몇 번 남았는지 알 수 있다:
+#          "details": { "failedAttempts": 3, "maxFailedAttempts": 10 }
+#       두 값이 같아진 응답이 곳 잠금이 걸린 순간이다(상태는 아직 401).
 #    그 뒤로는 **비밀번호를 맞게 보내도 423** 이다 — 잠금 판정이 자격증명 대조보다 먼저다(직접 확인해 보라).
-#    ※ 로그인 시도 한도는 같은 이메일 10회/1시간이고 **성공한 시도도 함께 센다** — E6-c 이후 이 이메일로
-#      6~7회면 충분하지만, 429 TOO_MANY_REQUESTS 가 나오면 그 이메일로는 한 시간을 기다려야 한다.
+#    ※ 로그인 시도 한도는 같은 이메일 20회/1시간이고 **성공한 시도도 함께 센다** — E6-c 이후 이 이메일로
+#      11~12회면 충분하지만, 429 TOO_MANY_REQUESTS 가 나오면 그 이메일로는 한 시간을 기다려야 한다.
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
 
@@ -418,6 +447,8 @@ Content-Type: application/json
 
 ### E6-e. 잠긴 계정에 **올바른** 비밀번호 → 그래도 423 AUTH_ACCOUNT_LOCKED
 #    잠금이 대조보다 우선한다는 계약을 눈으로 확인하는 요청이다(E6-d 를 6회 이상 보낸 뒤에 클릭한다).
+#    ★ 여기서 끝내지 말고 **풀어 보는 것까지가 이 시나리오다** — auth-web-recovery.http 의 흐름 B 를 @lockEmail 로
+#      돌린 뒤 이 요청을 다시 누르면 423 이 아니라 200 이다(비밀번호는 그때 새로 정한 값으로 바뀌어 있다).
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
 

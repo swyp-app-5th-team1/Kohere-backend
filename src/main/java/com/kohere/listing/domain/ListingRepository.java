@@ -15,6 +15,36 @@ public interface ListingRepository {
   /** ObjectId 문자열로 매물 한 건을 조회한다. */
   Optional<Listing> findById(String listingId);
 
+  /**
+   * 심사용 조회. 상태 필터가 비어 있으면 <b>모든 상태</b>를 대상으로 한다(관리자 전용).
+   *
+   * <p>세입자용 조회 3종({@link #findPublished} · {@link #search} · {@link #searchForMap})은 구현에서 {@code
+   * status = PUBLISHED}를 조건 앞머리에 고정한다. 그 자리를 파라미터로 열면 호출자가 상태를 넘기지 않았을 때 비공개 매물이 세입자에게 샐 수 있으므로,
+   * 상태를 받는 경로를 <b>따로</b> 두어 "세입자 경로는 공개 고정, 관리자 경로만 상태를 받는다"를 타입으로 가른다.
+   *
+   * @param statuses 조회할 상태 집합. 비어 있으면 상태 조건을 생략한다
+   * @param page 0부터 시작하는 페이지 번호
+   * @param size 페이지 크기
+   * @param sort 정렬 키. {@code null}이면 등록 최신순
+   */
+  PageResponse<Listing> findForAdmin(
+      Set<Listing.ListingStatus> statuses, int page, int size, String sort);
+
+  /**
+   * 임대인 소유 매물을 상태와 무관하게 페이지로 조회한다.
+   *
+   * <p>세입자용 조회 3종과 달리 {@code landlordId}로 먼저 좁히므로 비공개 매물이 새지 않는다 — 소유자에게만 자기 매물을 보여주는 경로라 상태를 열어도
+   * 안전하다. 관리자용 {@link #findForAdmin}과도 나눈다: 그쪽은 소유자 조건이 없다.
+   *
+   * <p>정렬은 <b>최근 수정순 고정</b>이다. 정렬 키를 파라미터로 열면 세입자 경로의 {@code LISTING_INVALID_SORT_PARAM} 계약과 어긋나는
+   * 규칙을 새로 만들게 되고, 나중에 여는 것은 하위 호환을 깨지 않는다.
+   *
+   * @param landlordId 소유 임대인 계정 id
+   * @param statuses 조회할 상태 집합. 비어 있으면 상태 조건을 생략한다
+   */
+  PageResponse<Listing> findByLandlord(
+      long landlordId, Set<Listing.ListingStatus> statuses, int page, int size);
+
   /** 공개 중이고 활성 방 상품이 있는 매물만 페이지로 조회한다. */
   PageResponse<Listing> findPublished(int page, int size);
 
@@ -59,6 +89,22 @@ public interface ListingRepository {
 
   /** 매물 도메인 객체를 저장하고 저장된 결과를 반환한다. */
   Listing save(Listing listing);
+
+  /**
+   * <b>읽은 시점의 상태를 조건으로 걸어</b> 저장한다. 조건이 어긋나면 아무것도 쓰지 않고 빈 값을 반환한다.
+   *
+   * <p>매물 문서에는 낙관적 락 필드가 없고 {@link #save}는 문서 전체를 교체하므로, 조건 없이 저장하면 나중에 쓴 쪽이 앞의 변경을 <b>소리 없이</b>
+   * 지운다. 임대인 수정은 읽기와 저장 사이에 사진 확정 복사(네트워크)가 끼어 그 창이 수백 ms에 이르므로, 그 사이 관리자가 승인하면 임대인의 교체가 승인을 덮거나
+   * 임대인의 수정이 통째로 사라진다.
+   *
+   * <p>낙관적 락(@Version) 대신 상태 CAS인 이유는 기존 문서에 버전 필드가 없어 로드 시 {@code null}이 되고, 그것이 신규 저장으로 취급돼 식별자
+   * 중복으로 전면 실패하기 때문이다 — 도입하려면 백필이 선행돼야 한다.
+   *
+   * @param listing 저장할 매물
+   * @param expected 읽은 시점의 상태. 저장 직전 문서의 상태가 이 값일 때만 교체한다
+   * @return 교체된 매물. 조건이 어긋나 교체하지 않았으면 빈 값
+   */
+  Optional<Listing> saveIfStatus(Listing listing, Listing.ListingStatus expected);
 
   /** 매물 찜 수를 원자적으로 1 증가시키고 변경 후 값을 반환한다. */
   int increaseFavoriteCount(String listingId);

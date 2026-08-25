@@ -33,6 +33,8 @@ class ChatRoomBlockServiceTest {
   private static final long TENANT_ID = 7L;
   private static final long LANDLORD_ID = 42L;
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private UserBlockService userBlockService;
@@ -41,7 +43,9 @@ class ChatRoomBlockServiceTest {
 
   @BeforeEach
   void setUp() {
-    service = new ChatRoomBlockService(chatRoomRepository, memberRepository, userBlockService);
+    service =
+        new ChatRoomBlockService(
+            chatRoomRepository, appUserGuard, memberRepository, userBlockService);
   }
 
   /** 임차인이 요청하면 같은 방의 임대인을 차단 대상으로 선택한다. */

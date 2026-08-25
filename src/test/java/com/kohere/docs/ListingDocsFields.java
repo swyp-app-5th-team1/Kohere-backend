@@ -7,6 +7,7 @@ import static com.kohere.docs.ApiDocsFields.enumArrayField;
 import static com.kohere.docs.ApiDocsFields.enumField;
 import static com.kohere.docs.ApiDocsFields.errorNull;
 import static com.kohere.docs.ApiDocsFields.field;
+import static com.kohere.docs.ApiDocsFields.optEnumArrayField;
 import static com.kohere.docs.ApiDocsFields.optField;
 import static org.springframework.restdocs.request.RequestDocumentation.parameterWithName;
 
@@ -78,14 +79,26 @@ public final class ListingDocsFields {
   private static final List<String> PUBLIC_ROOM_OFFER_STATUSES = List.of("ACTIVE");
 
   /**
-   * 같은 매물 문서를 내려주는 두 갈래다. 상태의 도달 가능한 값이 갈려 인자로 구분한다.
+   * 같은 매물 문서를 내려주는 세 갈래다. 상태의 도달 가능한 값이 갈려 인자로 구분한다.
    *
-   * <p>공개 조회는 {@code PUBLISHED}만, 등록 응답은 {@code PENDING}만 나온다. 좌표는 두 갈래가 같다 — 등록이 주소 검색이 준 좌표를 채우기
-   * 때문이다(ADR-0042).
+   * <p>공개 조회는 {@code PUBLISHED}만, 등록 응답은 {@code PENDING}만 나오고, 임대인·관리자 응답은 상태를 가리지 않아 네 값이 모두 나온다.
+   * 좌표는 세 갈래가 같다 — 등록이 주소 검색이 준 좌표를 채우기 때문이다(ADR-0042).
    */
   private enum ListingDocumentVariant {
     PUBLIC_QUERY,
-    REGISTERED
+    REGISTERED,
+    MANAGED
+  }
+
+  /**
+   * 매물 본문을 통째로 받는 두 갈래다. 수정은 부분 수정이 아니라 <b>전체 교체</b>라 등록과 같은 본문을 다시 받는다.
+   *
+   * <p>다른 곳은 방의 식별자·상태 두 칸과 사진 키의 종류뿐이다. 같은 필드라도 응답에 나오는지가 갈리는데, 등록 응답은 세입자 상세라 사업자등록번호·설문을 감추고 수정
+   * 응답은 임대인 상세라 그대로 싣는다.
+   */
+  private enum ListingWriteVariant {
+    REGISTER,
+    UPDATE
   }
 
   // ── §1 매물 목록 — GET /api/v2/listings ────────────────────────────────────
@@ -201,7 +214,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -214,6 +227,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -227,7 +241,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -240,6 +254,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `LISTING_NOT_FOUND` | 없거나 현재 공개되지 않은 매물 |
       """;
 
@@ -253,7 +268,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -267,6 +282,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §9 최근 본 매물 — GET /api/v2/users/me/recent-listings ─────────────────
@@ -279,7 +295,7 @@ public final class ListingDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료).
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **세입자·임대인** 전용이다(`userType`이 `TENANT`·`LANDLORD`).
 
       **응답 주의사항**
 
@@ -293,6 +309,7 @@ public final class ListingDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음·위조·형식 오류 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token으로 호출 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   // ── §10-1 매물 사진 업로드 — POST /api/v2/listings/images ──────────────────
@@ -380,6 +397,8 @@ public final class ListingDocsFields {
 
       **요청 주의사항**
 
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
       - **주소를 먼저 검색한다** — 주소 칸은 자유 입력이 아니다. `GET /api/v1/listings/addresses`로 검색해 고른 후보의 값을 아래 세 필드에 그대로 담는다. 검색 결과는 모두 고를 수 있다. **검색 결과가 아닌 좌표를 임의로 만들어 보내지 않는다.**
 
       | 검색 응답 | 등록 요청 | 내용 |
@@ -414,7 +433,7 @@ public final class ListingDocsFields {
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개. 위반 필드는 `error.errors[]`에 실린다 |
+      | 400 | `INVALID_INPUT` | 필수값 누락·빈값, `usedFloorRange`·`ageRange`의 `min~max` 형식 위반, 범위 위반(두 값의 최소가 최대보다 큼, 운영층 최대가 `building.totalFloors` 초과, `minStayMonths>maxStayMonths`, 음수 금액), `address.lat`·`address.lng` 누락 또는 WGS84 범위 밖, `roomOffers` 0개, **시설 8종 중 어느 하나가 `NONE`을 다른 코드와 함께 담음**. 위반 필드는 `error.errors[]`에 실린다 |
       | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
       | 400 | `LISTING_IMAGE_REQUIRED` | `imageKeys`가 1~5개가 아니거나, 어느 방의 `roomImageKeys`가 2~5개가 아님 |
       | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨 |
@@ -712,6 +731,24 @@ public final class ListingDocsFields {
    * 통과하고 문서만 문자열로 틀린다(ADR-0017).
    */
   public static List<FieldDescriptor> registerRequestFields() {
+    return writeRequestFields(ListingWriteVariant.REGISTER);
+  }
+
+  /**
+   * 매물 수정 요청 본문 문서 정의다.
+   *
+   * <p>수정은 <b>전체 교체</b>라 등록과 같은 본문을 다시 받는다. 그래서 기술자를 등록과 공유하고 갈래로만 가른다 — {@code roomOffers[]}에
+   * {@code roomOfferId}·{@code status} 두 칸이 더 있고, 사진 키에 기존 확정 키를 섞을 수 있다.
+   *
+   * <p>{@link #registerRequestFields()}를 그대로 재사용하면 그 두 칸이 문서화되지 않은 채 남아 스니펫 생성이 <b>런타임에</b> 실패한다.
+   */
+  public static List<FieldDescriptor> updateRequestFields() {
+    return writeRequestFields(ListingWriteVariant.UPDATE);
+  }
+
+  /** 등록·수정이 공유하는 요청 본문 기술자다. 갈래마다 다른 문구와 필드만 {@code variant}로 가른다. */
+  private static List<FieldDescriptor> writeRequestFields(ListingWriteVariant variant) {
+    boolean update = variant == ListingWriteVariant.UPDATE;
     List<FieldDescriptor> fields = new ArrayList<>();
     fields.add(field("title", JsonFieldType.STRING, "지점명"));
     fields.add(enumField("type", ListingType.class, "공간 유형"));
@@ -723,7 +760,9 @@ public final class ListingDocsFields {
         field(
             "businessRegistrationNumber",
             JsonFieldType.STRING,
-            "사업자등록번호 숫자 10자리. 형식만 확인하고 저장하며 응답에는 나오지 않는다"));
+            update
+                ? "사업자등록번호 숫자 10자리. 형식만 확인하고 저장하며, 임대인 상세 응답에 그대로 실려 다시 제출할 수 있다"
+                : "사업자등록번호 숫자 10자리. 형식만 확인하고 저장하며 응답에는 나오지 않는다"));
     fields.add(optField("blogUrl", JsonFieldType.STRING, "지점 블로그·홈페이지 주소. 없으면 생략"));
     fields.add(field("address", JsonFieldType.OBJECT, "매물 주소"));
     fields.add(
@@ -759,18 +798,45 @@ public final class ListingDocsFields {
     fields.add(enumField("arcRequired", ArcRequirement.class, "입주에 외국인등록증(ARC)이 필요한지 여부"));
     fields.add(field("facilities", JsonFieldType.OBJECT, "공용 시설·비품"));
     fields.add(
-        enumArrayField("facilities.heatingSystem", Listing.HeatingSystem.class, "난방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.kitchen", KitchenFacility.class, "주방시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.laundry", LaundryFacility.class, "세탁시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.livingAmenities", LivingAmenity.class, "생활시설. 1개 이상"));
-    fields.add(enumArrayField("facilities.securityFeatures", SecurityFeature.class, "안전시설. 1개 이상"));
+        enumArrayField(
+            "facilities.heatingSystem",
+            Listing.HeatingSystem.class,
+            "난방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.kitchen",
+            KitchenFacility.class,
+            "주방시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.laundry",
+            LaundryFacility.class,
+            "세탁시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.livingAmenities",
+            LivingAmenity.class,
+            "생활시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "facilities.securityFeatures",
+            SecurityFeature.class,
+            "안전시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(
         enumArrayField(
             "facilities.commonSpaces",
             Listing.CommonSpaceType.class,
-            "공용공간. 1개 이상. 수량 없이 종류만 보낸다"));
-    fields.add(enumArrayField("facilities.providedSupplies", ProvidedSupply.class, "제공비품. 1개 이상"));
-    fields.add(enumArrayField("nearbyFacilities", NearbyFacility.class, "주변 편의시설. 1개 이상"));
+            "공용공간. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다). 수량 없이 종류만 보낸다"));
+    fields.add(
+        enumArrayField(
+            "facilities.providedSupplies",
+            ProvidedSupply.class,
+            "제공비품. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
+    fields.add(
+        enumArrayField(
+            "nearbyFacilities",
+            NearbyFacility.class,
+            "주변 편의시설. 1개 이상. 없으면 NONE 하나만 보낸다(다른 코드와 같이 보낼 수 없다)"));
     fields.add(field("nearestTransit", JsonFieldType.OBJECT, "가장 가까운 대중교통"));
     fields.add(enumField("nearestTransit.type", Listing.TransitType.class, "가까운 교통수단"));
     fields.add(
@@ -791,8 +857,28 @@ public final class ListingDocsFields {
         field(
             "imageKeys",
             JsonFieldType.ARRAY,
-            "지점 대표사진의 저장 키 1~5개. `POST /api/v2/listings/images` 응답의 key를 그대로 담는다. 첫 값이 대표 이미지"));
-    fields.add(field("roomOffers", JsonFieldType.ARRAY, "객실 타입 목록. 1개 이상"));
+            update
+                ? "지점 대표사진의 저장 키 1~5개. 새로 올린 임시 키(uploads/…)와 그대로 둘 기존 확정 키(listings/…)를"
+                    + " 섞어 보낼 수 있다. 첫 값이 대표 이미지이며 장수는 둘을 합친 최종 배열 기준이다"
+                : "지점 대표사진의 저장 키 1~5개. `POST /api/v2/listings/images` 응답의 key를 그대로 담는다. 첫 값이 대표 이미지"));
+    fields.add(
+        field(
+            "roomOffers",
+            JsonFieldType.ARRAY,
+            update ? "객실 타입 목록. 1개 이상이며 저장 결과에 ACTIVE인 방이 최소 1개 있어야 한다" : "객실 타입 목록. 1개 이상"));
+    if (update) {
+      fields.add(
+          optField(
+              "roomOffers[].roomOfferId",
+              JsonFieldType.STRING,
+              "고칠 방의 식별자. 임대인 상세 응답 rooms[].roomOfferId를 그대로 담는다."
+                  + " 새로 추가하는 방은 null이거나 키를 생략하며, 그 매물의 방이 아닌 값은 400 INVALID_INPUT"));
+      fields.add(
+          enumField(
+              "roomOffers[].status",
+              Listing.RoomOfferStatus.class,
+              "방 상태. 방을 내리는 것은 요청에서 빼는 것이 아니라 INACTIVE로 보내는 것이다 — 빼면 응답에 보이지 않아 되살릴 수 없다"));
+    }
     fields.add(field("roomOffers[].name", JsonFieldType.STRING, "객실 타입명"));
     fields.add(field("roomOffers[].contract", JsonFieldType.OBJECT, "방 타입별 이용 기간"));
     fields.add(
@@ -813,17 +899,53 @@ public final class ListingDocsFields {
             "roomOffers[].filterTags",
             ConditionTag.class,
             "해당 객실 타입의 옵션. 1개 이상이며, 응답 상위 conditions는 이 값들의 합집합이다"));
-    fields.add(field("roomOffers[].roomImageKeys", JsonFieldType.ARRAY, "그 객실 사진의 저장 키 2~5개"));
     fields.add(
-        enumArrayField(
-            "preferredNationalities", Nationality.class, "설문 — 선호하는 입주자 국적. 1개 이상이며 응답에는 나오지 않는다"));
+        field(
+            "roomOffers[].roomImageKeys",
+            JsonFieldType.ARRAY,
+            update
+                ? "그 객실 사진의 저장 키 2~5개. 임시 키(uploads/…)와 그 방의 기존 확정 키(listings/…)를 섞을 수 있다."
+                    + " 신규 방(roomOfferId가 null)은 아직 확정 키가 없어 임시 키만 가능하다"
+                : "그 객실 사진의 저장 키 2~5개"));
     fields.add(
-        enumArrayField(
+        optEnumArrayField(
+            "preferredNationalities",
+            Nationality.class,
+            update
+                ? "설문 — 선호하는 입주자 국적(선택). 보내지 않으면 저장된 값이 빈 배열로 지워진다"
+                : "설문 — 선호하는 입주자 국적(선택). 보내지 않으면 빈 배열로 저장되며 세입자 응답에는 나오지 않는다"));
+    fields.add(
+        optEnumArrayField(
             "contractDifficulties",
             ContractDifficulty.class,
-            "설문 — 계약 과정에서 겪은 어려움. 1개 이상이며 응답에는 나오지 않는다"));
+            update
+                ? "설문 — 계약 과정에서 겪은 어려움(선택). 보내지 않으면 저장된 값이 빈 배열로 지워진다"
+                : "설문 — 계약 과정에서 겪은 어려움(선택). 보내지 않으면 빈 배열로 저장되며 세입자 응답에는 나오지 않는다"));
     fields.add(
-        optField("serviceFeedback", JsonFieldType.STRING, "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
+        optField(
+            "serviceFeedback",
+            JsonFieldType.STRING,
+            update
+                ? "설문 — 서비스에 전하고 싶은 말. 임대인 상세 응답에 그대로 실린다"
+                : "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
+    fields.add(
+        field(
+            "consents",
+            JsonFieldType.OBJECT,
+            update
+                ? "매물 이용약관 동의 2종. 수정할 때도 새로 받으며 객체가 없으면 400."
+                    + " 저장된 version·agreedAt은 최초 등록 때의 값을 승계하고 이번 요청으로 덮지 않는다"
+                : "매물 이용약관 동의 2종. 객체가 없으면 400"));
+    fields.add(
+        field(
+            "consents.privacyPolicyAgreed",
+            JsonFieldType.BOOLEAN,
+            "개인정보 수집·이용 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
+    fields.add(
+        field(
+            "consents.listingExposureAgreed",
+            JsonFieldType.BOOLEAN,
+            "매물 정보 제공 및 노출 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
     return List.copyOf(fields);
   }
 
@@ -962,6 +1084,507 @@ public final class ListingDocsFields {
     fields.addAll(listingDocumentFields("data", null));
     fields.add(errorNull());
     return fields;
+  }
+
+  // ── 관리자 매물 심사 — /api/v1/admin/listings ─────────────────────────────
+
+  public static final String ADMIN_LISTING_LIST_SUMMARY = "매물 심사 목록 조회(관리자)";
+
+  public static final String ADMIN_LISTING_LIST_DESCRIPTION =
+      """
+      심사 화면에 보여줄 매물을 조회한다. 세입자용 목록과 달리 **`status`와 무관하게 모두** 나온다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - `status`를 **보내지 않으면 전체**다. 콤마로 여러 개 보낼 수 있다(`?status=PENDING,REJECTED`).
+      - `sort`는 `createdAt,asc`만 인식하고, 그 밖의 값이나 생략은 **등록 최신순**이다.
+
+      **응답 주의사항**
+
+      - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
+      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `status`에 정의되지 않은 값, `size`가 1~100 밖 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      """;
+
+  public static final String ADMIN_LISTING_DETAIL_SUMMARY = "매물 심사 상세 조회(관리자)";
+
+  public static final String ADMIN_LISTING_DETAIL_DESCRIPTION =
+      """
+      심사할 매물 한 건을 조회한다. 세입자용 상세와 달리 **저장된 값을 감추지 않고**, `status`와 무관하게 조회된다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **응답 주의사항**
+
+      - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
+      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
+      - `listing.favorited`는 **항상 false**다.
+      - `{code,label}`의 `label`은 **항상 한국어**다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String ADMIN_LISTING_APPROVAL_SUMMARY = "매물 승인(관리자)";
+
+  public static final String ADMIN_LISTING_APPROVAL_DESCRIPTION =
+      """
+      매물을 `PUBLISHED`로 바꿔 세입자에게 공개한다. **요청 본문이 없다.**
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** `PENDING`은 물론 `REJECTED`인 매물도 승인할 수 있다.
+      - **이미 `PUBLISHED`이면 아무것도 바뀌지 않는다.** `updatedAt`도 그대로라 목록 정렬이 흔들리지 않는다. 반복 호출해도 안전하다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `PUBLISHED`가 되고 `rejectionReason`은 **지워진다**(필드 자체가 생략된다).
+      - 승인 직후부터 그 매물이 세입자의 목록·지도·상세 조회에 나타난다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String ADMIN_LISTING_REJECTION_SUMMARY = "매물 반려(관리자)";
+
+  public static final String ADMIN_LISTING_REJECTION_DESCRIPTION =
+      """
+      매물을 `REJECTED`로 바꾸고 사유를 남긴다. 반려된 매물은 세입자 조회에서 사라진다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **관리자**(`userType=ADMIN`) 전용이다.
+
+      **요청 주의사항**
+
+      - **`status`를 가리지 않는다.** 심사 대기 매물은 물론 이미 공개된 매물도 이 요청으로 내릴 수 있다.
+      - **이미 `REJECTED`인 매물에도 보낼 수 있다.** 그때는 `reason`이 새 값으로 덮인다.
+      - `reason`은 임대인이 읽는 값이라 **번역하지 않는다.** 보낸 문자열이 그대로 저장된다.
+
+      **응답 주의사항**
+
+      - 응답 구조는 심사 상세(`GET /api/v1/admin/listings/{listingId}`)와 같다.
+      - `status`가 `REJECTED`가 되고 `rejectionReason`에 보낸 사유가 실린다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | `reason` 누락·공백만·500자 초과 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 상태가 `PENDING`·`TERMS_AGREED`인 회원 |
+      | 403 | `FORBIDDEN` | 관리자가 아닌 회원 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`이거나 24자리 hex 형식이 아님 |
+      """;
+
+  public static final String[] ADMIN_LISTING_400 = {"INVALID_INPUT"};
+  public static final String[] ADMIN_LISTING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] ADMIN_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] ADMIN_LISTING_404 = {"LISTING_NOT_FOUND"};
+
+  /** 반려 요청 본문 필드다. */
+  public static List<FieldDescriptor> rejectionRequestFields() {
+    return List.of(field("reason", JsonFieldType.STRING, "반려 사유. 공백 불가, 1~500자. 번역하지 않는다"));
+  }
+
+  /** 심사 상세 200 응답 필드다. 세입자 상세를 그대로 싣고 감춰진 값을 나란히 더한다. */
+  public static List<FieldDescriptor> adminListingResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /** 심사 목록 200 응답 필드다. */
+  public static List<FieldDescriptor> adminListingPageResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(adminListingFields("data.content[]"));
+    fields.addAll(pageFields("심사 대상 매물 총 개수"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /**
+   * 심사 응답 한 건의 필드다. 세입자 상세는 {@code listing} 아래에 그대로 실린다.
+   *
+   * <p>{@code listing.status}는 {@link ListingDocumentVariant#MANAGED}다 — 심사 목록·상세는 상태를 가리지 않으므로
+   * 승인·반려를 거친 매물까지 네 값이 모두 나온다.
+   */
+  private static List<FieldDescriptor> adminListingFields(String prefix) {
+    List<FieldDescriptor> fields =
+        new ArrayList<>(
+            listingDocumentFields(prefix + ".listing", null, ListingDocumentVariant.MANAGED));
+    fields.add(field(prefix + ".landlordId", JsonFieldType.NUMBER, "매물 소유 임대인 계정 id. 세입자 응답에는 없다"));
+    fields.add(
+        field(
+            prefix + ".businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호 원문. 심사에서 진위를 수동 확인하는 값이라 관리자에게만 내려간다"));
+    fields.add(
+        enumArrayField(
+            prefix + ".preferredNationalities",
+            Nationality.class,
+            "등록 폼 설문 — 선호 국적. 답하지 않았으면 빈 배열이다"));
+    fields.add(
+        enumArrayField(
+            prefix + ".contractDifficulties",
+            ContractDifficulty.class,
+            "등록 폼 설문 — 계약 시 어려움. 답하지 않았으면 빈 배열이다"));
+    fields.add(
+        optField(
+            prefix + ".serviceFeedback", JsonFieldType.STRING, "등록 폼 설문 — 서비스 의견. 없으면 키가 빠진다"));
+    fields.add(field(prefix + ".consents", JsonFieldType.OBJECT, "등록 시 받은 이용약관 동의"));
+    fields.add(
+        field(prefix + ".consents.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보 수집·이용 동의"));
+    fields.add(
+        field(
+            prefix + ".consents.listingExposureAgreed", JsonFieldType.BOOLEAN, "매물 정보 제공 및 노출 동의"));
+    fields.add(
+        field(prefix + ".consents.version", JsonFieldType.STRING, "동의한 약관 버전. 회원 약관 버전과 별개 값이다"));
+    fields.add(field(prefix + ".consents.agreedAt", JsonFieldType.STRING, "동의 시각(UTC ISO-8601)"));
+    fields.add(
+        optField(prefix + ".rejectionReason", JsonFieldType.STRING, "반려 사유. 반려 상태가 아니면 키가 빠진다"));
+    return fields;
+  }
+
+  // ── 임대인 매물 관리 — /api/v2/users/me/listings · PUT /api/v2/listings/{id} ─
+
+  public static final String LANDLORD_LISTING_LIST_SUMMARY = "내 매물 목록 조회(임대인)";
+
+  public static final String LANDLORD_LISTING_LIST_DESCRIPTION =
+      """
+      임대인 웹 「내 매물」 화면의 목록이다. **상태를 가리지 않고** 자기 매물만 조회한다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다.
+
+      **요청 주의사항**
+
+      - `status`를 **보내지 않으면 전체**다. 콤마로 여러 개 보낼 수 있다(`?status=REJECTED,UPDATE_PENDING`). 관리자 심사 목록과 같은 계약이다.
+      - **정렬 파라미터가 없다.** 최근 수정순(`updatedAt` 내림차순) 고정이라 방금 고친 매물이 맨 위에 온다. 나중에 정렬을 여는 것은 하위 호환을 깨지 않는다.
+      - 이 경로가 `/api/v2/listings/mine`이 아닌 이유는 그쪽이 공개 조회 매처(`GET /api/v2/listings/*` `permitAll`)에 먼저 잡혀 **비로그인에 열리기** 때문이다.
+
+      **응답 주의사항**
+
+      - 각 항목의 `listing`은 세입자 목록 카드(`GET /api/v2/listings`)와 같은 구조다. 그 바깥에 `rejectionReason` **한 필드만** 더 붙는다.
+      - `rejectionReason`은 반려된 매물에만 있고, 그 외에는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `listing.status`는 `PENDING`·`PUBLISHED`·`REJECTED`·`UPDATE_PENDING` **넷 다** 나올 수 있다. 카드의 상태 배지에 그대로 쓴다.
+      - `listing.favoriteCount`는 심사 때문에 세입자 목록에서 빠져 있는 동안에도 **줄어들지 않는다**.
+      - `listing.roomOffers[]`와 `listing.conditions`는 세입자 목록과 같은 기준이라 **`ACTIVE` 방만** 반영한다. 내린 방까지 보려면 상세를 쓴다.
+      - 수정 폼이 쓰는 값(`businessRegistrationNumber`·설문 3종·`consents`·사진 키)은 카드에 없다. 아래 상세가 준다.
+      - `{code,label}`의 `label`은 임대인 계정의 표시 언어를 따르고, `status`는 관리 상태라 번역 없이 코드 문자열 그대로다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 정의되지 않은 `status`, `page` 음수, `size`가 1~100 밖 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      """;
+
+  public static final String LANDLORD_LISTING_DETAIL_SUMMARY = "내 매물 상세 조회(임대인)";
+
+  public static final String LANDLORD_LISTING_DETAIL_DESCRIPTION =
+      """
+      수정 화면이 폼을 채우는 데 쓰는 상세다. 계약이 **「수정 요청에 실을 수 있는 전 필드 + 읽기 전용 표시값」** 이라 편집 대상은 하나도 빠지지 않는다. 상태와 무관하게 조회된다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 자기 매물이 아니면 `404 LISTING_NOT_FOUND`다.
+
+      **응답 주의사항**
+
+      - `listing`은 세입자 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조이며 **표시·미리보기용**이다. 다시 제출할 값은 그 바깥에 있다.
+      - 세입자에게 감추는 값이 함께 실린다 — `businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`). **전부 수정 요청 필드**다. 설문 3종은 선택이지만 **보내지 않으면 빈 값으로 덮이므로**, 유지하려면 이 응답이 준 값을 그대로 다시 실어야 한다.
+      - 사진은 URL과 **키**를 함께 준다. 그대로 둘 사진은 `imageKeys`·`rooms[].roomImageKeys`의 확정 키를 수정 요청에 되돌려 보낸다. **URL에서 키를 역산하지 않는다** — 주소 형식에 묶이면 CDN을 바꿀 때 같이 깨진다.
+      - `rooms[]`는 **`INACTIVE` 방까지** 담는다(`listing.roomOffers[]`는 `ACTIVE`만 담는다). 내렸던 방을 되살리려면 이 배열이 필요하다.
+      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - `consents`는 최초 동의 이력(`version`·`agreedAt`)의 **표시용 참고값**이다. 수정 폼은 동의를 새로 받으므로 프리필이 아니다.
+      - `status`·`rejectionReason`은 읽기 전용이다. 수정 요청에는 칸이 없다.
+      - 표시 언어는 임대인 계정의 표시 언어를 따른다. 등록·수정이 다국어 문구를 한국어 한 값으로만 받으므로 영어 문구도 같은 값일 수 있다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`, 24자리 hex 형식이 아님, **남의 매물** |
+      """;
+
+  public static final String LISTING_UPDATE_SUMMARY = "매물 수정(임대인)";
+
+  public static final String LISTING_UPDATE_DESCRIPTION =
+      """
+      임대인이 자기 매물의 내용을 고쳐 다시 심사에 올린다. **부분 수정이 아니라 전체 교체**이므로 등록 때 보낸 속성을 그대로 다시 보낸다.
+
+      **헤더**
+
+      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). **임대인**(`userType=LANDLORD`) 전용이다. 남의 매물이면 `404 LISTING_NOT_FOUND`다.
+
+      **요청 주의사항**
+
+      - **본문은 매물 등록(`POST /api/v2/listings`)과 같다.** 필드 이름·타입·필수 여부·검증·카탈로그 대조가 모두 같고 다른 곳은 아래 둘뿐이다.
+
+      | 다른 점 | 필드 | 내용 |
+      |---|---|---|
+      | 방마다 식별자와 상태를 보낸다 | `roomOffers[].roomOfferId` | 기존 방이면 그 id를 그대로, 새 방이면 `null`(또는 생략). 그 매물의 방이 아닌 id는 `400 INVALID_INPUT` |
+      | " | `roomOffers[].status` | `ACTIVE`·`INACTIVE`. 방을 내리는 것은 요청에서 빼는 것이 아니라 `INACTIVE`로 보내는 것이다 |
+      | 사진 키에 기존 사진을 섞는다 | `imageKeys` · `roomOffers[].roomImageKeys` | 새로 올린 **임시 키**(`uploads/…`)와 그 자리에 이미 있던 **확정 키**(`listings/…`)를 섞어 보낸다 |
+
+      - **시설 8종은 「없음」을 `NONE`으로 보낸다.** 해당 시설이 하나도 없으면 `["NONE"]` **하나만** 싱는다 — `NONE`을 다른 코드와 함께 보내면 `400 INVALID_INPUT`이고 `error.errors[].field`에 그 필드 이름이 실린다. ※ **이 규칙은 아래 스키마에 드러나지 않는다** — `NONE`은 허용값 목록의 평범한 값이라 타입상으로는 조합이 유효해 보인다.
+      - `NONE`은 행정구역의 `ETC`나 설문의 `OTHER`와 다르다 — 그쪽은 「목록 밖의 값」이고 `NONE`은 「해당하는 것이 없음」이다.
+      - **보내지 않은 필드는 지워진다.** 주소에서 좌표·행정구역·주변 대학이 파생되므로 일부만 보내면 파생값이 본문과 어긋난다. 폼 프리필은 `GET /api/v2/users/me/listings/{listingId}`가 준다.
+      - **수정할 수 있는지는 매물의 현재 상태 하나가 정한다.** 임대인이 고를 것은 없다.
+
+      | 수정 전 | 수정 후 | 뜻 |
+      |---|---|---|
+      | `REJECTED` | `PENDING` | 반려 사유를 고쳐 다시 심사에 올린다. 최초 등록과 같은 줄에 선다 |
+      | `PUBLISHED` | `UPDATE_PENDING` | 재심사에 올린다. 심사가 끝날 때까지 세입자 노출에서 빠진다 |
+      | `PENDING`·`UPDATE_PENDING` | `422 LISTING_NOT_EDITABLE` | 이미 심사 대기열에 있다. **수정 신청 취소도 없다** |
+
+      - **공개 중인 매물을 고치면 승인될 때까지 세입자에게 보이지 않는다.** 목록·지도·상세·진단 추천·찜 목록·최근 본 매물에서 빠지고 찜·문의·예약 신청은 `404`다. 심사를 거치지 않은 내용이 세입자에게 도달하지 않게 하려는 **의도된 동작**이므로 오타 하나를 고쳐도 마찬가지다. 제출 전에 임대인에게 고지한다.
+      - 사라지는 것은 전부 **가역**이다. 승인되면 `favoriteCount`·찜 문서·최근 본 기록이 그대로 살아 있는 채 돌아온다. **이미 잡힌 예약의 카드만 예외로 계속 표시된다.**
+      - **사진 키는 자리마다 허용되는 것이 다르다.** 임시 키는 역할 정보가 없어 **JSON에서 놓인 자리**가 역할을 정하고(등록과 동일), 확정 키는 경로에 역할이 이미 박혀 있어 **원래 있던 자리에만** 다시 넣을 수 있다. 대표사진과 방 사진을 서로 옮기거나, 다른 방의 사진을 넣거나, `roomOfferId`가 `null`인 새 방에 확정 키를 넣으면 `400 LISTING_IMAGE_KEY_NOT_FOUND`다. 승격하려면 다시 업로드한다.
+      - 사진 장수 제한(대표 1~5장, 방마다 2~5장)은 **임시 키와 확정 키를 합친 최종 배열** 기준이다.
+      - **방은 하드 삭제하지 않는다.** 예약·채팅이 `roomOfferId`를 참조하므로 내린 방도 문서에 남고, 같은 id를 `ACTIVE`로 다시 보내면 사진까지 되살아난다. **요청 배열의 순서가 곧 저장 순서**이며 `ACTIVE`와 `INACTIVE`가 섞여 있어도 그대로 둔다.
+      - **요청에서 id가 통째로 빠진 기존 방**은 삭제가 아니라 안전망으로 `INACTIVE`가 되어 배열 맨 뒤로 밀린다. 방을 내릴 때는 반드시 `status=INACTIVE`로 보낸다.
+      - **저장 결과에 `ACTIVE` 방이 하나도 없으면 `400 INVALID_INPUT`이다.** 상태만 공개인 채 목록·상세 어디에도 나오지 않는 매물이 만들어지기 때문이다.
+      - `consents`는 등록과 똑같이 담고 게이트도 같다 — 둘 다 `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING`이다. 다만 저장되는 `version`·`agreedAt`은 **최초 등록 때의 값을 승계**한다. 최초 동의의 증빙이라 수정할 때마다 덮으면 기록이 사라진다.
+      - **서버가 정하는 값에는 칸이 없다** — `status`·`rejectionReason`·`favoriteCount`·`createdAt`·`schemaVersion`·`landlordId`. 특히 `rejectionReason`은 수정에 성공하면 서버가 **무조건 비운다**.
+
+      **응답 주의사항**
+
+      - 본문은 내 매물 상세(`GET /api/v2/users/me/listings/{listingId}`)와 같은 구조이고 `status`만 전이 결과(`PENDING` 또는 `UPDATE_PENDING`)다. 상태 전이 액션이라 `201`이 아니라 `200`이다.
+      - `listing.imageUrls`·`rooms[].roomImageUrls`는 이번 요청의 최종 배열 순서를 그대로 따르고, 그대로 둔 사진의 URL은 수정 전과 같다.
+      - 교체된 사진은 **저장이 성공한 뒤에** 지운다. `INACTIVE`로 내린 방의 사진은 문서에 남아 지워지지 않으며, 그 방을 되살리면 사진도 함께 돌아온다.
+
+      **에러 코드**
+
+      | status | `error.code` | 발생 조건 |
+      |---|---|---|
+      | 400 | `INVALID_INPUT` | 등록과 같은 필수값·형식·범위 위반(**시설 8종의 `NONE` 단독 규칙** 포함). 더해서 그 매물의 것이 아닌 `roomOfferId`, 저장 결과에 `ACTIVE` 방 0개 |
+      | 400 | `LISTING_UNKNOWN_CATALOG_CODE` | 본문에 실린 코드 값이 서버 코드표에 없음 |
+      | 400 | `LISTING_IMAGE_REQUIRED` | 최종 배열이 대표 1~5장 · 방 2~5장을 벗어남 |
+      | 400 | `LISTING_IMAGE_KEY_NOT_FOUND` | 키가 남의 것·없는 것·만료된 것이거나, 확정 키를 원래 자리가 아닌 곳에 넣음 |
+      | 400 | `MALFORMED_REQUEST` | 본문 JSON 파싱 불가 또는 타입 불일치 |
+      | 401 | `UNAUTHENTICATED` | 토큰 없음·위조 |
+      | 401 | `TOKEN_EXPIRED` | 토큰 만료 |
+      | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 토큰 |
+      | 403 | `FORBIDDEN` | 임대인이 아닌(`userType=TENANT`) 사용자 |
+      | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`, 24자리 hex 형식이 아님, **남의 매물** |
+      | 409 | `LISTING_STATE_CHANGED` | 서버가 매물을 읽고 저장하기까지의 사이에 관리자가 승인·반려해 상태가 바뀜. 실패가 아니라 **재조회 신호**다 |
+      | 422 | `LISTING_NOT_EDITABLE` | 매물이 `PENDING`·`UPDATE_PENDING`이라 수정할 수 없음 |
+      | 422 | `LISTING_REQUIRED_AGREEMENT_MISSING` | 동의 2종 중 하나 이상이 누락되거나 `false` |
+      | 502 | `UPSTREAM_ERROR` | 사진 저장소 복사 실패. 매물은 바뀌지 않고 이번에 복사한 사진은 서버가 지운다. 기존 사진과 임시 사진은 그대로 남아 다시 제출할 수 있다 |
+      """;
+
+  // 관리자 심사와 코드 구성이 같아 보여도 ADMIN_LISTING_*를 재사용하지 않는다 — 같은 (path, type)에 서로 다른
+  // 배열이 실리면 dedup 승자가 파일 순회 순서에 좌우된다(ApiDocsFields 클래스 주석). 오퍼레이션마다 한 벌씩 둔다.
+
+  public static final String[] LANDLORD_LISTING_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+  public static final String[] LANDLORD_LISTING_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] LANDLORD_LISTING_404 = {"LISTING_NOT_FOUND"};
+
+  public static final String[] LISTING_UPDATE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
+
+  public static final String[] LISTING_UPDATE_400 = {
+    "INVALID_INPUT",
+    "LISTING_UNKNOWN_CATALOG_CODE",
+    "LISTING_IMAGE_REQUIRED",
+    "LISTING_IMAGE_KEY_NOT_FOUND",
+    "MALFORMED_REQUEST"
+  };
+  public static final String[] LISTING_UPDATE_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
+  public static final String[] LISTING_UPDATE_404 = {"LISTING_NOT_FOUND"};
+  public static final String[] LISTING_UPDATE_409 = {"LISTING_STATE_CHANGED"};
+  public static final String[] LISTING_UPDATE_422 = {
+    "LISTING_NOT_EDITABLE", "LISTING_REQUIRED_AGREEMENT_MISSING"
+  };
+
+  /**
+   * 임대인 상세 200 응답 필드다. 수정({@code PUT /api/v2/listings/{listingId}})의 성공 응답도 같은 타입이라 이 한 벌을 함께 쓴다.
+   *
+   * <p>세입자 상세는 {@code data.listing} 아래에 그대로 실리고, 그 바깥이 <b>다시 제출할 값</b>이다.
+   */
+  public static List<FieldDescriptor> landlordListingResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(listingDocumentFields("data.listing", null, ListingDocumentVariant.MANAGED));
+    fields.add(
+        enumField(
+            "data.status",
+            Listing.ListingStatus.class,
+            "심사·게시 상태. 읽기 전용이라 수정 요청에는 칸이 없다. 수정에 성공하면 PENDING(반려본) 또는 UPDATE_PENDING(공개본)이 된다"));
+    fields.add(
+        optField(
+            "data.rejectionReason",
+            JsonFieldType.STRING,
+            "반려 사유. 읽기 전용이며 반려 상태가 아니면 키가 빠진다. 수정에 성공하면 서버가 무조건 비운다"));
+    fields.add(
+        field(
+            "data.businessRegistrationNumber",
+            JsonFieldType.STRING,
+            "사업자등록번호. 세입자에게는 감추지만 수정 요청 필드라 그대로 되돌려 보낸다"));
+    fields.add(
+        enumArrayField(
+            "data.preferredNationalities",
+            Nationality.class,
+            "등록 폼 설문 — 선호 국적. 수정 요청 필드이며 답하지 않았으면 빈 배열이다"));
+    fields.add(
+        enumArrayField(
+            "data.contractDifficulties",
+            ContractDifficulty.class,
+            "등록 폼 설문 — 계약 시 어려움. 수정 요청 필드이며 답하지 않았으면 빈 배열이다"));
+    fields.add(
+        optField(
+            "data.serviceFeedback",
+            JsonFieldType.STRING,
+            "등록 폼 설문 — 서비스 의견. 수정 요청 필드이며 값이 없으면 키가 빠진다"));
+    fields.add(
+        optField(
+            "data.consents",
+            JsonFieldType.OBJECT,
+            "최초 동의 이력. 표시용 참고값이라 프리필이 아니며, 수정 폼은 동의를 새로 받는다."
+                + " 동의를 받기 전에 저장된 문서에는 없어 필드 자체가 빠진다"));
+    fields.add(
+        optField(
+            "data.consents.privacyPolicyAgreed",
+            JsonFieldType.BOOLEAN,
+            "개인정보 수집·이용 동의. consents가 없으면 함께 빠진다"));
+    fields.add(
+        optField(
+            "data.consents.listingExposureAgreed",
+            JsonFieldType.BOOLEAN,
+            "매물 정보 제공 및 노출 동의. consents가 없으면 함께 빠진다"));
+    fields.add(
+        optField("data.consents.version", JsonFieldType.STRING, "동의한 약관 버전. 수정해도 최초 등록 때 값 그대로다"));
+    fields.add(
+        optField(
+            "data.consents.agreedAt",
+            JsonFieldType.STRING,
+            "최초 동의 시각(UTC ISO-8601). 수정할 때마다 갱신하지 않는다"));
+    fields.add(
+        field(
+            "data.imageKeys",
+            JsonFieldType.ARRAY,
+            "대표사진의 저장 키. 그대로 둘 사진을 수정 요청 imageKeys에 되돌려 보낸다."
+                + " 미리보기 주소는 listing.imageUrls에 같은 순서로 있다"));
+    fields.addAll(landlordRoomFields("data.rooms"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /**
+   * 임대인 목록 200 응답 필드다. 카드는 세입자 목록과 같고 반려 사유 하나만 더 붙는다.
+   *
+   * <p>{@code distanceMeters}를 여기서 따로 더하는 이유는 <b>지도 검색이 아니라 소유 기준</b>이라 값이 늘 {@code null}이기 때문이다.
+   * 카드 레코드가 이 키를 {@code NON_NULL}로 감추지 않아 <b>null인 채로 응답에 남으므로</b>, 기술자가 없으면 문서화되지 않은 필드로 스니펫 생성이
+   * 실패한다.
+   */
+  public static List<FieldDescriptor> landlordListingPageResponseFields() {
+    List<FieldDescriptor> fields = new ArrayList<>();
+    fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
+    fields.addAll(
+        listingDocumentFields("data.content[].listing", null, ListingDocumentVariant.MANAGED));
+    fields.add(
+        optField(
+            "data.content[].listing.distanceMeters",
+            JsonFieldType.NUMBER,
+            "지도 중심에서 매물까지의 직선거리(미터). 내 매물 목록은 지도 검색이 아니라 소유 기준이라 항상 null이다"));
+    fields.add(
+        optField(
+            "data.content[].rejectionReason",
+            JsonFieldType.STRING,
+            "반려 사유. 반려 상태가 아니면 값이 null이 아니라 키가 빠진다"));
+    fields.addAll(pageFields("상태를 가리지 않는 내 매물 총 개수"));
+    fields.add(errorNull());
+    return fields;
+  }
+
+  /**
+   * 수정 요청이 그대로 되돌려 보낼 방 배열이다.
+   *
+   * <p>중첩된 세입자 상세의 {@code listing.roomOffers[]}와 겹쳐 보이지만 쓰임이 다르다 — 그쪽은 <b>활성 방만</b> 담은 표시용이고, 이쪽은
+   * 식별자·상태·라벨 없는 원본 코드·사진 키를 <b>비활성 방까지</b> 준다.
+   */
+  private static List<FieldDescriptor> landlordRoomFields(String prefix) {
+    return List.of(
+        field(
+            prefix + "[].roomOfferId",
+            JsonFieldType.STRING,
+            "방 식별자. 수정 요청 roomOffers[].roomOfferId에 그대로 담는다"),
+        enumField(
+            prefix + "[].status",
+            Listing.RoomOfferStatus.class,
+            "방 상태. INACTIVE인 방도 함께 내려온다 — 되살리려면 ACTIVE로 바꿔 다시 보낸다"),
+        field(prefix + "[].name", JsonFieldType.STRING, "객실 타입명. 라벨이 아니라 저장된 원문이라 그대로 다시 보낸다"),
+        field(prefix + "[].contract.minStayMonths", JsonFieldType.NUMBER, "최소 이용 개월"),
+        field(prefix + "[].contract.maxStayMonths", JsonFieldType.NUMBER, "최대 이용 개월"),
+        field(prefix + "[].pricing.monthlyRent", JsonFieldType.NUMBER, "월 기준 객실 비용(KRW)"),
+        field(prefix + "[].pricing.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
+        field(prefix + "[].pricing.maintenanceFee", JsonFieldType.NUMBER, "관리비(KRW)"),
+        enumField(prefix + "[].pricing.currency", Listing.Currency.class, "금액 통화. 수정 요청에는 칸이 없다"),
+        enumArrayField(
+            prefix + "[].filterTags",
+            ConditionTag.class,
+            "라벨 없는 원본 조건 코드. 수정 요청 roomOffers[].filterTags에 그대로 담는다"),
+        field(
+            prefix + "[].roomImageUrls",
+            JsonFieldType.ARRAY,
+            "방 사진 미리보기 주소. 폼 표시용이며 수정 요청에는 URL이 아니라 키를 보낸다"),
+        field(
+            prefix + "[].roomImageKeys",
+            JsonFieldType.ARRAY,
+            "방 사진의 저장 키. 그대로 둘 사진을 수정 요청 roomOffers[].roomImageKeys에 되돌려 보낸다"));
   }
 
   private static List<FieldDescriptor> listingDocumentFields(
@@ -1215,8 +1838,19 @@ public final class ListingDocsFields {
     return fields;
   }
 
-  /** 매물 상태는 갈래마다 도달 가능한 값이 하나뿐이라 enum 전체가 아니라 그 값만 싣는다. */
+  /**
+   * 매물 상태는 갈래마다 도달 가능한 값이 달라 갈래별로 싣는다.
+   *
+   * <p>세입자·등록 갈래는 도달 가능한 값이 하나뿐이라 enum 전체가 아니라 그 값만 싣고, 상태를 가리지 않는 임대인·관리자 갈래만 enum 전체를 싣는다. 뒤쪽에
+   * {@code codeField}로 값을 손으로 나열하면 상태가 늘 때 문서가 남으므로 {@code enumField}를 쓴다.
+   */
   private static FieldDescriptor statusField(String prefix, ListingDocumentVariant variant) {
+    if (variant == ListingDocumentVariant.MANAGED) {
+      return enumField(
+          prefix + ".status",
+          Listing.ListingStatus.class,
+          "심사·게시 상태. 임대인·관리자 조회는 상태를 가리지 않아 네 값이 모두 나온다. 관리 상태라 번역 없이 코드 문자열 그대로다");
+    }
     return variant == ListingDocumentVariant.REGISTERED
         ? codeField(
             prefix + ".status",

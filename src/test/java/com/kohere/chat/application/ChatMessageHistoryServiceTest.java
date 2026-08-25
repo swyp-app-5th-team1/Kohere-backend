@@ -47,6 +47,8 @@ class ChatMessageHistoryServiceTest {
   private static final long ROOM_ID = 556L;
   private static final Instant SENT_AT = Instant.parse("2026-08-20T10:15:30Z");
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private MessageRepository messageRepository;
@@ -59,7 +61,11 @@ class ChatMessageHistoryServiceTest {
   void setUp() {
     service =
         new ChatMessageHistoryService(
-            chatRoomRepository, memberRepository, messageRepository, translationRepository);
+            chatRoomRepository,
+            appUserGuard,
+            memberRepository,
+            messageRepository,
+            translationRepository);
   }
 
   /** 첫 진입은 최근 메시지를 최신순으로 반환하고 size+1번째 행으로 다음 페이지를 판단한다. */

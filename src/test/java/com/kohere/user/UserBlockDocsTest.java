@@ -17,8 +17,10 @@ import static com.kohere.docs.UserDocsFields.UNBLOCK_SUMMARY;
 import static com.kohere.docs.UserDocsFields.blocksListQueryParameters;
 import static com.kohere.docs.UserDocsFields.blocksListResponseFields;
 import static com.kohere.docs.UserDocsFields.unblockPathParameters;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 import static org.springframework.restdocs.mockmvc.MockMvcRestDocumentation.documentationConfiguration;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -92,6 +94,9 @@ class UserBlockDocsTest {
 
   @BeforeEach
   void setUp(RestDocumentationContextProvider restDocumentation) {
+    // 차단 목록·해제에 세입자·임대인 허용 목록 게이트가 붙었다. userType 을 스텁하지 않으면 mock 이
+    // null 을 돌려줘 403 이 나고, 정작 검증하려던 차단 동작에 닿지 못한다.
+    lenient().when(userAccountService.getUserType(anyLong())).thenReturn("TENANT");
     mockMvc =
         MockMvcBuilders.webAppContextSetup(context)
             .apply(springSecurity())
@@ -126,6 +131,8 @@ class UserBlockDocsTest {
             new ApplicantProfileView(
                 TENANT_ID, "테스트 세입자", "OTHER", "KR", "대한민국", "tenant@example.com"));
     given(listingQueryService.findPublishedRoomOffer(anyString(), anyString()))
+        .willReturn(Optional.of(offerView()));
+    given(listingQueryService.findRoomOfferForExistingBooking(anyString(), anyString()))
         .willReturn(Optional.of(offerView()));
     String body =
         mockMvc

@@ -10,3 +10,6 @@
 | US-3-4 | 매물 상세 조회 + 최근 본 매물 기록 | [us-3-4-listing-detail-recent-viewed](us-3-4-listing-detail-recent-viewed.md) |
 | US-3-5 | 찜 토글·찜 목록(인증 필수) | [us-3-5-favorite-toggle-list](us-3-5-favorite-toggle-list.md) |
 | US-3-6 | 임대인 매물 등록(사진 한 장씩 업로드 → 키로 등록) | [us-3-6-listing-registration](us-3-6-listing-registration.md) |
+| US-3-7 | 관리자 매물 심사(모든 상태 조회 · 승인 · 반려) | [us-3-7-admin-listing-review](us-3-7-admin-listing-review.md) |
+| US-3-8 | 임대인 전용 매물 조회(내 매물 목록 · 상세) | [us-3-8-landlord-listing-query](us-3-8-landlord-listing-query.md) |
+| US-3-9 | 임대인 매물 수정(전체 교체 · 재심사) | [us-3-9-landlord-listing-update](us-3-9-landlord-listing-update.md) |

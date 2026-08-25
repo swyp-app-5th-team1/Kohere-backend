@@ -67,6 +67,7 @@
 
 - 두 버전이 서로의 상수(summary·description)나 파라미터·필드 기술자를 재사용하는가? 특히 **종료된 버전이 정본의 기술자를 빌려 쓰면** 동작하지 않는 필터를 살아 있는 것처럼 문서화한다.
 - description에 「null」을 언급했는데 그 필드가 `optional()`이 아닌가?
+- **요청** 필드를 `optional()`로 낮추면서 **그 필드를 생략한 성공 케이스**를 추가했는가? 응답 필드의 `doesNotExist()` 규칙은 요청 본문에 걸 수 없으므로 등가 방어는 이것뿐이다. 애너테이션만 떼고 기술자를 그대로 두면 예시 페이로드에 값이 남아 있어 **테스트는 통과하고 OpenAPI만 required로 남는다**
 - description에 UPPER_SNAKE 값을 나열했는데 `enumField`/`codeField`를 안 썼는가?
 - 배열 필드에 스칼라 `codeField`를 썼는가? (테스트는 통과하고 문서만 틀린다)
 - 필드를 `optional`로 낮추면서 그 필드가 없어야 하는 케이스에 `doesNotExist()` 단정을 빠뜨렸는가?

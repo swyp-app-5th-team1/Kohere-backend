@@ -33,6 +33,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
+import org.awaitility.core.ConditionTimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,15 @@ class BookingCardIntegrationTest {
   /** 비동기 테스트가 남긴 행을 no-FK 삭제 순서로 비우고 모든 외부 협력 응답을 한곳에서 준비한다. */
   @BeforeEach
   void cleanAndPrepareCollaborators() {
+    // 앞 테스트가 실패로 중단됐어도 listener는 계속 돌기 때문에, 먼저 비우고 뒤늦은 INSERT를 맞으면 이 테스트가 남의 행을
+    // 세게 된다. 남은 publication이 빌 때까지 잠깐 기다리되, 여기서 실패시키면 원인 테스트가 아니라 다음 테스트가
+    // 빨간불이 되므로 시간이 지나면 그냥 정리를 진행한다.
+    try {
+      await().atMost(Duration.ofSeconds(5)).until(() -> count("event_publication") == 0);
+    } catch (ConditionTimeoutException ignored) {
+      // 정리를 계속한다.
+    }
+
     jdbcTemplate.update("DELETE FROM event_publication");
     jdbcTemplate.update("DELETE FROM chat_messages");
     jdbcTemplate.update("DELETE FROM chat_room_members");
@@ -86,6 +96,8 @@ class BookingCardIntegrationTest {
     given(userAccountService.getApplicantProfile(TENANT_ID)).willReturn(applicant());
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
     given(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
+        .willReturn(Optional.of(offer()));
+    given(bookingListingQueryService.findRoomOfferForExistingBooking(LISTING_ID, ROOM_OFFER_ID))
         .willReturn(Optional.of(offer()));
     given(chatListingQueryService.findPublishedListing(LISTING_ID))
         .willReturn(
@@ -177,23 +189,35 @@ class BookingCardIntegrationTest {
     assertThat(room().getLastMessageId()).isEqualTo(first.messageId());
   }
 
-  /** 비동기 카드 저장과 publication 완료 삭제가 끝날 때까지만 기다린다. 지속 polling 기능을 구현하는 코드가 아니다. */
+  /**
+   * 비동기 카드 저장과 publication 완료 삭제가 끝날 때까지만 기다린다. 지속 polling 기능을 구현하는 코드가 아니다.
+   *
+   * <p>방 조회는 {@code orElseThrow}가 아니라 {@code isPresent} 단언으로 확인한다. Awaitility의 {@code
+   * untilAsserted}는 AssertionError만 재시도하고 그 밖의 예외는 그대로 던지므로, 첫 polling(기본 100ms) 시점에 아직 방이 없으면
+   * NoSuchElementException으로 즉시 실패했다. 느린 CI에서 이 테스트가 깨졌고, 중단된 뒤에도 listener가 계속 돌아 다음 테스트의
+   * 정리(DELETE) 뒤에 행을 다시 넣는 오염까지 일으켰다.
+   */
   private void awaitCardAndCompletedPublication(long bookingId) {
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () -> {
-              ChatRoom room = room();
-              assertThat(messageRepository.findByChatRoomIdAndBookingId(room.getId(), bookingId))
+              Optional<ChatRoom> room = findRoom();
+              assertThat(room).isPresent();
+              assertThat(
+                      messageRepository.findByChatRoomIdAndBookingId(room.get().getId(), bookingId))
                   .isPresent();
               assertThat(count("event_publication")).isZero();
             });
   }
 
   private ChatRoom room() {
-    return chatRoomRepository
-        .findByListingIdAndTenantIdAndLandlordId(LISTING_ID, TENANT_ID, LANDLORD_ID)
-        .orElseThrow();
+    return findRoom().orElseThrow();
+  }
+
+  private Optional<ChatRoom> findRoom() {
+    return chatRoomRepository.findByListingIdAndTenantIdAndLandlordId(
+        LISTING_ID, TENANT_ID, LANDLORD_ID);
   }
 
   private long count(String table) {

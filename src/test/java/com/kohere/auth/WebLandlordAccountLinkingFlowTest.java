@@ -98,7 +98,7 @@ class WebLandlordAccountLinkingFlowTest {
   private static final String CATALOG_RESOURCE = "fixtures/listing-catalog-v4.json";
   private static final String UNIVERSITIES_RESOURCE = "fixtures/universities.json";
 
-  /** 웹 가입 폼의 비밀번호(정책: 영문+숫자+ASCII 특수문자, 8~10자 — #229 D1). */
+  /** 웹 가입 폼의 비밀번호(정책: 영문+숫자+ASCII 특수문자, 8~20자). */
   private static final String PASSWORD = "Kohere1!";
 
   private static final String BIRTH_DATE = "1988-05-20";
@@ -693,7 +693,8 @@ class WebLandlordAccountLinkingFlowTest {
             }
           ],
           "preferredNationalities": ["JAPAN"],
-          "contractDifficulties": ["LANGUAGE"]
+          "contractDifficulties": ["LANGUAGE"],
+          "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
         }
         """
         .formatted(landlordId);

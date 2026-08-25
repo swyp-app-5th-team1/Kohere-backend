@@ -65,6 +65,7 @@ public class BookingService {
   private final ReportReasonRepository reportReasonRepository;
   private final BookingListingQueryService listingQueryService;
   private final UserAccountService userAccountService;
+  private final AppUserGuard appUserGuard;
   private final UserBlockService userBlockService;
   private final BookingCreatedEventFactory bookingCreatedEventFactory;
   private final ApplicationEventPublisher eventPublisher;
@@ -135,6 +136,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public PageResponse<?> getBookings(long userId, int page, int size) {
+    appUserGuard.requireAppUser(userId);
     validatePage(page, size);
     List<Long> blockedIds = userBlockService.findBlockedUserIds(userId);
 
@@ -169,6 +171,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public Object getBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     List<Long> blockedIds = userBlockService.findBlockedUserIds(userId);
     if (USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
       Booking booking =
@@ -191,6 +194,7 @@ public class BookingService {
    */
   @Transactional
   public void deleteBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     Instant now = Instant.now();
@@ -209,6 +213,7 @@ public class BookingService {
    */
   @Transactional
   public void blockBooking(long userId, long bookingId) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     userBlockService.block(userId, counterpartOf(booking, userId));
@@ -221,6 +226,7 @@ public class BookingService {
   @Transactional
   public BookingReportResponse reportBooking(
       long userId, long bookingId, BookingReportRequest request) {
+    appUserGuard.requireAppUser(userId);
     Booking booking =
         bookingRepository.findByIdForMutation(bookingId).orElseThrow(BookingNotFoundException::new);
     if (!isParticipant(booking, userId)) {
@@ -241,6 +247,7 @@ public class BookingService {
    */
   @Transactional(readOnly = true)
   public ReportReasonResponse getReportReasons(long userId) {
+    appUserGuard.requireAppUser(userId);
     String lang = userAccountService.getLanguage(userId);
     List<ReportReasonResponse.Reason> reasons =
         reportReasonRepository.findActiveOrdered(lang).stream()
@@ -249,9 +256,14 @@ public class BookingService {
     return new ReportReasonResponse(reasons);
   }
 
+  /**
+   * 이미 존재하는 예약의 카드 값을 읽는다. <b>매물·방 상태를 보지 않는다.</b>
+   *
+   * <p>표시 경로가 여기 하나로 모여 있어야 한다 — 예전에는 목록이 저장소 포트를 직접 불러, 상세만 고치면 목록 카드가 계속 빈 채로 남는 모양이었다.
+   */
   private RoomOfferBookingView offerOf(Booking booking) {
     return listingQueryService
-        .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
+        .findRoomOfferForExistingBooking(booking.getListingId(), booking.getRoomOfferId())
         .orElse(null);
   }
 
@@ -304,10 +316,7 @@ public class BookingService {
   }
 
   private BookingSummaryResponse toSummary(Booking booking) {
-    RoomOfferBookingView offer =
-        listingQueryService
-            .findPublishedRoomOffer(booking.getListingId(), booking.getRoomOfferId())
-            .orElse(null);
+    RoomOfferBookingView offer = offerOf(booking);
     return new BookingSummaryResponse(
         booking.getId(),
         booking.getListingId(),

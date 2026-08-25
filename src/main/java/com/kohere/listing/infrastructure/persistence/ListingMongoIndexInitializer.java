@@ -65,6 +65,11 @@ public class ListingMongoIndexInitializer implements ApplicationRunner {
             .on("status", ASC)
             .on("arcRequired", ASC)
             .named("listings_status_arc_requirement"));
+    // 관리자 심사 목록의 유일한 접근 경로다. 세입자 조회와 달리 status로 좁힌 뒤 등록 최신순으로 정렬하므로
+    // createdAt을 정렬 키로 함께 싣는다. status 조건이 없는 전체 조회는 createdAt 접두를 쓰지 못하지만,
+    // 그 경로는 정렬만 인덱스로 처리하면 되고 심사 대기 목록이 주 사용처다.
+    indexOperations.createIndex(
+        new Index().on("status", ASC).on("createdAt", DESC).named("listings_status_created_at"));
 
     var universityIndexOperations = mongoTemplate.indexOps(UniversityDocument.class);
 

@@ -28,6 +28,7 @@ public class UserBlockServiceImpl implements UserBlockService {
   private static final int MAX_PAGE_SIZE = 100;
 
   private final UserBlockRepository userBlockRepository;
+  private final AppUserGuard appUserGuard;
   private final UserRepository userRepository;
 
   @Override

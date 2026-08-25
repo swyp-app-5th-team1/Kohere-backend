@@ -154,6 +154,12 @@ variable "bizno_enabled" {
   default     = false
 }
 
+variable "web_base_url" {
+  description = "임대인 웹(SPA) 오리진 — 비밀번호 재설정 링크 base URL(앱 app.web.base-url, #272). dev는 Caddy가 한 도메인에서 API와 SPA를 함께 내므로 domain_name과 같은 값. 앱이 계정 복구를 켠 채 이 값이 비거나 형식이 틀리면 기동을 거부한다"
+  type        = string
+  default     = ""
+}
+
 variable "test_login_enabled" {
   description = "dev 테스트 마스터 로그인 기능(앱 app.auth.test-login.enabled) — 마스터 계정 시드 + 우회 로그인을 함께 켠다. 기본 false(공유 EC2 백도어)"
   type        = bool

@@ -90,7 +90,7 @@ Proposed · **Amended(담당자 연락처에서 `sms` 제거, 2026-08-16)**
 
 **`0115`는 스키마만 다룬다** — v4 validator 적용(컬렉션이 없으면 `createCollection`+validationOptions, 있으면 `collMod`)과 옛 인덱스 2건 삭제. **데이터는 건드리지 않는다.**
 
-**시드는 수동으로 주입한다**(`listings` 2건 · `listingCatalog` 103건). 운영 절차는 [migration-policy §8-1](../database/migration-policy.md#8-1-시드-주입-절차)이 정본이며, 핵심은 **`--drop`을 쓰지 않는 것**이다 — 컬렉션을 지우면 validator가 함께 사라지는데 `0115`는 1회성이라 재기동해도 복구되지 않는다. `deleteMany({})` 후 import한다.
+**시드는 수동으로 주입한다**(`listings` 2건 · `listingCatalog` 112건). 운영 절차는 [migration-policy §8-1](../database/migration-policy.md#8-1-시드-주입-절차)이 정본이며, 핵심은 **`--drop`을 쓰지 않는 것**이다 — 컬렉션을 지우면 validator가 함께 사라지는데 `0115`는 1회성이라 재기동해도 복구되지 않는다. `deleteMany({})` 후 import한다.
 
 인덱스는 부트스트랩(`ListingMongoIndexInitializer`)이 계속 소유한다. 다만 `listings_status_arc_required`는 키가 바뀌므로 **새 이름으로 만든다** — 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다.
 
@@ -118,7 +118,7 @@ v4 `$jsonSchema`는 `0115` 안에 **동결**한다. `ListingMongoIndexInitialize
   - 응답 구조가 하위 호환을 깬다. 구버전 앱 대응은 별도 ADR(API 버전 분리)에서 다룬다.
 - **후속 작업**
   - 임대인 탈퇴 시 매물 문서 PII 처리 — [ADR-0014](./0014-withdrawal-pii-anonymization.md)의 익명화 대상이 MySQL `users` 컬럼뿐이라 `contact`·사업자등록번호가 남는다. **임대인 탈퇴 기능 구현 시 함께 설계한다.**
-  - 관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API. **승인 조건에 `location` 보유를 넣어** 좌표 없는 매물이 공개되지 않게 한다.
+  - **관리자 승인(`PENDING → PUBLISHED`/`REJECTED`) API — 나왔다.** `POST /api/v1/admin/listings/{listingId}/approval`·`/rejection`이고, 임대인이 반려·공개된 매물을 다시 제출하는 `PUT /api/v2/listings/{listingId}`(승인 매물을 수정하면 `UPDATE_PENDING`으로 다시 심사)도 함께 정해졌다([03-listings-favorites](../api/specs/03-listings-favorites.md)). **승인 조건에 `location` 보유를 넣는 안은 불필요해졌다** — 등록 검증이 `location`을 필수로 요구해 좌표 없는 매물이 애초에 저장되지 않는다.
   - 지오코딩으로 `location`·`nearbyUniversityCodes` 채우기.
 
 ## Validation

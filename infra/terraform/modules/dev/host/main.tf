@@ -11,7 +11,7 @@ locals {
   # Caddy 사이트 주소 — 도메인으로 자동 HTTPS(도메인 필수).
   caddy_site = var.domain_name
 
-  # user_data와 기존 EC2용 SSM 명령이 완전히 같은 compose를 사용하도록 한 번만 렌더한다.
+  # 새 EC2의 user_data에 넣을 compose를 한 번만 렌더한다.
   compose_yml = templatefile("${path.module}/docker-compose.yml.tftpl", {
     aws_region                  = var.aws_region
     db_name                     = var.db_name
@@ -28,11 +28,6 @@ locals {
     chat_translation_location   = var.chat_translation_location
   })
 
-  # 현재 실행 중인 EC2는 user_data가 다시 실행되지 않으므로, 같은 내용을 SSM으로 1회 적용할 스크립트도 만든다.
-  configure_chat_translation_script = templatefile("${path.module}/configure-chat-translation.sh.tftpl", {
-    google_wif_credentials_base64 = base64encode(var.google_wif_credential_configuration)
-    compose_yml_base64            = base64encode(local.compose_yml)
-  })
 }
 
 resource "aws_instance" "host" {
@@ -86,7 +81,6 @@ resource "aws_instance" "host" {
     })
     compose_yml                   = local.compose_yml
     google_wif_credentials_base64 = base64encode(var.google_wif_credential_configuration)
-    configure_chat_translation    = local.configure_chat_translation_script
   }))
 
   lifecycle {
@@ -107,26 +101,4 @@ resource "aws_volume_attachment" "data" {
   volume_id    = var.volume_id
   instance_id  = aws_instance.host.id
   skip_destroy = true
-}
-
-# Terraform apply 뒤 이 문서를 한 번 실행하면 EC2를 교체하지 않고도 현재 서버에 WIF/compose 설정이 반영된다.
-# 새 EC2는 user_data가 같은 파일을 만들기 때문에 이 문서를 실행하지 않아도 된다.
-resource "aws_ssm_document" "configure_chat_translation" {
-  name            = "${var.name_prefix}-configure-chat-translation"
-  document_type   = "Command"
-  document_format = "YAML"
-
-  content = yamlencode({
-    schemaVersion = "2.2"
-    description   = "기존 dev EC2에 Google WIF와 채팅 자동 번역 설정을 반영한다"
-    mainSteps = [{
-      action = "aws:runShellScript"
-      name   = "configureChatTranslation"
-      inputs = {
-        runCommand = [local.configure_chat_translation_script]
-      }
-    }]
-  })
-
-  tags = merge(var.tags, { Name = "${var.name_prefix}-configure-chat-translation" })
 }

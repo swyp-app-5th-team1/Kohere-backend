@@ -24,6 +24,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.geo.Point;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.FindAndReplaceOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.geo.GeoJsonPolygon;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -59,6 +60,51 @@ public class ListingRepositoryImpl implements ListingRepository {
       return Optional.empty();
     }
     return mongoRepository.findById(new ObjectId(listingId)).map(ListingMongoMapper::toDomain);
+  }
+
+  /**
+   * 심사용 조회: 상태 필터가 비면 <b>모든 상태</b>를 대상으로 한다.
+   *
+   * <p>아래 세입자용 조회 3종이 {@code status = PUBLISHED}를 조건 앞머리에 고정하는 것과 달리, 여기서만 상태를 파라미터로 받는다. 활성 방 상품
+   * 조건도 걸지 않는다 — 심사 대상에는 아직 공개되지 않은 매물이 포함되고, 관리자는 방 상품 상태와 무관하게 문서 전체를 봐야 한다.
+   */
+  @Override
+  public PageResponse<Listing> findForAdmin(
+      Set<Listing.ListingStatus> statuses, int page, int size, String sort) {
+    Criteria criteria =
+        (statuses == null || statuses.isEmpty())
+            ? new Criteria()
+            : Criteria.where("status").in(statuses.stream().map(Enum::name).toList());
+    return findPage(criteria, page, size, adminSort(sort));
+  }
+
+  /**
+   * 심사 목록 정렬. 기본은 등록 최신순이다 — 관리자는 새로 올라온 매물부터 본다.
+   *
+   * <p>세입자 목록의 {@code defaultSort}(찜 수 우선)를 쓰지 않는다. 심사에는 인기도가 의미 없고, 아직 공개되지 않아 찜 수가 전부 0인 매물이 대상이라
+   * 정렬 키로 성립하지도 않는다.
+   */
+  @Override
+  public PageResponse<Listing> findByLandlord(
+      long landlordId, Set<Listing.ListingStatus> statuses, int page, int size) {
+    Criteria criteria = Criteria.where("landlordId").is(landlordId);
+    if (statuses != null && !statuses.isEmpty()) {
+      criteria = criteria.and("status").in(statuses.stream().map(Enum::name).toList());
+    }
+    // listings_landlord_status_updated(landlordId, status, updatedAt DESC)가 그대로 받는다.
+    return findPage(criteria, page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
+  }
+
+  private static Sort adminSort(String sort) {
+    if ("createdAt,asc".equals(sort)) {
+      return Sort.by(Sort.Direction.ASC, "createdAt");
+    }
+    // 수정 재심사 건은 원래 오래된 매물이라 등록 최신순 큐의 바닥에 가라앉는다. 최근 수정순을
+    // 허용값으로 열어 관리자가 그 줄을 따로 볼 수 있게 한다.
+    if ("updatedAt,desc".equals(sort)) {
+      return Sort.by(Sort.Direction.DESC, "updatedAt");
+    }
+    return Sort.by(Sort.Direction.DESC, "createdAt");
   }
 
   /** 목록 기본 조회: 공개 매물 중 활성 방 상품이 하나 이상 있는 문서만 조회한다. */
@@ -195,6 +241,25 @@ public class ListingRepositoryImpl implements ListingRepository {
     ListingValidator.validateForSave(listing);
     ListingDocument saved = mongoRepository.save(ListingMongoMapper.toDocument(listing));
     return ListingMongoMapper.toDomain(saved);
+  }
+
+  @Override
+  public Optional<Listing> saveIfStatus(Listing listing, Listing.ListingStatus expected) {
+    ListingValidator.validateForSave(listing);
+    // 식별자와 「읽은 시점의 상태」를 함께 조건으로 걸어 교체한다. 그 사이 누가 상태를 바꿨으면
+    // 조건이 어긋나 아무것도 쓰지 않고 빈 값이 돌아온다 — 앞의 변경을 조용히 덮는 일이 없다.
+    Query query =
+        new Query(
+            Criteria.where("_id")
+                .is(new ObjectId(listing.getId()))
+                .and("status")
+                .is(expected.name()));
+    ListingDocument replaced =
+        mongoTemplate.findAndReplace(
+            query,
+            ListingMongoMapper.toDocument(listing),
+            FindAndReplaceOptions.options().returnNew());
+    return Optional.ofNullable(replaced).map(ListingMongoMapper::toDomain);
   }
 
   /**

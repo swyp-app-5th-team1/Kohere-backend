@@ -53,6 +53,7 @@ final class ListingMongoMapper {
         .preferredNationalities(document.getPreferredNationalities())
         .contractDifficulties(document.getContractDifficulties())
         .serviceFeedback(document.getServiceFeedback())
+        .consents(toConsents(document.getConsents()))
         .build();
   }
 
@@ -93,6 +94,7 @@ final class ListingMongoMapper {
         .preferredNationalities(listing.getPreferredNationalities())
         .contractDifficulties(listing.getContractDifficulties())
         .serviceFeedback(listing.getServiceFeedback())
+        .consents(toConsentsDocument(listing.getConsents()))
         .build();
   }
 
@@ -286,5 +288,34 @@ final class ListingMongoMapper {
       throw new InvalidInputException(field + "는 24자리 ObjectId hex 문자열이어야 합니다.");
     }
     return value;
+  }
+
+  /**
+   * 저장 문서의 동의를 도메인 값으로 옮긴다.
+   *
+   * <p>{@code null}을 허용하는 이유는 {@code 0120} 이전에 저장된 문서 때문이다 — validator는 기존 문서를 소급 검사하지 않으므로 {@code
+   * consents}가 없는 문서가 남아 있을 수 있고, 조회 자체가 실패하면 관리자가 그 매물을 심사해 정리할 수도 없게 된다.
+   */
+  private static Listing.Consents toConsents(ListingDocument.ConsentsDocument document) {
+    if (document == null) {
+      return null;
+    }
+    return new Listing.Consents(
+        document.privacyPolicyAgreed(),
+        document.listingExposureAgreed(),
+        document.version(),
+        document.agreedAt());
+  }
+
+  /** 도메인 동의를 저장 문서로 옮긴다. */
+  private static ListingDocument.ConsentsDocument toConsentsDocument(Listing.Consents consents) {
+    if (consents == null) {
+      return null;
+    }
+    return new ListingDocument.ConsentsDocument(
+        consents.privacyPolicyAgreed(),
+        consents.listingExposureAgreed(),
+        consents.version(),
+        consents.agreedAt());
   }
 }

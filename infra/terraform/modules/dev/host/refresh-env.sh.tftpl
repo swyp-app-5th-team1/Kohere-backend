@@ -37,6 +37,10 @@ KAKAO_REST_API_KEY=$(get_opt "${ssm_prefix}/KAKAO_REST_API_KEY")
 SOLAPI_ENABLED=$(get_opt "${ssm_prefix}/SOLAPI_ENABLED")
 SOLAPI_FROM=$(get_opt "${ssm_prefix}/SOLAPI_FROM")
 BIZNO_ENABLED=$(get_opt "${ssm_prefix}/BIZNO_ENABLED")
+# 임대인 웹(SPA) 오리진 — 비밀번호 재설정 링크 base URL(#272). 비밀이 아니지만 compose에 박지 않는다:
+# compose는 부팅 1회 렌더라 도메인이 바뀌면 EC2 재생성이 필요하고, 이쪽은 재배포만으로 반영된다.
+# 미설정이면 빈 값 → 앱이 계정 복구를 켠 채로는 기동을 거부한다(깨진 링크가 담긴 메일이 나가는 것보다 낫다).
+APP_WEB_BASE_URL=$(get_opt "${ssm_prefix}/APP_WEB_BASE_URL")
 # dev 테스트 마스터 로그인 기능(운영 미사용) — ENABLED 하나로 시드+우회 로그인을 켠다. SECRET은 자동 생성(항상 존재), 기본 off는 tfvars→apply→재배포로 반영(ADR-0024).
 TEST_LOGIN_SECRET=$(get_opt "${ssm_prefix}/TEST_LOGIN_SECRET")
 TEST_LOGIN_ENABLED=$(get_opt "${ssm_prefix}/TEST_LOGIN_ENABLED")

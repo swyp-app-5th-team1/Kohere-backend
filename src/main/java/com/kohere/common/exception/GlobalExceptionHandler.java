@@ -68,8 +68,9 @@ public class GlobalExceptionHandler {
       log.error("Business exception [{}]: {}", ec.getCode(), e.getMessage(), e);
     }
     AccessLogContext.errorCode(ec.getCode());
+    // details 를 재정의하지 않은 예외는 null 이라 키 자체가 빠진다 — 종전 응답과 외형이 같다(ADR-0004 Amended).
     return ResponseEntity.status(ec.getHttpStatus())
-        .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, e.getMessage())));
+        .body(ApiResponse.error(ec.getCode(), resolveMessage(ec, e.getMessage()), e.getDetails()));
   }
 
   /**

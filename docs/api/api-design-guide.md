@@ -26,6 +26,8 @@
 
 > 에러 status·코드는 전적으로 [error-response-guide](./error-response-guide.md)를 따른다.
 
+> **`PUT`의 첫 사례는 매물 수정(`PUT /api/v2/listings/{listingId}`)이다.** 임대인이 등록 때 보낸 본문을 그대로 다시 보내 매물 본문 전체를 교체하므로 위 규칙대로 `PATCH`가 아니라 `PUT`이고, 성공은 수정된 리소스를 담은 `200 OK`다. `PATCH`를 함께 열지 않은 이유는 규칙 이전에 데이터에 있다 — 좌표·행정구역·인근 대학처럼 **주소에서 파생되는 값**이 있어 일부 필드만 받으면 파생값이 본문과 어긋난 채 저장된다. 상세는 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이다.
+
 ## 2. 엔드포인트 규약
 
 - 모든 API는 **경로 프리픽스로 버전을 가진다.** 신규 엔드포인트의 기본은 `/api/v1`이고, 하위 호환이 깨지는 변경만 `/api/v2`로 올린다. 어느 리소스가 어느 버전에 있는지와 구 버전을 끝내는 방식은 **§2-1이 정본**이다.
@@ -42,11 +44,13 @@
 | 리소스 | `/api/v1` | `/api/v2` |
 | --- | --- | --- |
 | 진단 | 클라이언트 주도 흐름 — 그대로 동작(회원 전용) | 서버 주도 흐름 `/api/v2/diagnoses/*` — 앱이 쓰는 흐름([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) |
-| 매물 등록 | 없음 | `POST /api/v2/listings`([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) |
-| 매물 조회·찜·내 스코프 | **deprecated 스텁** — 아래 참조. `GET /api/v1/listings/places`만 그대로 동작한다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)) | **정본** — 목록·지도·키워드 검색·상세·찜 토글 `/api/v2/listings*`, `/api/v2/users/me/favorites`·`/api/v2/users/me/recent-listings` |
+| 매물 등록·수정 | 없음 | `POST /api/v2/listings`([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) · `PUT /api/v2/listings/{listingId}`(임대인 본인 매물 전체 교체) |
+| 매물 조회·찜·내 스코프 | **deprecated 스텁** — 아래 참조. `GET /api/v1/listings/places`만 그대로 동작한다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)) | **정본** — 목록·지도·키워드 검색·상세·찜 토글 `/api/v2/listings*`, `/api/v2/users/me/favorites`·`/api/v2/users/me/recent-listings`, 임대인 전용 내 매물 조회 `/api/v2/users/me/listings`·`/api/v2/users/me/listings/{listingId}` |
 | 그 외 전부 | 정본 | 없음 |
 
 매물 조회 계열은 v4 스키마 개편([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))으로 응답 구조가 바뀌어 버전을 올렸다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)). 엔드포인트별 상세는 [03-listings-favorites](./specs/03-listings-favorites.md)가 정본이다.
+
+**대체할 v1 계약이 없는 신설 경로는 어느 버전에서 시작하나** — 답은 **어느 네임스페이스에 얹히는가**로 갈린다. 임대인 매물 수정(`PUT /api/v2/listings/{listingId}`)과 임대인 전용 내 매물 조회(`GET /api/v2/users/me/listings*`)는 v1에 대응 경로가 없지만, 이미 v2로 옮긴 매물 네임스페이스에 얹혀 **같은 v4 스키마**를 주고받으므로 v2에서 시작한다 — 한 네임스페이스가 두 버전으로 갈리면 클라이언트가 경로마다 버전을 외워야 한다. 반대로 관리자 매물 심사(`/api/v1/admin/listings*`)는 **네임스페이스 자체가 새것**이라 v1에서 시작한다. 버전을 올리는 기준이 「이미 출시된 앱이 깨지는가」인 이상, 깨질 앱이 없는 새 네임스페이스에 v2를 붙일 근거가 없기 때문이다.
 
 #### 구 버전을 끝내는 방식 — 구조는 유지, 데이터는 0건
 
@@ -62,7 +66,7 @@
 
 #### 버전을 올릴 때 함께 하는 것
 
-- **`SecurityConfig` 매처를 새 경로에 다시 깐다.** 매처는 경로 문자열 기준이라 v1 매처가 v2를 덮지 않는다. 빠뜨리면 `anyRequest().authenticated()`로 떨어져 **공개여야 할 조회가 401**이 된다 — `GET /api/v2/listings`·`/api/v2/listings/*`는 `permitAll`이다. 같은 네임스페이스라도 메서드로 갈린다: `POST /api/v2/listings`(등록)는 `hasRole("USER")`다. 찜 토글·내 스코프처럼 회원 전용인 경로도 v2에 **다시 명시**한다(§6 인가 매처).
+- **`SecurityConfig` 매처를 새 경로에 다시 깐다.** 매처는 경로 문자열 기준이라 v1 매처가 v2를 덮지 않는다. 빠뜨리면 `anyRequest().authenticated()`로 떨어져 **공개여야 할 조회가 401**이 된다 — `GET /api/v2/listings`·`/api/v2/listings/*`는 `permitAll`이다. 같은 네임스페이스라도 메서드로 갈린다: `POST /api/v2/listings`(등록)·`PUT /api/v2/listings/*`(수정)는 `hasRole("USER")`다 — `permitAll` 매처가 `GET`만 덮으므로 **같은 경로에 다른 메서드를 얹을 때마다 매처를 새로 깔아야** `anyRequest().authenticated()`로 떨어지는 것을 막는다. 뒤집으면 **회원 전용 조회를 `GET /api/v2/listings/…` 아래에 두어서는 안 된다** — 그 `permitAll` 매처에 먼저 걸려 비로그인에 열린다(임대인 전용 내 매물 조회를 `/api/v2/users/me/listings`에 둔 이유다). 찜 토글·내 스코프처럼 회원 전용인 경로도 v2에 **다시 명시**한다(§6 인가 매처).
 - **공통 응답 래퍼는 버전과 무관하다.** `ApiResponseWrapper`는 `com.kohere` 전체를 대상으로 반환 타입 기준으로 감싸므로 새 버전 컨트롤러도 그대로 래핑된다([ADR-0013](../adr/0013-response-auto-wrapping.md)).
 - **문서 테스트의 스니펫 identifier와 오퍼레이션 상수를 버전별로 나눈다.** 안 나누면 `operationId` 중복으로 빌드가 깨지거나 한쪽 설명이 반대쪽에 붙는다([test-strategy](../convention/test-strategy.md) §3-4).
 
@@ -73,6 +77,7 @@
 | GET | `/api/v2/listings/{listingId}` | 매물 상세 조회 | 선택 | 200 |
 | POST | `/api/v2/listings/{listingId}/favorite` | 찜 등록 | 필수 | 201 |
 | POST | `/api/v2/listings` | 매물 등록(임대인) | 필수(`ROLE_USER` · `userType=LANDLORD`) | 201 |
+| PUT | `/api/v2/listings/{listingId}` | 매물 수정(임대인) — 등록 본문 전체 교체 | 필수(`ROLE_USER` · `userType=LANDLORD` · 본인 매물) | 200 |
 | GET | `/api/v1/listings/{listingId}` | 매물 상세 조회 — **deprecated**(항상 404) | 선택 | — |
 
 deprecated된 경로도 **표에서 지우지 않는다.** 설명에 `deprecated`와 현재 동작을 함께 적는다 — 구버전 앱을 들고 있는 클라이언트 개발자가 계약을 확인할 곳이 여기뿐이다.
@@ -102,7 +107,8 @@ deprecated된 경로도 **표에서 지우지 않는다.** 설명에 `deprecated
   "error": {
     "code": "LISTING_NOT_FOUND",
     "message": "해당 매물을 찾을 수 없습니다.",
-    "errors": [ /* 입력 검증 실패 시 필드별 상세 (선택) */ ]
+    "errors": [ /* 입력 검증 실패 시 필드별 상세 (선택) */ ],
+    "details": { /* 코드별 부가 데이터 (선택). 값이 없으면 키 자체가 없다 */ }
   }
 }
 ```

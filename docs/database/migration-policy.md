@@ -43,6 +43,8 @@
 
 원칙: **한 릴리스에서는 호환 변경만**. 비호환 변경은 §5 절차로 여러 릴리스에 나눈다.
 
+> **`V28__users_phone_unique_per_user_type.sql`(제약 완화).** `V23`의 `phone_number` 단독 UNIQUE를 `(user_type, phone_number)` 복합키로 바꾼다. **제약 이름(`uq_users_phone_number`)은 유지한다** — `GlobalExceptionHandler`의 제약 이름 화이트리스트가 이 위반을 `409 RESOURCE_CONFLICT`로 번역하므로 이름을 바꾸면 `500`으로 떨어진다. **제약을 느슨하게 하는 변경이라 기존 행이 전부 새 제약을 자동으로 만족**하므로 위 표의 호환(확장) 쪽이고 선행 정리 쿼리가 필요 없다 — 아래 `V23` 예외 박스와 **반대 방향**이다. 관리자(`ADMIN`) 승격이 생기면서 승격된 계정이 번호를 계속 점유해 같은 사람이 그 번호로 임대인 계정을 따로 만들 수 없게 되는 문제를 푼다. `V23`이 막으려던 경쟁(두 INSERT가 모두 `LANDLORD`)은 복합키로도 그대로 막히고, 애플리케이션 조회는 이미 `user_type`으로 필터하므로 코드 변경이 없다.
+>
 > **적용된 예외 — `V23__users_phone_number_unique.sql`(제약 강화).** 임대인 웹 로그인·회원가입([ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md))이 들어오면서 MySQL 체인에 둘이 추가됐다 — `V22__create_local_accounts.sql`은 **새 테이블이라 위 표의 호환(확장)**이지만, `V23__users_phone_number_unique.sql`의 `users.phone_number` UNIQUE(`uq_users_phone_number`)는 **제약 강화라 비호환**이다. 그럼에도 [§5](#5-expand-contract-패턴-무중단)로 나누지 않고 한 릴리스에 넣는다. 근거는 둘이다 — ① 임대인 계정에 **중복 번호를 만들 경로가 아직 없어** 정리 대상 행이 0건이라 expand-contract가 옮길 데이터가 없고, ② 이 제약이 웹 가입과 앱 임대인 온보딩의 동시 제출로 **같은 사람의 계정이 갈라지는 것을 막는 유일한 수단**이라(애플리케이션 조회는 아직 없는 행을 잠글 수 없다) 뒤로 미루면 그 사이 배포가 경쟁을 열어 둔 채로 남는다. 적용 전 아래로 중복 0건을 확인한다 — 있으면 제약 추가 자체가 실패한다.
 >
 > ```sql
@@ -108,7 +110,7 @@
 
 | 컬렉션 | 정본 파일 | 건수 |
 | --- | --- | --- |
-| `listingCatalog` | `listing-catalog-v4.json` | 105 |
+| `listingCatalog` | `listing-catalog-v4.json` | 112 |
 | `listings` | `listings-v4.json` | 2 |
 | `universities` | `universities.json` | 14 |
 | `diagnosisQuestions` | `diagnosis-questions.json` | 8 |
@@ -144,6 +146,9 @@ mongoimport --db kohere --collection universities   --jsonArray --file universit
    - **`0116 listing-location-required`**: `0115`가 지오코딩이 없어 선택으로 뒀던 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 시드 주입 전이라 백필 대상이 0건이어서 [§4](#4-not-null-컬럼-추가-절차)의 확장→백필→축소가 그대로 성립한다. `0115`는 동결이므로 수정하지 않고 새 유닛이 자기 스키마 사본을 든다.
    - **`0117 listing-search-place-drop`**: 키워드 검색 API 종료로 쓰이지 않게 된 `searchPlaces`를 드롭한다([ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)).
    - **`0118 listing-university-collection`**: 대학 좌표 원장 `universities`의 validator를 세운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). 시드 14건은 [§8-1](#8-1-시드-주입-절차)로 주입한다.
+   - **`0120 listing-consents`**: 매물 이용약관 동의(`consents` — 불린 2 + `version` + `agreedAt`)를 스키마에 넣고 루트 `required`에 추가한다. `0115`가 동결이므로 `0116`·`0119`와 같은 방식으로 **자기 스키마 사본**을 들고 `collMod`한다. **이행 대상 문서가 있으면 `required`를 조이기 전에 `$set` 백필이 먼저 와야 한다**([§4](#4-not-null-컬럼-추가-절차)) — validator는 기존 문서를 소급 검사하지 않지만 신규 insert는 검사하므로, 시드 재주입 시점에 드러난다.
+   - **`0121 listing-status-enum-shrink`**: `status` enum을 `PENDING`·`PUBLISHED`·`REJECTED` 3종으로 조인다. `PAUSED`·`DELETED`는 전이시키는 코드가 없어 실사용된 적이 없다. 실행 전 `db.listings.countDocuments({status: {$in: ["PAUSED","DELETED"]}})`로 0건을 확인한다 — 있으면 enum 축소가 거부된다.
+   - **`0122 listing-status-enum-expand`**: `status` enum에 `UPDATE_PENDING`을 더해 4종으로 넓힌다 — 공개 중이던 매물을 임대인이 수정하면 이 상태로 내려간다. `0121`이 validator를 `strict`/`error`로 조여 뒀으므로 이 유닛 없이는 새 값의 저장 자체가 거부된다(테스트 프로파일은 `mongock.enabled: false`라 조용히 통과하므로 여기서 막지 못한다). `0115`가 동결이라 **`0121`의 스키마 사본**에 값 하나만 더한 자기 사본을 들고 `collMod`하며, 값을 넓히기만 하므로 백필·이행 대상은 없다.
    - **`0119 listing-contact-sms-drop`**: 담당자 연락처에서 `contact.sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended) — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제한다. `0115`가 동결이라 `0116`과 같은 방식으로 **자기 스키마 사본**을 들고 `collMod`한다. 시드 주입 전이라 이행 대상 문서가 0건이므로 필드 삭제 배치도 없다.
 2. **인덱스 키를 바꿀 때는 새 이름으로 만든다.** 같은 이름·다른 키는 멱등 생성으로 갱신되지 않고 `IndexOptionsConflict`가 난다 — `listings_status_arc_required`(키 `status, propertyPolicies.arcRequired`)는 새 이름 `listings_status_arc_requirement`(키 `status, arcRequired`)로 만든다.
 3. **인덱스 소유는 부트스트랩이 유지**한다(`ListingMongoIndexInitializer`의 멱등 생성). changeUnit이 하는 일은 **옛 인덱스 2건**(`listings_status_arc_required`·`listings_status_room_available_count`)의 **삭제뿐**이며 `0115`가 1회 수행한다.

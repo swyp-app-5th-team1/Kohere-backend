@@ -5,10 +5,10 @@
 >
 > 표기 규약:
 >
-> - **클라이언트 참가자**: 기본은 모바일 앱이라 `participant C as 앱(클라이언트)`로 둔다. **임대인 전용 웹**(매물 등록 클라이언트)의 흐름만 `participant C as 웹(브라우저)`로 표기한다 — US-1-11(웹 가입)·US-1-12(웹 로그인)·US-1-13(가입용 휴대폰 인증). 백엔드는 같지만 **refresh 토큰 채널이 다르다**(앱=응답 본문, 웹=HttpOnly 쿠키 — [ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md))는 점이 흐름에 드러나므로 클라이언트 종류를 구분한다. **US-1-15(계정 병합)는 앱 온보딩에서 시작하는 흐름이라 `앱(클라이언트)`** 이다.
+> - **클라이언트 참가자**: 기본은 모바일 앱이라 `participant C as 앱(클라이언트)`로 둔다. **임대인 전용 웹**(매물 등록 클라이언트)의 흐름만 `participant C as 웹(브라우저)`로 표기한다 — US-1-11(웹 가입)·US-1-12(웹 로그인)·US-1-13(가입용 휴대폰 인증). 백엔드는 같지만 **refresh 토큰 채널이 다르다**(앱=응답 본문, 웹=HttpOnly 쿠키 — [ADR-0048](../../adr/0048-web-refresh-token-httponly-cookie.md))는 점이 흐름에 드러나므로 클라이언트 종류를 구분한다. **US-1-15(계정 병합)는 앱 온보딩에서 시작하는 흐름이라 `앱(클라이언트)`** 이다. 한편 **웹 화면이 사용자 유형별로 갈리는 흐름은 그 유형을 참가자 이름에 담는다** — 관리자 심사는 `관리자 웹`(US-3-7), 임대인 매물 관리는 `임대인 웹`(US-3-8·US-3-9)이다. 같은 브라우저 클라이언트지만 화면과 인가 게이트가 다르고, 한 다이어그램에 세입자 앱이 함께 등장할 때 어느 쪽 요청인지가 이름만으로 갈린다.
 > - **모듈 간 통신**(code-style §3): 상태 전파·후속 처리는 **비동기 이벤트(`-)`)**, 단순 조회/질의는 **동기 호출(`->>` / `-->>`)**. (예: 신청→채팅 = 이벤트, 진단→매물·커뮤니티→채팅방 생성 = 호출)
 > - **공통 JWT 인증**은 컨트롤러 앞단의 `공통 보안 필터(participant SEC)`로 표기한다: `C->>SEC`(Bearer) → SEC가 JWT 검증 → `SEC->>모듈`(`userId`+온보딩 스코프 주입 후 요청 전달). 보호경로 인가는 **3티어**([ADR-0010](../../adr/0010-jwt-authentication-filter.md)):
->   - **공개(permitAll)**: `social-login`·`reissue`·**임대인 웹 인증 4종**(`POST /api/v1/auth/signup`·`/auth/login`·`/auth/phone/signup/verification-code`·`/auth/phone/signup/verify` — 가입·로그인 전이라 토큰이 없다)·**매물 조회 v2**(`GET /api/v2/listings`·`/api/v2/listings/*` — 목록/지도/키워드 검색/상세)·`GET /api/v1/listings/places`·**actuator**. 미인증도 익명으로 모듈에 전달된다 — 필터를 **우회하는 게 아니라** 필터는 통과하되 인증을 요구하지 않을 뿐이므로, 다이어그램 표기상 SEC를 생략한다(필터 미통과가 아님). **예외로 임대인 웹 인증 4종은 SEC를 생략하지 않고 그린다** — 공개 티어 등록이 `SecurityConfig`(1)과 `PublicPaths.ALL` **두 곳 모두**에 필요하다는 점(#181)과 만료된 access 토큰이 실려 와도 401로 끊지 않는다는 점이 흐름의 전제라서다.
+>   - **공개(permitAll)**: `social-login`·`reissue`·**임대인 웹 인증·계정 복구 10종**(`POST /api/v1/auth/signup`·`/auth/login`·`/auth/phone/signup/verification-code`·`/auth/phone/signup/verify`·`/auth/phone/find-email/verification-code`·`/auth/phone/find-email/verify`·`/auth/email/find`·`/auth/password/reset-link`·`/auth/password/reset-token/verify`·`/auth/password/reset` — 가입·로그인 전이거나 로그인하지 못해 들어오는 자리라 토큰이 없다)·**매물 조회 v2**(`GET /api/v2/listings`·`/api/v2/listings/*` — 목록/지도/키워드 검색/상세)·`GET /api/v1/listings/places`·**actuator**. 미인증도 익명으로 모듈에 전달된다 — 필터를 **우회하는 게 아니라** 필터는 통과하되 인증을 요구하지 않을 뿐이므로, 다이어그램 표기상 SEC를 생략한다(필터 미통과가 아님). **예외로 임대인 웹 인증·계정 복구 10종은 SEC를 생략하지 않고 그린다** — 공개 티어 등록이 `SecurityConfig`(1)과 `PublicPaths.ALL` **두 곳 모두**에 필요하다는 점(#181)과 만료된 access 토큰이 실려 와도 401로 끊지 않는다는 점이 흐름의 전제라서다.
 >   - **온보딩 스코프(ROLE_ONBOARDING) 토큰만 통과**: `onboarding`·`DELETE /users/me`. 온보딩 임시 토큰(또는 정식 토큰)으로 접근 가능한 티어.
 >   - **정식 자원(ROLE_USER)**: 나머지 보호 엔드포인트. **PENDING(온보딩 스코프) 토큰으로 ROLE_USER 자원에 접근하면 SEC가 403 `AUTH_ONBOARDING_REQUIRED`**(`AccessDeniedHandler`, 모듈 도달 전).
 > - **매물 API 버전 경계**: 매물 조회 5종(목록 `GET /listings` · 지도 `/listings/map` · 상세 `/listings/{listingId}` · 찜 토글 `POST`·`DELETE /listings/{listingId}/favorite` · 내 스코프 `/users/me/favorites`·`/users/me/recent-listings`)은 **`/api/v2`가 정본**이므로 다이어그램도 v2 경로로 그린다. **같은 `/api/v2/listings/**` 안에서 티어가 갈린다** — **GET은 공개(`permitAll`)**, **쓰기(등록 `POST /api/v2/listings`·사진 업로드 `POST /api/v2/listings/images`·찜 토글 `POST`/`DELETE`)와 `me` 스코프 조회(`/api/v2/users/me/**`)는 정식 자원(`ROLE_USER`)** 이다. 한편 **`/api/v1` 조회 계열은 구버전 앱 호환용 `deprecated` 스텁**(제거 시점 미정)이라 저장소에 접근하지 않고 빈 결과(목록형은 `content: []`·`totalElements: 0`, 지도는 마커 0건) 또는 `404 LISTING_NOT_FOUND`(상세·찜 토글)만 반환하므로 시퀀스로 그리지 않는다 — 예외로 **`GET /api/v1/listings/places`(네이버 장소 검색)는 매물 데이터를 쓰지 않아 v1 그대로 동작**한다(US-3-3).
@@ -27,13 +27,13 @@
 
 | # | 모듈 | 폴더 | 다이어그램 수 |
 | --- | --- | --- | --- |
-| 1 | 소셜 로그인 · 온보딩 (+ 임대인 웹 인증) | [01-auth-onboarding/](01-auth-onboarding/README.md) | 14 |
+| 1 | 소셜 로그인 · 온보딩 (+ 임대인 웹 인증·계정 복구) | [01-auth-onboarding/](01-auth-onboarding/README.md) | 16 |
 | 2 | 맞춤 진단 & 매물 추천 | [02-diagnosis-recommendation/](02-diagnosis-recommendation/README.md) | 6 |
-| 3 | 매물 등록 · 탐색 · 찜 | [03-listings-favorites/](03-listings-favorites/README.md) | 6 |
+| 3 | 매물 등록 · 탐색 · 찜 | [03-listings-favorites/](03-listings-favorites/README.md) | 9 |
 | 4 | 매물 예약(신청) 독립 · (후속) 문의·인앱 채팅 | [04-booking-inquiry-chat/](04-booking-inquiry-chat/README.md) | 9 |
 | 5 | 커뮤니티 (게시판 · 동네친구) | [05-community/](05-community/README.md) | 5 |
 | 6 | 게이미피케이션 (퀴즈) | [06-gamification/](06-gamification/README.md) | 3 |
 | 7 | 신고 처리 | [07-reports/](07-reports/README.md) | 3 |
 | 8 | 생활 팁 (주제별 생활 정보) | [08-life-tips/](08-life-tips/README.md) | 2 |
 
-총 48개 다이어그램.
+총 53개 다이어그램.

@@ -1,6 +1,7 @@
 package com.kohere.listing.domain.image;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 매물 사진 저장 포트다. 구현은 infrastructure 계층에 둔다(docs/convention/code-style.md §3-3).
@@ -32,6 +33,18 @@ public interface ListingImageStorage {
    * @throws ListingImageUploadException 그 밖의 저장소 실패
    */
   StoredListingImage copy(String sourceKey, String targetKey);
+
+  /**
+   * 읽기 URL에서 저장 키를 되돌린다. {@link StoredListingImage}가 만든 URL의 역함수다.
+   *
+   * <p>매물 문서에는 URL만 저장되는데(사진 키는 저장하지 않는다) <b>수정 요청이 「그대로 둘 사진」을 확정 키로 가리키므로</b>, 서버가 그 키를 현재 문서와
+   * 대조하려면 URL을 키로 되돌려야 한다. 주소 형식은 저장 기술이 정하므로(버킷·CDN 기준) 역변환도 어댑터가 소유한다 — 응용 계층이 URL을 문자열로 자르면 CDN
+   * 주소가 바뀔 때 함께 깨진다.
+   *
+   * @param url 문서에 저장된 읽기 URL
+   * @return 저장 키. 이 저장소가 만든 형식이 아니면 빈 값
+   */
+  Optional<String> keyOf(String url);
 
   /**
    * 올린 사진을 지운다. 매물 저장이 실패했을 때 되돌리는 보상 경로다(ADR-0041 §4).

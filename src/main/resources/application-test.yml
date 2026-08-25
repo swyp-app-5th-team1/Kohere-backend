@@ -17,6 +17,14 @@ app:
     refresh-pepper: test-refresh-pepper
     email-pepper: test-email-pepper # 이메일 인증번호 해시(테스트 고정). 메일 발송은 VerificationEmailSender를 @MockBean으로 대체
     phone-pepper: test-phone-pepper # 연락처 인증번호 해시(테스트 고정). SMS 발송은 SOLAPI 비활성 → LoggingVerificationSmsSender 폴백
+    web:
+      password-reset:
+        # 임대인 웹 SPA 가 이 환경에 있으므로 계정 복구를 켠다(base 는 false — 운영 미배포).
+        enabled: true
+
+  # 계정 복구 문서·통합 테스트가 재설정 링크를 조립하려면 기능이 켜져 있고 base-url 이 유효해야 한다.
+  web:
+    base-url: https://web.test.kohere.app
   oidc:
     google:
       audience: test-google-client-id

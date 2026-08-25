@@ -19,6 +19,10 @@ app_image = "123456789012.dkr.ecr.ap-northeast-2.amazonaws.com/kohere-backend:de
 domain_name     = "dev.kohere.app"
 route53_zone_id = "Z0123456789ABCDEFGHIJ"
 cdn_domain_name = "cdn.dev.kohere.app"
+# 임대인 웹(SPA) 오리진 — 비밀번호 재설정 링크의 base URL(#272, 앱 app.web.base-url).
+# dev는 Caddy가 한 도메인에서 API와 SPA를 함께 내므로 domain_name 과 같은 호스트다(스킴 포함, 끝 슬래시 없이).
+# 필수 — 계정 복구가 dev에서 켜져 있어(app.auth.web.password-reset.enabled) 비어 있으면 앱이 기동을 거부한다.
+web_base_url = "https://dev.kohere.app"
 
 # ----- S3 이미지 버킷 (필수 — S3는 전역 유일) -----
 images_bucket_name = "kohere-dev-images"

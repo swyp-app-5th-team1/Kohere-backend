@@ -40,8 +40,10 @@
 
   (V14~V17은 본 #169의 삭제·차단·신고·사유 카탈로그용으로 이미 계획된 번호라 건드리지 않고 중복 제약만 V18로 둔다. 제약 강화는 [migration-policy](../../database/migration-policy.md) §3상 비호환이라 기존 중복 행 정리가 선행돼야 하나 `bookings`는 신규라 사실상 비어 있다.) 이 제약으로 [`V9__bookings.sql:2`](../../../src/main/resources/db/migration/V9__bookings.sql)의 verbatim 주석 `-- MVP의 예약은 "신청" 성격이라 중복 방지 유니크 제약을 두지 않는다(같은 방 상품에 다건 신청 허용).`은 **뒤집힌다**(V9 파일 자체는 이미 배포돼 수정하지 않고, V18이 제약을 덧댄다). [database-design](../../database/database-design.md) §2-4 유니크 목록·§4-5에도 이 제약을 반영한다. 이 중복 방지는 차단이 예약 단위가 아니라 **사용자 단위**여야 하는 **보조** 근거였다(§5) — 같은 방 재신청은 이제 UNIQUE로 막히지만, 임대인은 방·매물을 여러 개 가져 **다른 방으로는 여전히 우회되므로** 사용자 단위 차단의 **주 근거인 구조적 근거**가 살아남는다(§5).
 - **스냅샷 없음 — 조회 시점 실시간 조인**: 가격·매물 요약·예약자 성명은 예약에 스냅샷 저장하지 않고, 조회 시점에 애플리케이션 레벨로 조합한다. `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·`pricing`(보증금·월세)을, `user :: api`(`getUserName`)로 예약자 성명을 조회한다(둘 다 신규 공개 조회 메서드 필요). cross-store 조인·트랜잭션은 금지된다([ADR-0005](../../adr/0005-polyglot-persistence.md), [ADR-0002](../../adr/0002-inter-module-communication-via-events.md)). 가격 변경 시 상세는 **현재가 기준**으로 계산한다.
+- **표시와 생성의 비대칭 — 이미 성사된 예약의 카드는 매물 상태·방 상태를 보지 않는다**: 예약 카드가 보여 주는 매물명·대표 사진·주소·방 상품명·보증금·월세는 예약 행에 없고 **조회 시점에 `listing :: api`로 매번 물어보는 값**이라(위 [스냅샷 없음] bullet), 그 조회가 공개 매물만 대상으로 하면 임대인이 매물을 수정해 심사에 넣거나 방을 비활성으로 내리는 순간 **이미 잡힌 예약의 카드가 매물명 없이 보증금 0원으로 렌더된다**. 예약은 매물 상태가 바뀌었다고 취소되지 않으므로 그 표시는 사실과 다르다. 그래서 **표시 경로는 매물 `status`와 방 `status`를 둘 다 무시하는 표시 전용 공개 쿼리**를 쓰고, 예약 **생성**(§1)만 기존대로 **공개 매물의 활성 방**에만 허용한다 — **표시는 열고 생성은 닫는 이 비대칭은 의도한 것이다.** 표시 전용 조회가 노출을 넓히지 않는 근거는 그것이 매물을 *찾는* 데 쓸 수 없다는 점이다 — `(listingId, roomOfferId)`를 이미 쥐고 있어야 하고 그 출처는 §2·§3의 소유권·표시 필터를 통과한 **요청자 스코프의 `Booking` 행**뿐이며, 돌려주는 값도 **그 사람이 예약할 때 이미 본 값**이라 새로 드러나는 정보가 없다.
+- **예약 응답에 매물 심사 상태를 싣지 않는다**: 세입자에게 `PENDING`·`REJECTED`·`UPDATE_PENDING`은 전부 "지금 이 매물 페이지는 볼 수 없다" 하나이고(반려도 재제출로 되살아나므로 영구적이지 않다) 다르게 보여 줄 근거가 없다. 원본 `status`를 실으면 앱이 **매물 심사 도메인의 의미를 인코딩**하게 돼 상태가 하나 늘 때마다 앱 대응이 필요해진다. 카드를 탭했을 때 매물 상세가 `404`인 것은 사후 반려로 지금도 나는 상황이라 클라이언트가 이미 다뤄야 한다. 필요해지면 `listingViewable` 같은 **additive 불리언 필드**로 나중에 더해도 하위 호환이 깨지지 않는다.
 - **예약 조회의 userType 분기(§2·§3)**: 조회 엔드포인트(`GET /api/v1/bookings`·`GET /api/v1/bookings/{bookingId}`)는 **별도 임대인 전용 API 없이** 요청자 `userType`으로 동작을 분기한다 — `TENANT`면 **내 예약**(요청자 `tenantId` 기준), `LANDLORD`면 **내 소유 매물에 신청된 예약**(요청자가 소유한 매물 기준)을 반환한다. `userType`은 토큰 클레임이 아니라 서비스 계층에서 `user::api`(`getUserType`)로 판정한다(`ROLE_LANDLORD` 없음 — URL 티어는 `ROLE_USER`). 두 역할 모두 유효한 요청이라 **역할에 따른 `403`은 없다**(권한 밖 리소스는 아래 404 통일로 처리).
-- **임대인 분기 — 소유권 스코프(생성 시 landlordId 비정규화)**: 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **함께 저장**한다 — 생성은 이미 `listing::api`로 매물·방 상품을 조회(검증)하므로 소유자 스냅샷을 같이 캡처하는 비용은 거의 없다. 임대인 **목록** 조회는 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 `createdAt` 내림차순 조회한다(cross-store 조인 없음 — 소유권 판정이 booking 행에 있다). **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**하고, 예약이 없거나 내 소유 매물의 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(존재 비노출 — 세입자 분기의 '타인 예약→404'와 동일 규약). `landlordId`는 매물 상태와 무관하게 저장돼 `PAUSED`(일시중지) 매물의 신청도 자동 포함된다. `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환). 이 방식은 `chat_rooms`가 `tenant_id`·`landlord_id`를 비정규화하는 선례와 일치한다.
+- **임대인 분기 — 소유권 스코프(생성 시 landlordId 비정규화)**: 예약 **생성 시** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 **함께 저장**한다 — 생성은 이미 `listing::api`로 매물·방 상품을 조회(검증)하므로 소유자 스냅샷을 같이 캡처하는 비용은 거의 없다. 임대인 **목록** 조회는 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 `createdAt` 내림차순 조회한다(cross-store 조인 없음 — 소유권 판정이 booking 행에 있다). **상세**는 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**하고, 예약이 없거나 내 소유 매물의 신청이 아니면 `404 BOOKING_NOT_FOUND`로 통일한다(존재 비노출 — 세입자 분기의 '타인 예약→404'와 동일 규약). `landlordId`는 매물 상태와 무관하게 저장돼 **심사 중(`PENDING`·`UPDATE_PENDING`)이거나 반려(`REJECTED`)된 매물의 신청도 자동 포함된다**. `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환). 이 방식은 `chat_rooms`가 `tenant_id`·`landlord_id`를 비정규화하는 선례와 일치한다.
 - **신청자 프로필 조인(임대인 상세)**: 임대인 상세 분기는 신청자(세입자) 프로필 — 성명·**성별**·**국적**·**이메일** — 을 `user::api`(신규 `getApplicantProfile(tenantId)`)로 조회해 조합한다(목록 분기는 신청자 성명 `getUserName`만, 경량). 신청자는 세입자라 프로필이 존재하며, 탈퇴 회원은 PII 익명화([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))로 값이 비어 있을 수 있다. 임대인에게 세입자 이메일·성별·국적은 **마스킹 없이 평문으로 노출**한다(제품 결정).
 - **표시 상태(참여자별 삭제) 저장 필드**: `tenantDeletedAt`·`landlordDeletedAt`(`Instant`, nullable — NULL = 미삭제). 예약은 `tenantId`·`landlordId`가 **공유하는 1행**이라 삭제 플래그를 하나만 두면 한쪽이 지울 때 상대 기록까지 사라진다. 그래서 **참여자별로 2컬럼**을 둔다(§4). 두 필드는 예약 응답 DTO에 노출하지 않는다 — 삭제·차단은 "내 목록에서 사라짐"으로만 관측된다.
 - **차단 저장 위치**: 차단은 예약이 아니라 **사용자 단위**이며 `user` 모듈이 `user_blocks(blocker_id, blocked_user_id)`를 소유한다. `booking`은 `user :: api`의 신규 공개 표면 **3개** — 조회 경로 필터용 **공개 쿼리** `findBlockedUserIds(blockerId)`·신규 신청 가드용 **공개 쿼리** `isBlockedBetween(a, b)`, 그리고 예약에서 도출한 상대 식별자를 받는 **차단 생성 공개 명령**(§5) — 호출로만 접근하며 `user_blocks`를 직접 조인하지 않는다(모듈 경계·**애플리케이션 레벨 조인**, [ADR-0002](../../adr/0002-inter-module-communication-via-events.md)·[ADR-0005](../../adr/0005-polyglot-persistence.md)). 차단 목록·해제 엔드포인트는 [01-auth-onboarding](01-auth-onboarding.md)(`/api/v1/users/me/blocks`)에 있다.
@@ -153,7 +155,7 @@
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 | 403 | `FORBIDDEN` | 세입자(`TENANT`)가 아닌 사용자(임대인)의 예약 시도 |
 | 403 | `FORBIDDEN` | 요청자와 매물 소유자 사이에 차단 관계(양방향 중 어느 쪽이든)가 존재 |
-| 404 | `LISTING_NOT_FOUND` | 매물 또는 방 상품이 없거나 비공개/삭제됨 |
+| 404 | `LISTING_NOT_FOUND` | 매물 또는 방 상품이 없거나, 매물이 비공개(심사 중·반려)이거나 방이 비활성임 — **생성은 공개 매물의 활성 방에만 허용**된다(표시는 다르다 — §1 [저장·조합 규약]의 비대칭 bullet) |
 | 409 | `BOOKING_ALREADY_EXISTS` | 동일 세입자가 동일 방 상품에 이미 신청함 |
 | 422 | `BOOKING_INVALID_MOVE_IN_DATE` | `moveInDate`가 과거 |
 
@@ -165,10 +167,10 @@
 
 ### 2. GET `/api/v1/bookings` — 예약 목록(userType 분기)
 
-요청자 `userType`으로 반환 대상을 분기한다 — **세입자(`TENANT`)** 는 **내 예약**(본인 `tenantId`)을, **임대인(`LANDLORD`)** 은 **내 소유 매물(`listing.landlordId`=본인)에 신청된 예약**(`PAUSED` 매물 포함)을 반환한다. 둘 다 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)이며, 다른 스코프의 예약은 목록에 포함되지 않는다. **별도 임대인 전용 경로는 없다.**
+요청자 `userType`으로 반환 대상을 분기한다 — **세입자(`TENANT`)** 는 **내 예약**(본인 `tenantId`)을, **임대인(`LANDLORD`)** 은 **내 소유 매물(`listing.landlordId`=본인)에 신청된 예약**(매물 상태 무관 — 심사 중·반려 매물의 신청도 포함)을 반환한다. 둘 다 `createdAt` 내림차순 **오프셋 페이지네이션**(api-design-guide §4-1)이며, 다른 스코프의 예약은 목록에 포함되지 않는다. **별도 임대인 전용 경로는 없다.**
 
 - **인증**: 필수. `ACTIVE` 사용자 전용(세입자·임대인 공통, 역할 `403` 없음). `userType`은 토큰 클레임이 아니라 서비스 계층에서 `user :: api`(`getUserType`)로 판정한다.
-- **임대인 분기 소유권 스코프**: 예약 생성 시 저장된 `Booking.landlordId`로 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 조회한다(cross-store 조인 없음, [ADR-0005](../../adr/0005-polyglot-persistence.md)). 소유 매물 상태와 무관해 `PAUSED` 매물의 신청도 포함되며, 신청이 없으면 빈 목록.
+- **임대인 분기 소유권 스코프**: 예약 생성 시 저장된 `Booking.landlordId`로 booking 저장소에서 **`landlord_id = 요청자`** 단일 조건으로 조회한다(cross-store 조인 없음, [ADR-0005](../../adr/0005-polyglot-persistence.md)). 소유 매물 상태와 무관해 심사 중(`PENDING`·`UPDATE_PENDING`)·반려(`REJECTED`) 매물의 신청도 포함되며, 신청이 없으면 빈 목록.
 - **표시 필터(§4·§5) — 두 분기 공통**: 다음 예약은 목록에서 **제외**된다.
   - **요청자가 삭제한 예약**: 세입자 분기는 `tenant_deleted_at IS NULL`, 임대인 분기는 `landlord_deleted_at IS NULL`인 것만 반환한다. 삭제는 **요청자에게만** 적용되며 **상대 목록에는 그대로 보인다**.
   - **요청자가 차단한 상대의 예약**: 세입자 분기는 `landlord_id`가, 임대인 분기는 `tenant_id`가 요청자의 차단 목록에 있으면 제외한다. 차단은 예약 단위가 아니라 **사용자 단위**라 **그 상대와의 모든 예약**이 한꺼번에 사라진다. 숨김은 **단방향**이다 — 내가 A를 차단해도 A의 목록은 그대로다.
@@ -181,7 +183,7 @@
 | `page` | int | 선택 | 0 | 0-base 페이지 번호 |
 | `size` | int | 선택 | 20 | 페이지 크기(최대 100). 범위 초과는 `INVALID_INPUT`(400) |
 
-> 정렬은 `createdAt,desc` 고정(쿼리로 변경 불가). MVP는 상태 전이가 없어 신청이 모두 `REQUESTED`이므로 `status` 필터는 두지 않는다. 매물 요약은 `listing :: api`로, 신청자 성명(임대인 분기)은 `user :: api`(`getUserName`)로 조회 시점에 실시간 조인한다.
+> 정렬은 `createdAt,desc` 고정(쿼리로 변경 불가). MVP는 상태 전이가 없어 신청이 모두 `REQUESTED`이므로 `status` 필터는 두지 않는다. 매물 요약은 `listing :: api`의 **표시 전용 조회**(매물 상태·방 상태 무관 — §1 [저장·조합 규약]의 비대칭 bullet)로, 신청자 성명(임대인 분기)은 `user :: api`(`getUserName`)로 조회 시점에 실시간 조인한다.
 
 #### 성공 Response — 200 OK (세입자 `TENANT` 분기)
 
@@ -277,7 +279,7 @@
 - **인증**: 필수. `ACTIVE` 사용자 전용(역할 `403` 없음). **조회 권한 밖이면 `404 BOOKING_NOT_FOUND`로 통일**(존재 비노출) — 세입자는 본인 예약이 아닐 때, 임대인은 내 소유 매물의 신청이 아닐 때.
 - **표시 필터(§4·§5)**: 상세도 목록(§2)과 **같은 술어**를 쓴다 — 요청자가 삭제한 예약, 요청자가 차단한 상대의 예약은 조회되지 않으며 **`404 BOOKING_NOT_FOUND`로 통일**한다(권한 밖과 같은 코드 — 존재 비노출). 상대에게는 여전히 `200`으로 보인다. 목록·상세가 같은 술어를 공유하므로 "목록엔 없는데 상세는 열리는" 불일치가 생기지 않는다.
 - **임대인 분기 소유권 확인**: 예약을 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다(생성 시 저장된 값; listing::api 왕복 없음). 불일치·부재는 아래 `404 BOOKING_NOT_FOUND`로 통일한다.
-- **실시간 조인**: `listing :: api`로 `(listingId, roomOfferId)`의 매물 요약·주소·방 상품명·`pricing`(보증금·월세)을 조회한다. 성명은 **세입자 분기**가 `user :: api`(`getUserName`)로 예약자 본인(`tenantName`)을, **임대인 분기**가 `user :: api`(신규 `getApplicantProfile`)로 신청자 프로필(성명·성별·국적·이메일)을 조회한다.
+- **실시간 조인**: `listing :: api`의 **표시 전용 조회**로 `(listingId, roomOfferId)`의 매물 요약·주소·방 상품명·`pricing`(보증금·월세)을 얻는다 — 매물 `status`와 방 `status`를 보지 않으므로 심사 중·반려 매물이나 비활성 방의 예약도 값이 정상으로 채워진다(§1 [저장·조합 규약]의 비대칭 bullet). 성명은 **세입자 분기**가 `user :: api`(`getUserName`)로 예약자 본인(`tenantName`)을, **임대인 분기**가 `user :: api`(신규 `getApplicantProfile`)로 신청자 프로필(성명·성별·국적·이메일)을 조회한다.
 - **금액**: 세입자·임대인 분기 **모두 동일한 필드·정의**로 **총 금액** `totalAmount = deposit + monthlyRent × contractPeriod`(`contractPeriod`는 계약 개월수 정수, **관리비 제외**)를 내려준다.
 
 #### Path 파라미터
@@ -351,7 +353,7 @@
 
 > 임대인 분기: 예약자 본인(`tenantName`) 대신 **신청자 프로필**(`applicant`: `userId`·`name`·`gender`·`country`·`countryName`·`email`)을 담고, `deposit`·`totalAmount`(총 금액)는 세입자 분기와 **동일한 필드·정의**다. `applicant.gender`는 user 소유 `Gender` enum 문자열(UPPER_SNAKE), `country`는 ISO 3166-1 alpha-2 코드, `countryName`은 서버가 참조로 resolve한 표시명이며, **마스킹 없이 평문으로 임대인에게 노출**한다. 신청자가 탈퇴한 경우 PII 익명화([ADR-0014](../../adr/0014-withdrawal-pii-anonymization.md))로 `name`·`gender`·`country`·`email`이 비어 있을 수 있다.
 >
-> 공통: 조회 대상 방 상품이 이후 비공개/삭제된 경우 예약 코어 내역(날짜·계약기간·상태)은 유지하되 매물 정보·가격 파트의 표기 정책(매물 필드 `null`/tombstone vs 별도 상태 코드)은 **(확인 필요)**.
+> 공통: **매물이 이후 비공개(심사 중·반려)로 바뀌거나 방 상품이 비활성으로 내려가도 이 상세는 그대로 `200`이고 매물 정보·가격 파트도 정상 값으로 채워진다** — 표시 경로가 매물 `status`와 방 `status`를 보지 않기 때문이고(§1 [저장·조합 규약]의 비대칭 bullet), 예약은 매물 상태가 바뀌었다고 취소되지 않아 금액을 0원으로 보여 줄 수 없기 때문이다. 예약 코어 내역(날짜·계약기간·상태)도 물론 유지된다. 매물 상태는 응답에 싣지 않으므로 세입자는 카드만 보고는 그 매물이 지금 볼 수 있는지를 알 수 없고, 카드를 탭해 매물 상세로 들어가면 `404`를 받는다 — 사후 반려로 이미 나던 상황이라 클라이언트가 그대로 다룬다. **매물 문서 자체가 없을 때만** 조인 대상이 없어 아래 `404 LISTING_NOT_FOUND`다.
 
 #### 발생 가능한 에러
 
@@ -360,7 +362,7 @@
 | 401 | `UNAUTHENTICATED` / `TOKEN_EXPIRED` | 토큰 없음/만료 |
 | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료(비`ACTIVE`) |
 | 404 | `BOOKING_NOT_FOUND` | 예약이 없거나 **조회 권한 밖**(세입자: 본인 예약 아님 / 임대인: 내 소유 매물 신청 아님), 또는 **요청자가 삭제했거나(§4) 상대를 차단한(§5) 예약** — 404로 통일 |
-| 404 | `LISTING_NOT_FOUND` | 조인 대상 매물/방 상품이 없음 — 표기 정책은 위 (확인 필요) 참조 |
+| 404 | `LISTING_NOT_FOUND` | 조인 대상 매물 문서·방 상품이 **실재하지 않음**. 매물이 비공개(심사 중·반려)이거나 방이 비활성인 것은 여기 해당하지 않는다 — 위 blockquote 참조 |
 
 ---
 

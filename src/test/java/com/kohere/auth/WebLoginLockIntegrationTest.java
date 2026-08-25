@@ -30,11 +30,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /**
- * 임대인 웹 로그인 계정 잠금 종단 통합 테스트(US-1-12) — 실패 5회를 <b>실제 HTTP 요청</b>으로 쌓고 6회째가 423인지 본다.
+ * 임대인 웹 로그인 계정 잠금 종단 통합 테스트(US-1-12) — 상한만큼의 실패를 <b>실제 HTTP 요청</b>으로 쌓고 그 다음이 423인지 본다.
  *
  * <p><b>이 테스트만이 「로그인은 트랜잭션 단위가 아니다」를 지킬 수 있다.</b> 실패 카운터는 요청이 <b>예외로 끝나는 바로 그때</b> 커밋돼야 하는데, {@code
  * WebAuthService#login}에 {@code @Transactional}을 달면 정확히 그 반대가 보장된다 — {@code
- * InvalidCredentialsException}이 나가면서 방금 올린 카운터까지 함께 롤백돼 <b>5회째가 영원히 오지 않는다</b>. 잠금 코드는 그대로 있는데 아무도
+ * InvalidCredentialsException}이 나가면서 방금 올린 카운터까지 함께 롤백돼 <b>상한이 영원히 오지 않는다</b>. 잠금 코드는 그대로 있는데 아무도
  * 잠기지 않는, 눈에 띄지 않는 실패다.
  *
  * <p>그리고 그 회귀는 <b>다른 어떤 테스트로도 잡히지 않는다</b>. 저장소를 목으로 바꾼 단위 테스트({@code WebAuthServiceTest})는 롤백이라는 현상
@@ -57,7 +57,7 @@ class WebLoginLockIntegrationTest {
   private static final String PASSWORD = "Kohere1!";
   private static final String WRONG_PASSWORD = "Wrong99!";
 
-  /** 로그인 시도 IP 한도(30회/시간)를 다른 테스트와 나눠 쓰지 않도록 이 테스트 전용 IP를 쓴다. */
+  /** 로그인 시도 IP 한도를 다른 테스트와 나눠 쓰지 않도록 이 테스트 전용 IP를 쓴다. */
   private static final String CLIENT_IP = "198.51.100.20";
 
   @Autowired private WebApplicationContext context;
@@ -80,15 +80,19 @@ class WebLoginLockIntegrationTest {
   }
 
   @Test
-  @DisplayName("실패 응답 5회가 실제로 커밋돼 6회째 로그인이 423으로 막힌다")
-  void fiveFailedLoginsPersistAndLockTheAccount() throws Exception {
+  @DisplayName("상한만큼의 실패 응답이 실제로 커밋돼 그 다음 로그인이 423으로 막힌다")
+  void failedLoginsPersistAndLockTheAccount() throws Exception {
     signup();
 
     int maxFailedAttempts = authProperties.getWeb().getLoginMaxFailedAttempts();
     for (int attempt = 1; attempt <= maxFailedAttempts; attempt++) {
       login(WRONG_PASSWORD)
           .andExpect(status().isUnauthorized())
-          .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIALS"));
+          .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIALS"))
+          // 응답에 실린 카운터는 저장된 값과 같아야 한다 — 상한에 닿은 응답이 곳 잠금 시점이므로
+          // 클라이언트가 보는 순서가 어긋나면 안 된다.
+          .andExpect(jsonPath("$.error.details.failedAttempts").value(attempt))
+          .andExpect(jsonPath("$.error.details.maxFailedAttempts").value(maxFailedAttempts));
       // 매 요청이 예외로 끝나도 카운터가 남아 있어야 한다 — 여기서 0으로 돌아가면 롤백이 일어났다는 뜻이고,
       // 그 상태로는 아래 잠금이 영원히 성립하지 않는다.
       assertThat(loadAccount().getFailedLoginAttempts()).isEqualTo(attempt);
@@ -101,7 +105,9 @@ class WebLoginLockIntegrationTest {
     // 잠긴 뒤에는 비밀번호가 맞아도 423이다 — 잠금 판정이 자격증명 대조보다 먼저다.
     login(PASSWORD)
         .andExpect(status().isLocked())
-        .andExpect(jsonPath("$.error.code").value("AUTH_ACCOUNT_LOCKED"));
+        .andExpect(jsonPath("$.error.code").value("AUTH_ACCOUNT_LOCKED"))
+        // 잠긴 계정에는 details를 실지 않는다 — 카운터가 상한에 고정돼 정보량이 없다.
+        .andExpect(jsonPath("$.error.details").doesNotExist());
 
     // 잠금은 실패 카운터를 더 올리지 않는다 — 올리면 lockedAt이 요청마다 갱신돼 "언제 잠겼는가"가 사라진다.
     LocalAccount afterLocked = loadAccount();

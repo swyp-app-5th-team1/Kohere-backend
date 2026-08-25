@@ -43,7 +43,7 @@ sequenceDiagram
             else userType = LANDLORD
                 BOOK->>USER: findBlockedUserIds(userId)
                 USER-->>BOOK: 내가 차단한 상대 userId 목록(빈 목록 가능)
-                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>삭제·차단 제외: landlord_deleted_at IS NULL<br/>AND tenant_id NOT IN (차단 목록)<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장, 매물 상태 무관해 PAUSED 포함)
+                Note over BOOK: 내 소유 매물 신청만 조회 — landlord_id로 직접 스코핑<br/>삭제·차단 제외: landlord_deleted_at IS NULL<br/>AND tenant_id NOT IN (차단 목록)<br/>createdAt 내림차순 · 오프셋 페이지네이션(page/size)<br/>(landlordId는 생성 시 저장, 매물 상태 무관해 UPDATE_PENDING·REJECTED 포함)
                 BOOK->>XDB: 신청 페이지 조회<br/>(landlord_id = userId, 삭제·차단 제외, createdAt desc, page/size)
                 XDB-->>BOOK: 신청 페이지 (빈 목록 가능)
                 Note over BOOK: 스냅샷 없음 — 조회 시점 실시간 조인<br/>매물 요약(listing::api) · 신청자 성명(user::api getUserName)
@@ -123,7 +123,7 @@ sequenceDiagram
 - 보호 엔드포인트이므로 **공통 보안 필터(SEC)** 가 컨트롤러 앞단에서 `Authorization: Bearer <token>`의 JWT를 검증한 뒤 인증된 요청(`userId`)을 **booking 모듈**로 전달한다. 토큰이 없거나 만료/위조면 `401 UNAUTHENTICATED`(만료 시 `TOKEN_EXPIRED`)로 막는다. 비 ACTIVE(온보딩 미완료)는 다른 보호 엔드포인트와 동일한 온보딩 게이트로 `403 AUTH_ONBOARDING_REQUIRED`이다.
 - **userType 분기(별도 임대인 API 없음)**: 조회 엔드포인트(`GET /api/v1/bookings`·`/{bookingId}`)는 세입자·임대인이 **같은 경로**를 호출하고, booking 모듈이 `user::api`(`getUserType`)로 요청자 역할을 판정해 동작을 분기한다 — `TENANT`면 내 예약([US-4-2](us-4-2-booking-retrieve.md)), `LANDLORD`면 내 소유 매물에 신청된 예약(본 문서)을 반환한다. `userType`은 토큰 클레임이 아니라 서비스 계층 조회이며(`ROLE_LANDLORD` 없음, URL 티어는 `ROLE_USER`), **두 역할 모두 유효한 요청이라 역할 `403`은 없다**.
 - **임대인 분기 — 소유권 스코핑(생성 시 landlordId 비정규화)**: 예약 **생성 시(US-4-1)** 매물 소유자(`listing.landlordId`)를 `Booking.landlordId`로 저장해 두므로, 소유권 판정이 booking 행에 있다. cross-store 조인 없이 booking 저장소만으로 처리한다:
-  - **목록**: `landlord_id = 요청자`를 `createdAt` 내림차순 오프셋 페이지네이션(api-design-guide §4-1)으로 조회. `landlordId`는 매물 상태와 무관하게 저장돼 `PAUSED`(일시중지) 매물의 신청도 자동 포함된다. 신청이 없으면 빈 페이지(`200`, `content: []`).
+  - **목록**: `landlord_id = 요청자`를 `createdAt` 내림차순 오프셋 페이지네이션(api-design-guide §4-1)으로 조회. `landlordId`는 매물 상태와 무관하게 저장돼 `UPDATE_PENDING·REJECTED`(일시중지) 매물의 신청도 자동 포함된다. 신청이 없으면 빈 페이지(`200`, `content: []`).
   - **상세**: 예약을 `bookingId`로 조회한 뒤 **`booking.landlordId == 요청자`인지 행 단위로 확인**한다. 예약이 없거나 내 소유 매물의 신청이 아니면 존재 여부를 노출하지 않도록 `404 BOOKING_NOT_FOUND`로 **통일**한다(세입자 분기의 '타인 예약→404'와 동일한 규약).
   - **삭제·차단 제외 필터(목록·상세 공통)**: 임대인 분기의 술어는 세입자 분기와 대칭이다 — `landlord_deleted_at IS NULL`(내가 삭제하지 않은 신청, [US-4-7](us-4-7-booking-delete.md))이고 `tenant_id NOT IN (내가 차단한 신청자, [US-4-8](us-4-8-booking-block.md))`인 행만 본다. 삭제는 **참여자별 컬럼**이라 임대인이 지운 신청도 세입자 목록에는 그대로 남고, 차단 숨김도 **차단자 기준 단방향**이다. 차단 목록은 `user::api`(`findBlockedUserIds`)로 받아 **애플리케이션 레벨 조인**하며(booking이 `user_blocks`를 직접 조인하지 않는다, [ADR-0002](../../../adr/0002-inter-module-communication-via-events.md)), 술어는 응용 계층 후처리가 아니라 저장소 조회로 내려 페이지 메타(`totalPages`/`hasNext`)와 어긋나지 않게 한다. 차단이 0건이면 `NOT IN`이 모든 행을 지우지 않도록(`NOT IN ()`은 문법 오류, `NOT IN (null)`은 `UNKNOWN`이라 **모든 행이 사라진다**) 어댑터 내부에서 빈 목록을 sentinel `-1L` 한 건으로 정규화한다 — `users.id`는 `BIGINT AUTO_INCREMENT`라 `-1`이 실제 식별자와 충돌할 수 없다(세입자 분기 [US-4-2](us-4-2-booking-retrieve.md)와 동일).
   - `landlordId`는 생성 시점 스냅샷이라 **소유권 이전 시 stale**하나, 소유권 이전은 MVP 범위 밖이라 충분하다(이전 도입 시 백필 또는 조회 시점 해석으로 전환).

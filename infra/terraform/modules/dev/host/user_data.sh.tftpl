@@ -41,7 +41,9 @@ mkdir -p /data
 UUID=$(blkid -s UUID -o value "$DATA_DEV")
 grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data xfs defaults,nofail 0 2" >>/etc/fstab
 mountpoint -q /data || mount /data
-mkdir -p /data/mysql /data/mongo
+# caddy 는 인증서·ACME 계정 키를 여기 둔다 — 루트 볼륨(이름 있는 도커 볼륨)에 두면 EC2 교체마다
+#   재발급이라 Let's Encrypt 주 5장 한도에 걸린다.
+mkdir -p /data/mysql /data/mongo /data/caddy
 
 # 3) ECR 로그인 + 재로그인 스크립트(CI 배포 시 SSM이 호출 — ECR 토큰 만료 대비)
 mkdir -p /opt/kohere
@@ -79,11 +81,10 @@ ${reconcile_db}
 RECONCILE
 chmod +x /opt/kohere/reconcile-db.sh
 
-# 기존 EC2에 Terraform 변경을 재부팅·교체 없이 1회 반영할 때 SSM Document가 실행하는 동일 스크립트다.
-cat >/opt/kohere/configure-chat-translation.sh <<'TRANSLATION'
-${configure_chat_translation}
-TRANSLATION
-chmod +x /opt/kohere/configure-chat-translation.sh
+# 설정 변경은 EC2를 교체해 반영한다(-replace). 예전에는 실행 중인 서버에 compose를 한 번 밀어넣는
+#   SSM 스크립트를 여기서도 만들었지만, 해당 스크립트가 compose를 base64로 통째로 품어 user_data에
+#   같은 내용이 두 번 실렸고 — base64는 gzip이 거의 줄이지 못한다 — 16KB 한계를 넘겼다(#274).
+#   교체가 유일한 반영 경로가 되도록 정리했으니, 부팅 스크립트에 base64 블롭을 다시 들이지 않는다.
 
 # 5-1) 임대인 웹 릴리스 루트(#232) — caddy가 /srv:ro 로 마운트해 여기서 SPA를 서빙한다.
 #      실제 릴리스는 프론트 CI가 deploy-web.sh 로 채운다. 여기선 자리만 잡고, 첫 배포 전에도

@@ -21,6 +21,7 @@ import com.kohere.user.domain.UserRepository;
 import com.kohere.user.domain.UserType;
 import com.kohere.user.domain.VisaType;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -132,6 +133,19 @@ public class UserAccountServiceImpl implements UserAccountService {
   @Transactional
   public Optional<Long> findActiveLandlordIdByPhoneNumber(String normalizedPhoneNumber) {
     return userRepository.findActiveLandlordIdByPhoneNumberForUpdate(
+        PhoneNumbers.normalize(normalizedPhoneNumber));
+  }
+
+  /**
+   * 이메일 찾기용 읽기 조회 — 잠금이 없으므로 {@code readOnly = true}가 성립한다(위 두 {@code FOR UPDATE} 조회가 읽기 전용을 걸지 못하는
+   * 것과 갈리는 지점이다. MySQL은 READ ONLY 트랜잭션에서 잠금 읽기를 거부한다).
+   *
+   * <p>번호를 여기서 한 번 더 접는 이유는 위 조회들과 같다 — 마커를 남긴 경계와 <b>같은 규칙</b>으로 접어야 표기 차이로 조용히 어긋나지 않는다.
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public List<Long> findActiveWebUserIdsByPhoneNumber(String normalizedPhoneNumber) {
+    return userRepository.findActiveWebUserIdsByPhoneNumber(
         PhoneNumbers.normalize(normalizedPhoneNumber));
   }
 

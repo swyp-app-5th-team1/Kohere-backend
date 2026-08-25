@@ -48,6 +48,7 @@ public class ChatRoomListService {
   private static final int MAX_PAGE_SIZE = 100;
 
   private final ChatRoomRepository chatRoomRepository;
+  private final AppUserGuard appUserGuard;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
   private final ChatMessageTranslationRepository translationRepository;
@@ -64,6 +65,7 @@ public class ChatRoomListService {
    */
   @Transactional(readOnly = true)
   public PageResponse<ChatRoomResponse> listRooms(long userId, int page, int size) {
+    appUserGuard.requireAppUser(userId);
     validatePage(page, size);
 
     // 먼저 사용자별 member 행을 조회해야 사용자가 삭제해 숨긴 방을 결과와 전체 개수에서 함께 제외할 수 있다.

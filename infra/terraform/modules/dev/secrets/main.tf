@@ -81,6 +81,7 @@ locals {
       BIZNO_ENABLED              = tostring(var.bizno_enabled)
       TEST_LOGIN_ENABLED         = tostring(var.test_login_enabled)
       FIXED_VERIFICATION_ENABLED = tostring(var.fixed_verification_enabled)
+      APP_WEB_BASE_URL           = var.web_base_url
     } : k => v if v != ""
   }
 }

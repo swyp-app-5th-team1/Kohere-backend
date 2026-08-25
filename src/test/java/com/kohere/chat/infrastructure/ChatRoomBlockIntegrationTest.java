@@ -19,6 +19,7 @@ import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,27 @@ class ChatRoomBlockIntegrationTest {
   @Autowired private ChatTextMessageService textMessageService;
   @Autowired private UserBlockService userBlockService;
   @Autowired private JdbcTemplate jdbcTemplate;
+
+  /**
+   * 사용자용 API 허용 목록 게이트가 실제 {@code users} 행을 읽으므로 세입자 한 명을 미리 만든다.
+   *
+   * <p>이 테스트는 채팅 차단의 저장 결과에 집중하느라 회원을 만들지 않았는데, 게이트가 생기면서 회원 유형 조회가 앞에 붙었다. 목으로 대체하지 않고 실제 행을 넣는 것은
+   * 나머지 협력이 전부 실제 저장소이기 때문이다.
+   */
+  @BeforeEach
+  void seedTenantRow() {
+    jdbcTemplate.update(
+        """
+        INSERT INTO users (
+            id, nickname, user_type, status,
+            terms_of_service_agreed, privacy_policy_agreed, marketing_agreed,
+            created_at, updated_at)
+        VALUES (?, ?, 'TENANT', 'ACTIVE', true, true, false, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE user_type = 'TENANT'
+        """,
+        TENANT_ID,
+        "차단테스트세입자");
+  }
 
   /** roomId만으로 상대를 차단하고, 반복 요청 뒤에도 한 행이며 이후 TEXT는 저장하지 않는지 확인한다. */
   @Test

@@ -35,6 +35,8 @@ class ChatRoomDetailServiceTest {
   private static final long ROOM_ID = 556L;
   private static final Instant NOW = Instant.parse("2026-08-20T10:00:00Z");
 
+  @Mock private AppUserGuard appUserGuard;
+
   @Mock private ChatRoomRepository chatRoomRepository;
   @Mock private ChatRoomMemberRepository memberRepository;
   @Mock private UserAccountService userAccountService;
@@ -47,7 +49,11 @@ class ChatRoomDetailServiceTest {
   void setUp() {
     service =
         new ChatRoomDetailService(
-            chatRoomRepository, memberRepository, userAccountService, userBlockService);
+            chatRoomRepository,
+            appUserGuard,
+            memberRepository,
+            userAccountService,
+            userBlockService);
   }
 
   /** 참여자에게는 방 생성 당시 매물 정보, 상대 이름, 내 역할과 양방향 차단 여부를 반환한다. */

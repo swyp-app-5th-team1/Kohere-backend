@@ -156,10 +156,14 @@ public class WebAuthService {
    * {@code X-Forwarded-For}가 호출자 손에 있어 위조 가능하므로 비용 가드일 뿐이고, 잠금 DoS를 실제로 묶는 것은 <b>이메일 축</b>이다 — 남의
    * 계정을 잠그려면 그 이메일을 보내야만 하기 때문이다. 초과는 429 {@code TOO_MANY_REQUESTS}다.
    *
-   * <p><b>이메일 미존재와 비밀번호 불일치는 완전히 같은 401이다</b> — 응답을 가르면 그 자체가 "이 이메일은 가입돼 있다"는 계정 열거 신호가 된다. 같아야 하는
-   * 것은 코드·status·문구만이 아니라 <b>걸리는 시간</b>도 마찬가지다: 계정이 없을 때 해시 대조를 건너뛰면 그 경로만 BCrypt 한 번(수십 ms)만큼 빨라져
-   * 반복 측정으로 등록 여부를 읽어내는 타이밍 오라클이 된다. 그래서 계정이 없어도 제출 비밀번호를 <b>한 번 해싱하고 버린다</b>({@link
-   * #burnPasswordHash}).
+   * <p><b>이메일 미존재와 비밀번호 불일치는 코드·status·문구가 같다</b>. 다만 <b>{@code error.details}는 갈린다</b> — 비밀번호
+   * 불일치에만 누적 실패 횟수와 상한을 싣는다(미등록 이메일에는 올릴 카운터가 없다). 그래서 <b>이 필드의 유무로 가입 여부를 알 수 있으며, 그 계정 열거는 수용한
+   * 결과다</b>: 잠금에 해제 경로가 없는 이상 잠기기 <b>전에</b> 남은 시도를 알려 주지 않으면 임대인은 손쓸 수 없는 상태에서만 사실을 알게 되고, 잠긴 계정의
+   * 423이 이미 계정 존재를 드러내고 있어 이 엔드포인트에서 열거를 막고 있다고 말할 수 없다(ADR-0047 Amended).
+   *
+   * <p><b>그래도 {@link #burnPasswordHash}는 남긴다.</b> 본문이 갈린다고 해서 시간까지 갈릴 이유는 없다 — 계정이 없을 때 해시 대조를 건너뛰면
+   * 그 경로만 BCrypt 한 번(수십 ms)만큼 빨라져, {@code details}를 보지 않고 <b>응답 시간만으로</b> 등록 여부를 읽는 두 번째 통로가 생긴다.
+   * 값이 공짜로 새는 통로를 하나 더 열 이유가 없으므로 계정이 없어도 제출 비밀번호를 <b>한 번 해싱하고 버린다</b>.
    *
    * <p><b>그래도 남는 시간 차가 하나 있다</b> — 비밀번호 불일치 경로는 실패 카운터를 올리려고 {@link LocalAccountRepository#save}를
    * 부르는데, 이 병합은 SELECT + UPDATE를 내고 <b>자체 트랜잭션을 커밋</b>한다(이 메서드에 {@code @Transactional}이 없어서다 — 아래
@@ -171,7 +175,7 @@ public class WebAuthService {
    * 않으면 해제 경로가 없는 상태에서 문의조차 할 수 없다. 남의 이메일로 계정을 잠그는 DoS가 가능하다는 부작용은 US-1-12에서 이미 수용했다.
    *
    * <p><b>이 메서드에 {@code @Transactional}을 달면 잠금이 영원히 걸리지 않는다.</b> 실패 카운터는 <b>요청이 예외로 끝나는 바로 그때</b>
-   * 남아야 하는데 트랜잭션은 정확히 그 반대를 보장한다 — {@link InvalidCredentialsException}이 나가면서 방금 올린 카운터까지 롤백돼 5회째가
+   * 남아야 하는데 트랜잭션은 정확히 그 반대를 보장한다 — {@link InvalidCredentialsException}이 나가면서 방금 올린 카운터까지 롤백돼 상한이
    * 영원히 오지 않는다(잠금 코드는 그대로 있는데 아무도 잠기지 않는, 눈에 띄지 않는 실패다). 같은 빈에 {@code REQUIRES_NEW} 헬퍼를 두는 흔한 처방도
    * 여기서는 듣지 않는다 — 자기호출은 프록시를 타지 않아 애너테이션이 조용히 죽는다. 그래서 <b>로그인은 트랜잭션 단위가 아니다</b>: 애너테이션을 붙이지 않고
    * {@link LocalAccountRepository#save}가 Spring Data 자체 트랜잭션으로 커밋을 마친 뒤 401을 던진다. 같은 이유로 <b>이 메서드를
@@ -180,6 +184,10 @@ public class WebAuthService {
    * <p>성공 경로가 원자적이지 않은 것은 무해하다. 카운터 리셋만 커밋되고 토큰 발급이 실패하면 사용자는 깨끗한 카운터로 다시 로그인할 뿐이다. 같은 계정에 실패 요청이
    * <b>동시에</b> 몰리면 낙관적 락(버전 컬럼)이 없어 증가분이 겹쳐 사라질 수 있는데, 그래도 잠금은 몇 번 늦게 걸릴 뿐 결국 걸린다 — 무차별 대입을 늦추는 것이
    * 목적이라 정확한 횟수를 보장할 이유가 없다(V22 스키마에 버전 컬럼을 더할 만한 값이 아니다).
+   *
+   * <p><b>그 카운터가 응답으로 나가게 됐지만 클라이언트가 보는 계약은 깨지지 않는다.</b> 저장·잠금 판정·응답이 모두 {@code
+   * LocalAccount#recordLoginFailure}가 만든 <b>같은 값 하나</b>를 쓰므로, 응답 숫자가 상한에 닿은 그 요청이 곧 잠금 시점이다. 오차는
+   * 실제보다 <b>작아지는 방향으로만</b> 나므로 잠금이 늦게 걸릴 뿐, 안내한 횟수보다 빨리 잠기는 일은 없다. 이는 서버 내부 사정이라 스펙·문서에 적지 않는다.
    *
    * <p>응답의 {@code email}·{@code name}은 로그인 ID가 아니라 <b>{@code users}의 값</b>이다(표시 규칙) — 연동된 계정이면 로그인에
    * 쓴 주소가 아니라 소셜 진본 이메일이 나갈 수 있다.
@@ -213,9 +221,11 @@ public class WebAuthService {
     Instant now = Instant.now();
     if (!passwordHasher.matches(request.password(), account.getPasswordHash())) {
       // 상한은 도메인 상수가 아니라 설정값이다 — 잠금 강도는 운영이 조절하는 정책이라 배포 없이 바꿀 수 있어야 한다.
-      localAccountRepository.save(
-          account.recordLoginFailure(authProperties.getWeb().getLoginMaxFailedAttempts(), now));
-      throw new InvalidCredentialsException();
+      int maxFailedAttempts = authProperties.getWeb().getLoginMaxFailedAttempts();
+      LocalAccount failed = account.recordLoginFailure(maxFailedAttempts, now);
+      // 저장을 먼저 끝내고 던진다 — 응답에 싣는 카운터가 커밋된 값과 어긋나면 안 된다.
+      localAccountRepository.save(failed);
+      throw new InvalidCredentialsException(failed.getFailedLoginAttempts(), maxFailedAttempts);
     }
     // 성공은 잠금 전에만 도달하므로 되돌릴 lockedAt이 없다 — 카운터만 0으로 되돌린다.
     localAccountRepository.save(account.recordLoginSuccess(now));

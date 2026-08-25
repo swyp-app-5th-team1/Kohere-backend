@@ -9,6 +9,7 @@ import com.kohere.auth.application.dto.PhoneVerifyResponse;
 import com.kohere.auth.application.dto.SocialLoginResponse;
 import com.kohere.auth.application.dto.TermsResponse;
 import com.kohere.auth.application.dto.TokenResponse;
+import com.kohere.auth.domain.AppUserOnlyException;
 import com.kohere.auth.domain.AppleAuthClient;
 import com.kohere.auth.domain.EmailMismatchException;
 import com.kohere.auth.domain.EmailRequiredException;
@@ -73,6 +74,7 @@ public class AuthService {
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_PENDING = "PENDING";
   private static final String USER_TYPE_LANDLORD = "LANDLORD";
+  private static final String USER_TYPE_TENANT = "TENANT";
 
   /**
    * 세입자 온보딩 응답의 {@code linked} — <b>상수 false다.</b> 병합 매칭 키는 SMS로 인증한 휴대폰 번호 단독인데 세입자는 온보딩에서 번호를
@@ -246,12 +248,15 @@ public class AuthService {
   }
 
   /**
-   * 이메일 인증번호 발송. 정식(ACTIVE) 사용자 전용으로, 접근 제한(정식 토큰·ROLE_USER)은 보안 필터(SecurityConfig)가 담당하므로 여기서는 상태
-   * 게이트를 두지 않는다(#192 — 온보딩 단계 전용→정식 전용 반전). 동기 발송 성공 시에만 챌린지를 저장한다(발송 실패 502).
+   * 이메일 인증번호 발송. 정식(ACTIVE) 사용자 전용으로, <b>상태</b> 게이트(정식 토큰·ROLE_USER)는 보안 필터(SecurityConfig)가
+   * 담당한다(#192 — 온보딩 단계 전용→정식 전용 반전). <b>유형</b> 게이트는 여기서 건다 — {@link #requireAppUser}로 세입자·임대인만 통과시켜
+   * 관리자를 막는다(#265). 상태 게이트가 ACTIVE를 보장하므로 이 시점의 {@code userType}은 이미 확정돼 있다. 동기 발송 성공 시에만 챌린지를
+   * 저장한다(발송 실패 502).
    */
   @Transactional(readOnly = true)
   public EmailVerificationCodeResponse sendEmailVerificationCode(
       long userId, EmailVerificationCodeRequest request) {
+    requireAppUser(userId);
     long expiresIn = emailVerificationService.sendCode(userId, request.email());
     return new EmailVerificationCodeResponse(maskEmail(request.email()), expiresIn);
   }
@@ -259,6 +264,7 @@ public class AuthService {
   /** 이메일 인증번호 확인. 성공 시 이메일을 검증 완료로 마킹한다. */
   @Transactional(readOnly = true)
   public EmailVerifyResponse verifyEmail(long userId, EmailVerifyRequest request) {
+    requireAppUser(userId);
     emailVerificationService.verify(userId, request.email(), request.code());
     return new EmailVerifyResponse(maskEmail(request.email()), true);
   }
@@ -512,6 +518,26 @@ public class AuthService {
    * com.kohere.common.security.SecurityConfig})가 보장하므로, 여기서는 userType이 LANDLORD인지만 확인한다(임대인 아님 403
    * FORBIDDEN). 상태 소유자는 user이므로 공개 API로 조회만 한다(판정 책임은 흐름을 조율하는 auth).
    */
+  /**
+   * 세입자·임대인만 통과시키는 허용 목록 게이트다.
+   *
+   * <p>이메일 인증은 회원 본인의 연락 수단을 확인하는 절차라 관리자에게는 쓸 일이 없다. 관리자를 콕 집어 거부하지 않고 아는 두 유형만 통과시키므로 이 코드가
+   * {@code ADMIN}을 알 필요가 없고, 나중에 회원 유형이 늘어도 자동으로 거부된다.
+   */
+  /**
+   * 세입자·임대인만 통과시킨다(관리자 403). 허용 목록이라 새 유형이 생겨도 기본이 차단이다.
+   *
+   * <p><b>연락처 인증(§4-1·§4-2)에는 이 게이트를 걸 수 없다.</b> {@code userType}은 온보딩 <b>제출</b> 시점에 확정되는데, 임대인
+   * 온보딩은 연락처 인증을 <b>선행</b>으로 요구한다 — 그 시점의 {@code userType}은 아직 null이라 허용 목록이 정상 가입을 막아 버린다. 그래서 이
+   * 게이트는 보안 필터가 ACTIVE를 보장하는 엔드포인트(이메일 인증)에만 건다.
+   */
+  private void requireAppUser(long userId) {
+    String userType = userAccountService.getUserType(userId);
+    if (!USER_TYPE_TENANT.equals(userType) && !USER_TYPE_LANDLORD.equals(userType)) {
+      throw new AppUserOnlyException();
+    }
+  }
+
   private void assertLandlord(long userId) {
     if (!USER_TYPE_LANDLORD.equals(userAccountService.getUserType(userId))) {
       throw new LandlordOnlyException();

@@ -255,7 +255,7 @@
 
 외국인 대상 주거 매물의 **등록**(임대인)과 탐색(리스트·지도·키워드)·상세·찜·최근 본 매물을 소유한다. 좌표는 WGS84 십진수, 금액은 KRW 정수, 시각은 UTC. 매물은 **건물/주소 단위 Listing**으로 관리하고, 동일한 가격·계약기간·검색 태그를 가진 실제 방 묶음은 Listing 내부의 **방 상품(`RoomOffer`)** 으로 관리한다. 임대 방식·환불 정책·성별 정책·ARC 요구 여부처럼 매물 전체에 공통인 값은 Listing 루트가 소유하고, **가격·계약기간은 방 상품이 소유한다**. 매물 스키마는 임대인 등록 폼을 기준으로 정의한 **v4**(`schemaVersion=4`)다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)).
 
-**등록 경로**는 임대인이 호출하는 `POST /api/v2/listings` 하나이며, **매물 v2의 첫 엔드포인트**였다. 이어서 **조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겨 이쪽이 정본**이 됐고, 같은 경로의 `/api/v1` 조회는 개정 전(v3) 응답 구조를 복원한 **`deprecated` 스텁**으로 DB에 닿지 않고 빈 결과 또는 `404 LISTING_NOT_FOUND`만 반환한다(제거 시점 미정) — 출시된 구버전 앱이 v4 구조를 받아 깨지는 대신 "매물 없음" 화면을 보고 업데이트로 유도되게 하려는 것이며, 새 데이터로 옛 모양을 조립하지 않으므로 하위 호환용 값 날조도 없다. 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`, 임대인 전용)만 매물 데이터를 쓰지 않아 `/api/v1`에 그대로 남는다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)). 공개 조회는 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 없으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 되며, 결국 같은 `/api/v2/listings` 네임스페이스가 **GET은 공개, POST(등록)는 회원 전용**으로 갈린다. 등록 인가는 **2단**이다 — 보안 필터가 `hasRole("USER")` 명시 매처로 온보딩 스코프(`ROLE_ONBOARDING`) 토큰을 걸러내고([ADR-0010](../adr/0010-jwt-authentication-filter.md)), 임대인 여부(`userType=LANDLORD`)는 토큰 클레임에 없으므로 서비스가 `user::api getUserType(userId)` 공개 쿼리로 재검사해 `403 FORBIDDEN`으로 거른다. `landlordId`는 요청 본문이 아니라 **토큰에서** 얻는다. **사진은 이 요청에 파일로 실리지 않는다** — 먼저 `POST /api/v2/listings/images`로 한 장씩 올려 받은 저장 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)에 담는다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이고, 어느 사진이 어느 방 것인지는 **이 JSON 구조**가 정한다. 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓였다가 등록 확정 시 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사되며, 확정 키가 식별자를 포함하므로 `listingId`·`roomOfferId`를 저장 전에 발급한다. 순서는 **키 검사 → 복사 → 저장 → 임시본 삭제**다 — 거절될 요청은 확정 위치에 흔적을 남기지 않고, 복사나 저장이 실패하면 복사본만 걷어내고 임시본은 남겨 다시 제출할 수 있게 한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 등록 결과는 `201 Created` + 생성된 매물(상세 응답 구조)이며, 상태는 항상 `PENDING`으로 시작해 관리자 승인 전까지 목록·지도·상세·찜·신청 어디에도 노출되지 않는다. 사업자등록번호는 **형식만 검증해 저장**하고 진위는 **관리자가 승인 심사에서 수동으로 확인**한다 — 등록 시점에 `POST /api/v1/auth/business/verify`를 호출하지 않는다([ADR-0033](../adr/0033-business-registry-verification.md)). **주소는 `GET /api/v1/listings/addresses`로 먼저 검색해** 고른 후보의 `roadAddress`·`lat`·`lng`를 요청에 담고, 서버는 그 좌표를 `location`에 채운다(등록 시점 재지오코딩 없음 — [ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 주변 대학(`nearbyUniversityCodes`)은 그 좌표로 원장을 훑어 서버가 채운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). **관리자 승인(`PENDING → PUBLISHED`/`REJECTED`)·임대인 수정·재고는 후속**이다.
+**등록 경로**는 임대인이 호출하는 `POST /api/v2/listings` 하나이며, **매물 v2의 첫 엔드포인트**였다. 이어서 **조회 계열 6종(목록·지도·키워드 검색·상세·찜 토글·내 찜/최근 본)도 `/api/v2`로 옮겨 이쪽이 정본**이 됐고, 같은 경로의 `/api/v1` 조회는 개정 전(v3) 응답 구조를 복원한 **`deprecated` 스텁**으로 DB에 닿지 않고 빈 결과 또는 `404 LISTING_NOT_FOUND`만 반환한다(제거 시점 미정) — 출시된 구버전 앱이 v4 구조를 받아 깨지는 대신 "매물 없음" 화면을 보고 업데이트로 유도되게 하려는 것이며, 새 데이터로 옛 모양을 조립하지 않으므로 하위 호환용 값 날조도 없다. 장소 후보 검색(`GET /api/v1/listings/places`)과 도로명 주소 검색(`GET /api/v1/listings/addresses`, 임대인 전용)만 매물 데이터를 쓰지 않아 `/api/v1`에 그대로 남는다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)). 공개 조회는 `SecurityConfig`에 **`GET /api/v2/listings`·`GET /api/v2/listings/*` `permitAll` 명시 매처**가 필요하다 — 없으면 `anyRequest().authenticated()`로 떨어져 비회원 매물 탐색이 `401`이 되며, 결국 같은 `/api/v2/listings` 네임스페이스가 **GET은 공개, POST(등록)는 회원 전용**으로 갈린다. 등록 인가는 **2단**이다 — 보안 필터가 `hasRole("USER")` 명시 매처로 온보딩 스코프(`ROLE_ONBOARDING`) 토큰을 걸러내고([ADR-0010](../adr/0010-jwt-authentication-filter.md)), 임대인 여부(`userType=LANDLORD`)는 토큰 클레임에 없으므로 서비스가 `user::api getUserType(userId)` 공개 쿼리로 재검사해 `403 FORBIDDEN`으로 거른다. `landlordId`는 요청 본문이 아니라 **토큰에서** 얻는다. **사진은 이 요청에 파일로 실리지 않는다** — 먼저 `POST /api/v2/listings/images`로 한 장씩 올려 받은 저장 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)에 담는다. 요청을 파일마다 가르는 이유는 브라우저가 요청 단위로만 진행률을 주기 때문이고, 어느 사진이 어느 방 것인지는 **이 JSON 구조**가 정한다. 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓였다가 등록 확정 시 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사되며, 확정 키가 식별자를 포함하므로 `listingId`·`roomOfferId`를 저장 전에 발급한다. 순서는 **키 검사 → 복사 → 저장 → 임시본 삭제**다 — 거절될 요청은 확정 위치에 흔적을 남기지 않고, 복사나 저장이 실패하면 복사본만 걷어내고 임시본은 남겨 다시 제출할 수 있게 한다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 등록 결과는 `201 Created` + 생성된 매물(상세 응답 구조)이며, 상태는 항상 `PENDING`으로 시작해 관리자 승인 전까지 목록·지도·상세·찜·신청 어디에도 노출되지 않는다. 사업자등록번호는 **형식만 검증해 저장**하고 진위는 **관리자가 승인 심사에서 수동으로 확인**한다 — 등록 시점에 `POST /api/v1/auth/business/verify`를 호출하지 않는다([ADR-0033](../adr/0033-business-registry-verification.md)). **주소는 `GET /api/v1/listings/addresses`로 먼저 검색해** 고른 후보의 `roadAddress`·`lat`·`lng`를 요청에 담고, 서버는 그 좌표를 `location`에 채운다(등록 시점 재지오코딩 없음 — [ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). 주변 대학(`nearbyUniversityCodes`)은 그 좌표로 원장을 훑어 서버가 채운다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)). **관리자 승인(`PENDING → PUBLISHED`)·반려(`→ REJECTED`)에 이어 임대인이 자기 매물을 다시 손보는 경로도 들어왔다.** 수정은 `PUT /api/v2/listings/{listingId}` 하나이며 **등록 때 보낸 속성을 그대로 다시 보내 본문을 통째로 교체한다** — 부분 전송을 받지 않는 것은 `location`·`address.city`/`district`·`nearbyUniversityCodes`가 모두 주소에서 파생되는 값이라 일부만 오면 파생값이 서로 모순되기 때문이다. 요청 모양은 등록과 거의 같고 다른 곳은 둘뿐이다 — `roomOffers[]`가 `roomOfferId`(없으면 신규 방)와 `status`를 함께 싣고, `imageKeys`·`roomOffers[].roomImageKeys`에 **임시 키와 이미 확정된 키를 섞어** 보낼 수 있다(확정 키는 **원래 있던 그 자리에서 온 것만** 허용해 커버↔방·방↔방 교차를 막고, 교체돼 참조를 잃은 사진은 저장이 성공한 뒤에 지운다 — [ADR-0041](../adr/0041-listing-image-upload-to-s3.md) Amended). 상태 전이는 두 갈래다 — **반려된 매물은 `PENDING`으로 되돌아가 재심사를 받고, 이미 공개 중인 매물은 `UPDATE_PENDING`으로 내려가 심사가 끝날 때까지 세입자 노출에서 빠진다.** 후자는 심사를 거치지 않은 내용이 세입자에게 도달하지 않게 하려는 **의도된 동작**이며, 승인되면 찜 수·찜 문서·최근 본 기록까지 그대로 복구된다. 심사를 기다리는 동안(`PENDING`·`UPDATE_PENDING`)에는 수정할 수 없고(`422 LISTING_NOT_EDITABLE`), 읽고 저장하는 사이에 관리자가 상태를 바꾸면 그 저장을 거절해(`409 LISTING_STATE_CHANGED`) 심사 결과와 수정 본문이 서로를 소리 없이 덮어쓰지 않게 한다. **임대인 전용 조회**는 `GET /api/v2/users/me/listings`(목록 — `status` 다중 필터, 정렬은 `updatedAt` 최신순 고정)와 `GET /api/v2/users/me/listings/{listingId}`(상세)이며 **상태를 가리지 않는다** — 세입자 조회는 `PUBLISHED`만 보여주고 관리자 조회는 ADMIN 전용이라, 임대인이 심사 중·반려된 자기 매물을 볼 유일한 경로다. 경로를 `/api/v2/listings/mine`이 아니라 `/api/v2/users/me` 아래에 둔 것은 앞의 `GET /api/v2/listings/*` `permitAll` 매처에 먼저 걸려 **비로그인에 열리기** 때문이고, 수정도 같은 이유로 `PUT /api/v2/listings/*` 명시 매처가 따로 필요하다(`GET`만 공개다). 상세 응답은 수정 폼 프리필이 목적이라 **수정 요청에 실을 수 있는 전 필드**(`imageKeys`·`roomImageKeys` 포함)에 읽기 전용 `status`·`rejectionReason`과 최초 동의 이력 `consents`를 더해 내려주고, 목록 응답은 세입자 목록 카드와 같은 무게에 `rejectionReason`만 더한다. 수정·조회 모두 남의 매물을 지목하면 존재를 감춰 `404 LISTING_NOT_FOUND`다(`403`을 쓰면 그 차이가 매물의 실재를 누설한다). **재고는 여전히 후속**이다.
 
 **`Listing`** — 주소와 공용시설을 공유하는 건물 매물 애그리거트 루트. 식별자 `id`는 MongoDB ObjectId의 24자리 hex 문자열이며 API에서는 `listingId`로 노출한다. [값 객체: `GeoPoint`, `Address`, `NearestTransit`, `Building`, `Contact`, `Facilities`, `RoomOffer`]
 
@@ -271,8 +271,9 @@
 | `blogUrl` | String, nullable | 지점 블로그 링크(있을 때만) |
 | `title` | VO `LocalizedText` | 매물 제목 `{ko,en}` |
 | `type` | enum `ListingType` | 매물 유형 |
-| `status` | enum `ListingStatus` | 승인 대기/공개/반려/중지/삭제 상태 |
-| `rejectionReason` | String, nullable | 반려 사유(관리자 입력·한국어 단일 문자열). `status=REJECTED`일 때만 값이 있고 재제출 시 비운다 — 임대인만 읽는 값이라 번역 대상이 아니다 |
+| `status` | enum `ListingStatus` | 심사 대기/승인·공개/반려/수정 심사 대기 상태(4종). 등록 직후는 `PENDING`이고, 공개 중인 매물을 임대인이 수정하면 `UPDATE_PENDING`으로 내려가 다시 승인될 때까지 세입자 노출에서 빠진다 — 세입자 경로는 예외 없이 "정확히 `PUBLISHED`인가"만 묻기 때문에 이 값 하나로 노출 전체가 닫히고 열린다 |
+| `consents` | `Consents` (VO) | 등록 시 받은 이용약관 동의 2종(개인정보 수집·이용 / 매물 정보 제공 및 노출)과 약관 버전·동의 시각. 등록 게이트가 둘 다 `true`를 강제하므로 **저장된 매물은 예외 없이 동의를 마친 매물**이다. 세입자 응답에는 포함하지 않는다 |
+| `rejectionReason` | String, nullable | 반려 사유(관리자 입력·한국어 단일 문자열). `REJECTED`와, 고쳐서 재심사 중인 `PENDING`에 값이 있다 — 임대인만 읽는 값이라 번역 대상이 아니다. **임대인이 직접 바꿀 수 없다**(수정 요청에 칸이 없다). **수정은 이 값을 건드리지 않고 승인이 지운다** — 상태가 「지금 고쳐야 한다」와 「고쳐서 재심사 중」을 구분하므로 남아 있어도 혼동되지 않고, 재심사하는 관리자에게 이전 반려 맥락이 된다 |
 | `rentalType` | enum `RentalType` | 매물 공통 임대 방식 |
 | `refundPolicy` | VO `LocalizedText` | 매물 공통 환불 정책 안내 문구 `{ko,en}` |
 | `genderPolicy` | enum `GenderPolicy` | 매물 공통 성별 정책 |
@@ -291,14 +292,16 @@
 | `description` | VO `LocalizedText` | 매물 소개 문구 `{ko,en}` |
 | `extraNotes` | VO `LocalizedText` | 입주 시 유의사항·생활 규칙 `{ko,en}` |
 | `imageUrls` | `List<String>` | 건물 공용 이미지 URL 목록(순서 보존, 첫 번째가 썸네일). **등록 요청은 URL이 아니라 저장 키(`imageKeys`, 1~5개)를 보낸다** — 서버가 임시 위치의 사진을 확정 위치로 복사하고 그 CDN URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)) |
-| `preferredNationalities` | `Set<Nationality>` | 임대인이 선호하는 입주자 국적(등록 폼 설문, 복수). 응답 비노출 |
-| `contractDifficulties` | `Set<ContractDifficulty>` | 외국인 임차인과 계약할 때 겪은 어려움(등록 폼 설문, 복수). 응답 비노출 |
+| `preferredNationalities` | `Set<Nationality>` | 임대인이 선호하는 입주자 국적(등록 폼 설문, 복수). 요청에서는 **선택**이며 값이 없으면 빈 집합으로 저장한다. 세입자 응답 비노출 |
+| `contractDifficulties` | `Set<ContractDifficulty>` | 외국인 임차인과 계약할 때 겪은 어려움(등록 폼 설문, 복수). 요청에서는 **선택**이며 값이 없으면 빈 집합으로 저장한다. 세입자 응답 비노출 |
 | `serviceFeedback` | String | Kohere에 바라는 점(등록 폼 설문, 자유 입력). 응답 비노출 |
 | `favoriteCount` | int | 찜 수 집계(≥0) |
 | `createdAt` | Instant | 생성 시각(UTC) |
 | `updatedAt` | Instant | 수정 시각(UTC) |
 
-**불변식:** `Listing.status=PUBLISHED`이고 `RoomOffer.status=ACTIVE`인 방 상품이 하나 이상 있는 매물만 목록·지도·상세·찜·신청 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); 등록 직후 상태는 `PENDING`이고 공개는 관리자 승인(`PENDING → PUBLISHED`)으로만 이뤄지며 반려(`PENDING → REJECTED`)는 `rejectionReason`을 함께 기록한다(재제출 시 `rejectionReason`을 비운다 — 승인 API는 후속); **`location`이 없는 매물은 승인을 통과하지 못한다**(좌표 없이는 지도·거리 조회에 실릴 수 없다); Listing은 저장 시 최소 1개 이상의 `roomOffers`를 가져야 하고 각 `RoomOffer.roomImageUrls`는 최소 2장이다; **등록 요청이 싣지 않고 서버가 채우는 값**은 `id`·`roomOffers[].roomOfferId`·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`)·`imageUrls`·`roomOffers[].roomImageUrls`다 — 사진은 URL이 아니라 **저장 키**로 실려 오므로 서버가 확정 위치로 복사한 뒤 그 URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)); 등록 폼의 **한 칸이 두 필드로 갈리는 입력**(지점 운영층 `1~2` → `building.usedFloorMin`/`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`/`ageMax`)은 서버가 파싱하며 형식 위반은 `400 INVALID_INPUT`이고 `usedFloorMin <= usedFloorMax <= building.totalFloors`를 함께 검증한다; 코드 값을 받는 필드는 `listingCatalog`의 `(category, code)`에 실재해야 한다(위반 `400 LISTING_UNKNOWN_CATALOG_CODE`, 문자열 길이 제한은 두지 않는다); `address.fullAddress`는 입력값을 **정규화 없이 그대로** 저장하고 `address.city`·`district`만 도로명 주소 파싱으로 `City`·`District` enum을 도출한다(파싱 실패 `400 LISTING_INVALID_ADDRESS`); `ageMin <= ageMax`; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; 상세 화면의 조건 요약은 DB에 저장하지 않고 활성 `RoomOffer.filterTags` 합집합으로 응답 시 계산한다 — **파생 태그는 없어 저장값과 응답 태그가 1:1**이고, ARC 요구 여부는 태그가 아니라 루트 `arcRequired` 필드 하나로 표현한다; 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; **매물 담당 연락처(`contact`)는 매물 애그리거트가 저장하고 세입자 응답에 공개한다** — 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md))와는 **별개 값**이라 마스킹하지 않으며, 임대인 개인 연락처는 매물에 저장하지도 노출하지도 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)); `businessRegistrationNumber`(원문)와 등록 폼 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 **응답에서 제외**한다; `favoriteCount`는 0 미만 불가이며 멱등 토글에서 중복 증감하지 않는다; `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점 산출 표현값이며 영속 속성이 아니다. 현재 일반 목록·기존 키워드 검색의 `favorited`는 실제 찜 조회 없이 항상 `false`이고, 찜 목록 저장소는 예외적으로 `PUBLISHED`만 검사해 ACTIVE 방 상품이 없는 매물이 포함될 수 있다.
+**불변식:** `Listing.status=PUBLISHED`이고 `RoomOffer.status=ACTIVE`인 방 상품이 하나 이상 있는 매물만 목록·지도·상세·찜·신청 대상이며 그 외 상태는 조회 시 부재처럼 처리한다(`404 LISTING_NOT_FOUND`); 등록 직후 상태는 `PENDING`이고 공개는 관리자 승인(`PENDING → PUBLISHED`)으로만 이뤄지며 반려(`PENDING → REJECTED`)는 `rejectionReason`을 함께 기록한다. **승인·반려 모두 상태를 가리지 않는다** — 재승인(잘못 반려한 매물을 되살린다)·사후 반려(공개 매물을 내린다)·사유 정정이 모두 정상 경로이며, 관리자의 오판을 되돌릴 수단이 서버에 있어야 하기 때문이다. 승인은 이전 `rejectionReason`을 비우고, **이미 공개 중이면 아무 일도 하지 않는다**(`updatedAt`을 바꾸면 목록 정렬이 흔들린다); **`location`이 없는 매물은 승인을 통과하지 못한다**(좌표 없이는 지도·거리 조회에 실릴 수 없다); Listing은 저장 시 최소 1개 이상의 `roomOffers`를 가져야 하고 각 `RoomOffer.roomImageUrls`는 최소 2장이다; **동의 2종(`consents.privacyPolicyAgreed`·`listingExposureAgreed`)은 둘 다 `true`여야 저장된다**(위반 `422 LISTING_REQUIRED_AGREEMENT_MISSING`); **등록 요청이 싣지 않고 서버가 채우는 값**은 `id`·`roomOffers[].roomOfferId`·`schemaVersion`(4)·`status`(`PENDING`)·`consents.version`(서버 설정값)·`consents.agreedAt`·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`)·`imageUrls`·`roomOffers[].roomImageUrls`다 — 사진은 URL이 아니라 **저장 키**로 실려 오므로 서버가 확정 위치로 복사한 뒤 그 URL을 보낸 순서 그대로 채운다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)); 등록 폼의 **한 칸이 두 필드로 갈리는 입력**(지점 운영층 `1~2` → `building.usedFloorMin`/`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`/`ageMax`)은 서버가 파싱하며 형식 위반은 `400 INVALID_INPUT`이고 `usedFloorMin <= usedFloorMax <= building.totalFloors`를 함께 검증한다; 코드 값을 받는 필드는 `listingCatalog`의 `(category, code)`에 실재해야 한다(위반 `400 LISTING_UNKNOWN_CATALOG_CODE`, 문자열 길이 제한은 두지 않는다); `address.fullAddress`는 입력값을 **정규화 없이 그대로** 저장하고 `address.city`·`district`만 도로명 주소 파싱으로 `City`·`District` enum을 도출한다(파싱 실패 `400 LISTING_INVALID_ADDRESS`); `ageMin <= ageMax`; 금액은 `RoomOffer.pricing`에 집주인이 정한 단일값으로 저장하고 사용자 필터의 최소·최대 예산은 조회 조건일 뿐 애그리거트 속성이 아니다; 상세 화면의 조건 요약은 DB에 저장하지 않고 활성 `RoomOffer.filterTags` 합집합으로 응답 시 계산한다 — **파생 태그는 없어 저장값과 응답 태그가 1:1**이고, ARC 요구 여부는 태그가 아니라 루트 `arcRequired` 필드 하나로 표현한다; 필터 매칭의 정본은 반드시 같은 `RoomOffer`가 가격·옵션을 동시에 만족하는지로 판정한다; `imageUrls` 첫 항목이 건물 썸네일; **매물 담당 연락처(`contact`)는 매물 애그리거트가 저장하고 세입자 응답에 공개한다** — 임대인 개인 연락처(`users.phone_number`, 마스킹 대상 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md))와는 **별개 값**이라 마스킹하지 않으며, 임대인 개인 연락처는 매물에 저장하지도 노출하지도 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)); `businessRegistrationNumber`(원문)와 등록 폼 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장하되 **응답에서 제외**한다; `favoriteCount`는 0 미만 불가이며 멱등 토글에서 중복 증감하지 않는다; `favorited`(사용자별 찜 여부)·`distanceMeters`(기준 좌표 대비 거리)는 조회 시점 산출 표현값이며 영속 속성이 아니다. 현재 일반 목록·기존 키워드 검색의 `favorited`는 실제 찜 조회 없이 항상 `false`이고, 찜 목록 저장소는 예외적으로 `PUBLISHED`만 검사해 ACTIVE 방 상품이 없는 매물이 포함될 수 있다.
+
+**임대인 수정에도 위 불변식이 그대로 적용된다** — 등록과 같은 검증을 다시 통과해야 하고 **동의 2종 게이트도 매번 다시 건다**(위반 `422 LISTING_REQUIRED_AGREEMENT_MISSING`). 다만 **저장되는 `consents`는 승계한다** — `version`·`agreedAt`은 "등록 시점 동의"로 계약된 값이라 갱신하면 최초 동의 시각이라는 감사 기록이 사라지므로, 게이트는 매번 작동하되 문서에 가해지는 변경은 없다. 수정에서 **요청이 건드리지 못하고 승계되는 값**은 `id`·`landlordId`·`schemaVersion`·`createdAt`·`favoriteCount`·`consents`·`rentalType`이고, **요청에서 서버가 다시 파생하는 값**은 `location`(요청 좌표)·`address.city`/`district`(도로명 재파싱, 미발견 `ETC`)·`nearbyUniversityCodes`(좌표 반경 재탐색)·`imageUrls`/`roomOffers[].roomImageUrls`(확정 키 → URL)·`pricing.currency`(`KRW`)·다국어 `LocalizedText` 8종이며, 나머지 `status`·`rejectionReason`(항상 `null`)·`updatedAt`은 **전이가 정한다**. `roomOffers`는 **순서 있는 전량 제출**이다 — `roomOfferId`가 없으면 신규 방이고 있으면 그 방을 갱신하며, 문서에 없는 id를 제시하면 `400 INVALID_INPUT`이다. **방을 내리는 것은 요청에서 빼는 것이 아니라 `status=INACTIVE`로 보내는 것**이고(그래야 나중에 다시 `ACTIVE`로 되살릴 수 있다), 어느 경우에도 하드 삭제하지 않는다 — 예약·채팅이 `roomOfferId`로 그 방을 영구 참조하기 때문이다. 요청에서 id가 통째로 빠진 방은 안전망으로 `INACTIVE`로 돌려 배열 맨 뒤에 원래 상대순서로 남기고, **저장 후 `ACTIVE` 방이 하나도 없으면 `400 INVALID_INPUT`으로 거절한다**(상태만 `PUBLISHED`이고 목록·상세에는 잡히지 않는 유령 매물이 생긴다). 저장 자체는 **읽을 때의 상태를 기대값으로 건 조건부 교체**라, 그 사이 관리자 심사가 상태를 바꿔 놓았으면 아무것도 쓰지 않고 `409 LISTING_STATE_CHANGED`로 되돌린다.
 
 **`RoomOffer`** — 동일한 가격·계약기간·검색 태그를 가진 실제 방 묶음. Listing 내부 구성 요소이며 독립 애그리거트가 아니다. 식별자 `roomOfferId`.
 
@@ -365,7 +368,7 @@
 | | `totalFloors` | int | 건물 전체 층수 |
 | | `parkingAvailable` | boolean | 주차 가능 여부 |
 | | `elevatorAvailable` | boolean | 엘리베이터 여부 |
-| `Facilities` | `heatingSystem` | `Set<HeatingSystem>` | 난방 방식 |
+| `Facilities` | `heatingSystem` | `Set<HeatingSystem>` | 난방 방식(없으면 `NONE` 하나) |
 | | `kitchen` | `Set<KitchenFacility>` | 주방 시설 |
 | | `laundry` | `Set<LaundryFacility>` | 세탁 시설 |
 | | `livingAmenities` | `Set<LivingAmenity>` | 생활 편의시설 |
@@ -389,8 +392,7 @@
 | `ListingStatus` | `PENDING` | 등록 직후 관리자 승인 대기(등록 시 기본값) |
 | | `PUBLISHED` | 승인돼 공개 중 |
 | | `REJECTED` | 관리자 반려(`rejectionReason` 보유) |
-| | `PAUSED` | 임대인/운영자에 의해 노출 중지 |
-| | `DELETED` | 삭제 처리 |
+| | `UPDATE_PENDING` | 공개 중이던 매물을 임대인이 수정해 **재심사 대기** — 승인 전까지 세입자 노출에서 빠지고, 승인되면 `PUBLISHED`로 복귀한다 |
 | `RoomOfferStatus` | `ACTIVE` | 노출·계약 가능 |
 | | `INACTIVE` | 노출 중지 |
 | `RentalType` | `MONTHLY_RENT` | 월세 |
@@ -417,6 +419,7 @@
 | | `MIXED_USE` | 주상복합 |
 | `HeatingSystem` | `CENTRAL` | 중앙난방 |
 | | `INDIVIDUAL` | 개별난방 |
+| | `NONE` | 해당 없음 |
 | `GenderPolicy` | `ANY` | 성별 무관 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MALE_ONLY` | 남성 전용 |
@@ -426,12 +429,12 @@
 | `SupportedLanguage` | `ENGLISH` | 영어 |
 | | `CHINESE` | 중국어 |
 | | `JAPANESE` | 일본어 |
-| | `OTHER` | 기타 |
 | `NearbyFacility` | `CONVENIENCE_STORE` | 편의점 |
 | | `MART` | 마트/슈퍼마켓 |
 | | `HOSPITAL_PHARMACY` | 병원/약국 |
 | | `PARK` | 공원 |
 | | `LAUNDROMAT` | 세탁소 |
+| | `NONE` | 해당 없음 |
 | `ConditionTag` | `MOVE_IN_NOW` | 즉시 입주 |
 | | `FEMALE_ONLY` | 여성 전용 |
 | | `MEALS_INCLUDED` | 식사 제공 |
@@ -455,10 +458,12 @@
 | | `TOASTER` | 토스트기 |
 | | `COFFEE_MACHINE` | 커피머신 |
 | | `WATER_PURIFIER` | 정수기 |
+| | `NONE` | 해당 없음 |
 | `LaundryFacility` | `WASHER` | 세탁기 |
 | | `DRYER` | 건조기 |
 | | `DRYING_RACK` | 건조대 |
 | | `IRON` | 다리미 |
+| | `NONE` | 해당 없음 |
 | `LivingAmenity` | `WIFI` | 와이파이 |
 | | `TV` | TV |
 | | `SOFA` | 소파 |
@@ -467,18 +472,21 @@
 | | `PROJECTOR` | 프로젝터 |
 | | `AIR_PURIFIER` | 공기청정기 |
 | | `SHARED_PC` | 공용 PC |
+| | `NONE` | 해당 없음 |
 | `SecurityFeature` | `CCTV` | CCTV |
 | | `ENTRANCE_DOOR_LOCK` | 공동현관 도어락 |
 | | `DOOR_LOCK` | 방별 도어락 |
 | | `FIRE_EXTINGUISHER` | 소화기 |
 | | `FIRE_ALARM` | 화재경보기 |
 | | `SECURITY_GUARD` | 경비원 |
+| | `NONE` | 해당 없음 |
 | `ProvidedSupply` | `BEDDING` | 침구류 |
 | | `LAUNDRY_DETERGENT` | 세탁세제 |
 | | `SEASONING` | 조미료 |
 | | `SLIPPERS` | 실내화 |
 | | `TISSUE` | 휴지 |
 | | `TOWEL` | 수건 |
+| | `NONE` | 해당 없음 |
 | `CommonSpaceType` | `SHARED_KITCHEN` | 공용 주방 |
 | | `SHARED_TOILET` | 공용 화장실 |
 | | `SHARED_BATH` | 공용 욕실 |
@@ -486,23 +494,24 @@
 | | `STUDY_ROOM` | 스터디룸 |
 | | `MEETING_ROOM` | 회의실 |
 | | `ROOFTOP` | 옥상 |
+| | `NONE` | 해당 없음 |
 | `Nationality` | `JAPAN` | 일본(등록 폼 설문 — 선호 국적) |
 | | `USA` | 미국 |
 | | `CHINA` | 중국 |
 | | `SOUTHEAST_ASIA` | 동남아 |
 | | `EUROPE` | 유럽 |
-| | `OTHER` | 기타 |
 | `ContractDifficulty` | `LANGUAGE` | 의사소통 문제(언어) — 등록 폼 설문 |
 | | `CULTURE` | 외국인 생활 관련 문제(문화) |
 | | `IDENTITY` | 낯선 외국인에 대한 두려움(신원) |
 | | `PAYMENT` | 대금 지급·환율(결제) |
 | | `CONTRACT_FULFILLMENT` | 손해배상·위약금(계약 이행) |
 | | `COMMUNICATION_CHANNEL` | 외국인과의 소통 채널 부족 |
-| | `OTHER` | 기타 |
 
 > 정렬 프리셋(`ListingSort`: `RECOMMENDED`·`PRICE_ASC`·`DISTANCE`)과 지도 검색의 bbox·마커 결과 상한은 **조회 파라미터**이지 애그리거트 영속 속성이 아니다(거리순은 요청 bbox의 중심 좌표를 기준으로 하며, bbox 누락 시 `400 LISTING_INVALID_SORT_PARAM`; 과대 영역 `400 LISTING_AREA_TOO_LARGE`; bbox 모순 `400 LISTING_INVALID_BBOX`).
 
 > `RoomFeature` enum은 코드에 남아 있지만 현재 `RoomOffer` 속성이나 MongoDB 저장 스키마에서는 사용하지 않는다. 방 검색 조건의 현재 정본은 `RoomOffer.filterTags`의 `ConditionTag`다.
+>
+> 시설 8종(`HeatingSystem`·`KitchenFacility`·`LaundryFacility`·`LivingAmenity`·`SecurityFeature`·`CommonSpaceType`·`ProvidedSupply`·`NearbyFacility`)은 전부 `NONE`(해당 없음)을 갖는다 — 등록 폼이 각 칸에 최소 하나를 강제하므로 「없음」을 보낼 코드가 필요하기 때문이다. **`NONE`은 단독으로만 보낼 수 있고**(다른 코드와 섮이면 `400 INVALID_INPUT`), 응답에는 다른 코드와 똑같이 `{code, label}`로 나간다. 행정구역의 `ETC`·설문의 `OTHER`가 「목록 밖의 값」인 것과 뜻이 다르다.
 >
 > `Nationality`·`ContractDifficulty`는 등록 폼 설문 응답 전용이라 `listingCatalog`에 카테고리가 없다 — 세입자 응답에 나가지 않아 라벨을 번역할 소비처가 없다. `ListingStatus`도 같은 이유로 카탈로그 대상이 아니다(임대인·관리자만 읽는다).
 

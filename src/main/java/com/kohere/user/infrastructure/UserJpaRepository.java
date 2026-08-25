@@ -3,6 +3,8 @@ package com.kohere.user.infrastructure;
 import com.kohere.user.domain.UserStatus;
 import com.kohere.user.domain.UserType;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -42,4 +44,22 @@ interface UserJpaRepository extends JpaRepository<UserJpaEntity, Long> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   Optional<UserJpaEntity> findByPhoneNumberAndStatusAndUserTypeAndIdNot(
       String phoneNumber, UserStatus status, UserType userType, Long id);
+
+  /**
+   * 연락처 + 상태 + <b>역할 집합</b>으로 회원을 조회한다 — 이메일 찾기(US-1-16)가 쓰는 <b>잠금 없는 읽기</b>다.
+   *
+   * <p><b>위 두 메서드를 재사용하지 않는 이유는 잠금이다.</b> 그쪽은 {@code SELECT … FOR UPDATE}인데, 이메일 찾기는 인증되지 않은 호출자가
+   * 부르는 permitAll 순수 조회다. 그대로 쓰면 익명 호출자가 임의 번호로 {@code users} 행에 <b>쓰기 잠금</b>을 걸어 그 사람의 가입·온보딩·병합
+   * 트랜잭션과 락 경합을 유발할 수 있다(게다가 그 구현은 {@code readOnly}가 아닌 쓰기 트랜잭션을 연다).
+   *
+   * <p><b>{@code List}를 돌려주는 이유</b> — {@code uq_users_phone_number}는 V28에서 {@code (user_type,
+   * phone_number)} 복합 유니크가 되었으므로 같은 번호로 {@code LANDLORD}와 {@code ADMIN} 두 행이 <b>정상적으로 공존할 수
+   * 있다</b>(운영자 계정은 임대인 웹으로 가입해 수동 승격한다). {@code Optional}로 받으면 그 조합에서 {@code
+   * IncorrectResultSizeDataAccessException}이 터진다.
+   *
+   * <p>성능 註 — 복합 유니크의 leftmost prefix가 {@code user_type}이라 <b>번호 단독 조건은 그 인덱스를 타지 못한다</b>. 역할 집합을
+   * 함께 거는 이 조회도 마찬가지이며(IN은 prefix를 만족시키지 못한다), 호출 빈도가 낮아 수용한다.
+   */
+  List<UserJpaEntity> findByPhoneNumberAndStatusAndUserTypeIn(
+      String phoneNumber, UserStatus status, Collection<UserType> userTypes);
 }

@@ -40,6 +40,7 @@ public class ChatMessageHistoryService {
   private static final int MAX_PAGE_SIZE = 100;
 
   private final ChatRoomRepository chatRoomRepository;
+  private final AppUserGuard appUserGuard;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
   private final ChatMessageTranslationRepository translationRepository;
@@ -57,6 +58,7 @@ public class ChatMessageHistoryService {
   @Transactional(readOnly = true)
   public CursorResponse<MessageResponse> getMessages(
       long userId, long roomId, String cursor, String afterMessageId, int size) {
+    appUserGuard.requireAppUser(userId);
     validateRequest(cursor, afterMessageId, size);
 
     // 공유 메시지를 읽기 전에 사용자별 member 행부터 확인한다. 비참여자는 방의 존재 여부도 알 수 없다.

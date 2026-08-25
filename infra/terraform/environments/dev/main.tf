@@ -140,6 +140,8 @@ module "secrets" {
   solapi_enabled = var.solapi_enabled
   solapi_from    = var.solapi_from
   bizno_enabled  = var.bizno_enabled
+  # 임대인 웹 오리진(#272) — 재설정 링크 base URL. compose가 아니라 SSM 경유라 재배포만으로 반영된다.
+  web_base_url = var.web_base_url
   # dev 테스트 마스터 로그인 토글(비밀 아님) — 시드+우회 로그인을 함께 켠다. 시크릿(TEST_LOGIN_SECRET)은 secrets 모듈이 자동 생성한다.
   test_login_enabled = var.test_login_enabled
   # 앱스토어 심사 계정 고정 인증번호(#180) — 심사 기간에만 켠다. 코드·계정 식별자는 SecureString.

@@ -35,6 +35,24 @@ public class BookingListingQueryServiceImpl implements BookingListingQueryServic
                     .map(offer -> ListingResponseMapper.toBookingView(listing, offer)));
   }
 
+  @Override
+  public Optional<RoomOfferBookingView> findRoomOfferForExistingBooking(
+      String listingId, String roomOfferId) {
+    return listingRepository
+        .findById(listingId)
+        .flatMap(
+            listing ->
+                roomOffer(listing, roomOfferId)
+                    .map(offer -> ListingResponseMapper.toBookingView(listing, offer)));
+  }
+
+  /** 상태를 가리지 않고 {@code roomOfferId}가 일치하는 방을 고른다. 표시 전용 경로만 쓴다. */
+  private static Optional<Listing.RoomOffer> roomOffer(Listing listing, String roomOfferId) {
+    return listing.getRoomOffers().stream()
+        .filter(offer -> offer.roomOfferId().equals(roomOfferId))
+        .findFirst();
+  }
+
   /** 매물의 방 상품 중 {@code roomOfferId}가 일치하고 상태가 ACTIVE인 것을 고른다(없으면 빈 값). */
   private static Optional<Listing.RoomOffer> activeRoomOffer(Listing listing, String roomOfferId) {
     return listing.getRoomOffers().stream()

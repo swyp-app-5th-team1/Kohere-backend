@@ -63,9 +63,9 @@ class ChatListingQueryIntegrationTest {
   @Test
   @DisplayName("공개 상태가 아니면 빈 값을 반환한다")
   void returnsEmptyWhenListingIsNotPublished() {
-    Document pausedListing = ListingTestSeeds.listingDocuments().getFirst();
-    pausedListing.put("status", "PAUSED");
-    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(pausedListing);
+    Document rejectedListing = ListingTestSeeds.listingDocuments().getFirst();
+    rejectedListing.put("status", "REJECTED");
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(rejectedListing);
 
     assertThat(chatListingQueryService.findPublishedListing(ListingTestSeeds.LISTING_ID)).isEmpty();
   }

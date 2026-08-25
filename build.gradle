@@ -155,6 +155,10 @@ ext {
 
 tasks.named('test') {
   useJUnitPlatform()
+  // Gradle 기본 테스트 JVM 힙은 512MB다. Testcontainers 를 쓰는 Spring 통합·문서화 테스트가 컨텍스트를
+  // 여러 벌 캐시하면서 그 한도를 넘어 실행기가 OutOfMemory 로 죽는다(테스트는 전부 통과한 뒤 종료 단계에서
+  // 터지므로 원인이 잘 안 보인다). 스위트가 커질수록 재발하므로 여기서 못박는다.
+  maxHeapSize = '2g'
   // REST Docs 스니펫 출력 디렉터리 — openapi3 태스크가 수집한다 (ADR-0007·0017)
   outputs.dir snippetsDir
 }

@@ -1,6 +1,7 @@
 package com.kohere.auth.infrastructure;
 
 import com.kohere.auth.application.EmailVerificationProperties;
+import com.kohere.auth.application.MailSenderProperties;
 import com.kohere.auth.domain.EmailDispatchException;
 import com.kohere.auth.domain.VerificationEmailSender;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +21,12 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender {
 
   private final JavaMailSender mailSender;
   private final EmailVerificationProperties properties;
+  private final MailSenderProperties mailSenderProperties;
 
   @Override
   public void send(String to, String code) {
     SimpleMailMessage message = new SimpleMailMessage();
-    message.setFrom(properties.getFrom());
+    message.setFrom(mailSenderProperties.getFrom());
     message.setTo(to);
     message.setSubject("[Kohere] 이메일 인증번호");
     message.setText(

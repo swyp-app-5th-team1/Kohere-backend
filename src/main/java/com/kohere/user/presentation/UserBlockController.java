@@ -4,6 +4,7 @@ import com.kohere.common.response.PageResponse;
 import com.kohere.common.security.AuthPrincipal;
 import com.kohere.user.api.BlockedUserView;
 import com.kohere.user.api.UserBlockService;
+import com.kohere.user.application.AppUserGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,17 +31,27 @@ public class UserBlockController {
 
   private final UserBlockService userBlockService;
 
+  /**
+   * 세입자·임대인만 통과시킨다(US-3-7).
+   *
+   * <p>여기서만 응용 계층이 아니라 표현 계층에 게이트를 둔다 — {@code UserBlockService}는 {@code user :: api}의 <b>모듈 간 공개
+   * 계약</b>이라 booking·chat이 차단 여부를 물으려고 호출한다. 구현에 게이트를 넣으면 그 내부 호출까지 함께 막힌다.
+   */
+  private final AppUserGuard appUserGuard;
+
   @GetMapping
   public PageResponse<BlockedUserView> getMyBlocks(
       @AuthenticationPrincipal AuthPrincipal principal,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
+    appUserGuard.requireAppUser(principal.userId());
     return userBlockService.listBlocks(principal.userId(), page, size);
   }
 
   @DeleteMapping("/{userId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void unblock(@AuthenticationPrincipal AuthPrincipal principal, @PathVariable long userId) {
+    appUserGuard.requireAppUser(principal.userId());
     userBlockService.unblock(principal.userId(), userId);
   }
 }

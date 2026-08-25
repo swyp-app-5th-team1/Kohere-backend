@@ -331,7 +331,6 @@ terraform apply
 | `public_ip` | dev 호스트 EIP(Route53 A 레코드 대상) |
 | `instance_id` | EC2 인스턴스 ID(SSM 접속용) |
 | `google_wif_provider_name` | EC2 역할을 검증하는 Google WIF Provider 전체 이름 |
-| `configure_chat_translation_document` | 기존 EC2에 WIF·번역 설정을 한 번 반영할 SSM Document 이름 |
 | `github_deploy_role_arn` | GitHub Actions가 assume할 배포 역할 ARN → 리포 Variables `AWS_DEPLOY_ROLE_ARN` 에 설정 |
 | `images_bucket` | 콘텐츠 이미지 S3 버킷명 |
 | `images_cdn_domain` | 이미지 서빙 커스텀 도메인(`cdn_domain_name` 별칭, 항상 설정됨) |
@@ -343,35 +342,23 @@ terraform apply
 terraform output github_deploy_role_arn   # 다음 단계에서 사용
 ```
 
-### 7.1 이미 실행 중인 dev EC2에 번역 설정 1회 반영
+### 7.1 설정 변경을 서버에 반영하는 법
 
-`user_data`는 새 EC2가 처음 부팅할 때만 실행된다. 따라서 기존 서버는 `terraform apply` 후 아래 전용 SSM Document를 **한 번만** 실행한다. EC2를 교체하지 않으며 app 컨테이너만 다시 만들고 MySQL·MongoDB·Redis·Caddy는 유지한다.
+`user_data`는 새 EC2가 **처음 부팅할 때만** 실행되고, `user_data_replace_on_change = false`라 내용이 바뀌어도 terraform이 인스턴스를 갈아치우지 않는다. 무엇을 바꿨는지에 따라 반영 방법이 갈린다.
+
+| 바꾼 것 | 반영 방법 |
+| --- | --- |
+| SSM으로 주입되는 값 — `.env` 항목(`APP_WEB_BASE_URL`·`SMTP_USERNAME`·`SOLAPI_*` 등) | `terraform apply` 후 서버에서 `refresh-env.sh` 재실행 + app 컨테이너 recreate |
+| 그 밖의 `user_data` 내용 — compose 환경변수(`MAIL_FROM`·`SPRING_MAIL_HOST`·`APP_CHAT_TRANSLATION_*`)·Google WIF 파일·Caddyfile·마운트·스크립트 | **EC2 교체** |
 
 ```bash
-INSTANCE_ID=$(terraform output -raw instance_id)
-DOCUMENT_NAME=$(terraform output -raw configure_chat_translation_document)
-
-COMMAND_ID=$(aws ssm send-command \
-  --region ap-northeast-2 \
-  --document-name "$DOCUMENT_NAME" \
-  --instance-ids "$INSTANCE_ID" \
-  --comment "configure Google WIF for chat translation" \
-  --query 'Command.CommandId' \
-  --output text)
-
-aws ssm wait command-executed \
-  --region ap-northeast-2 \
-  --command-id "$COMMAND_ID" \
-  --instance-id "$INSTANCE_ID"
-
-aws ssm get-command-invocation \
-  --region ap-northeast-2 \
-  --command-id "$COMMAND_ID" \
-  --instance-id "$INSTANCE_ID" \
-  --query '{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}'
+terraform plan  -replace="module.host.aws_instance.host"   # destroy 대상이 EC2 하나인지 확인
+terraform apply -replace="module.host.aws_instance.host"
 ```
 
-`Status`가 `Success`이면 `/opt/kohere/google-wif-credentials.json` 생성, Docker 읽기 전용 마운트, 번역 환경변수, app 재생성이 모두 끝난 것이다. 새로 만든 EC2는 부팅 과정에서 자동 적용되므로 이 명령이 필요 없다.
+교체해도 **MySQL·MongoDB 데이터와 Caddy 인증서는 EBS(`/data`)에 있어 살아남고**, EIP도 유지되므로 도메인은 그대로다. 반면 **Redis는 인메모리라 비워진다** — 모든 세션이 로그아웃되고 인증 마커·레이트리밋 카운터가 초기화된다. 부팅과 이미지 pull 동안 몇 분간 dev가 내려간다.
+
+> 예전에는 교체 없이 compose를 1회 밀어넣는 SSM Document(`configure_chat_translation`)를 함께 두었으나, 그 스크립트가 compose를 base64로 통째로 품어 `user_data`가 16KB 한계를 넘기는 원인이 되어 제거했다(#274). 반영 경로는 위 두 가지로 통일한다.
 
 ---
 

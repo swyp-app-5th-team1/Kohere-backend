@@ -164,6 +164,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 안내 API 호출에 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 안내 API 호출에 사용한 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 계정이 안내 API 실행 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   public static final String[] STOMP_GUIDE_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -257,6 +258,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       """;
 
   public static final String[] ROOM_LIST_400 = {"INVALID_INPUT", "MALFORMED_REQUEST"};
@@ -306,6 +308,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음·비참여자·요청자에게 숨겨진 방 |
       """;
 
@@ -439,6 +442,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음·비참여자·요청자에게 숨겨진 방 |
       """;
 
@@ -494,6 +498,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음 또는 비참여자 |
       """;
 
@@ -549,6 +554,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음 또는 비참여자 |
       """;
 
@@ -619,6 +625,7 @@ public final class ChatDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `AUTH_ONBOARDING_REQUIRED` | 온보딩 미완료 |
+      | 403 | `FORBIDDEN` | 관리자(`userType=ADMIN`) — 세입자·임대인 기능은 호출할 수 없다 |
       | 404 | `CHAT_ROOM_NOT_FOUND` | 방 없음·비참여자·현재 숨긴 방 |
       | 422 | `REPORT_REQUIRES_TEXT_MESSAGE` | 신고자에게 현재 보이는 TEXT 원문이 없음 |
       """;

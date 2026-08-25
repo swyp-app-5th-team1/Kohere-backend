@@ -26,11 +26,22 @@ Accepted
 **모든 API 응답을 공통 래퍼 `{ success, data, error }`로 감싼다.** 세부 정책:
 
 1. **성공**: `success=true`, `data`=페이로드(객체/배열/페이지 객체), `error=null`.
-2. **실패**: `success=false`, `data=null`, `error={ code, message, errors? }`. `code`는 UPPER_SNAKE_CASE 식별자, `errors[]`는 입력 검증 시 필드별 상세([error-response-guide §1](../api/error-response-guide.md)).
+2. **실패**: `success=false`, `data=null`, `error={ code, message, errors?, details? }`. `code`는 UPPER_SNAKE_CASE 식별자, `errors[]`는 입력 검증 시 필드별 상세, `details`는 **그 코드의 스펙에 명시된 경우에만** 실리는 부가 데이터다([error-response-guide §1](../api/error-response-guide.md)).
 3. 서버는 공통 타입 **`ApiResponse<T>`** 로 응답을 감싸고(공유 커널 **`common` 모듈**, [code-style §3-1](../convention/code-style.md)), 컨트롤러는 **DTO만** 반환한다(엔티티 직접 노출 금지).
 4. 클라이언트는 **`success` 한 필드로 1차 분기**, 실패 시 **`error.code`로 2차 분기**한다(메시지 문자열로 분기 금지).
 5. 본문이 없는 응답(예: `204 No Content`)은 래퍼 없이 빈 본문을 허용한다.
 6. 목록은 `data`에 페이지 객체(`content` + `page`/`nextCursor`)를 담는다([api-design-guide §4](../api/api-design-guide.md)).
+
+## Amended (#270) — 실패 봉투에 선택 필드 `details`를 더한다
+
+`error`에 **선택 필드 `details`(객체)** 를 추가한다. Decision 2의 실패 봉투는 `{ code, message, errors?, details? }`가 된다.
+
+- **`errors[]`와 역할이 다르다.** `errors[]`는 **입력 검증** 실패의 필드별 상세(`field`/`reason`)로 용도가 고정돼 있다. `details`는 그 틀에 들어가지 않는 **코드별 부가 데이터**를 담는다 — 첫 사용처는 임대인 웹 로그인 실패의 누적 실패 횟수와 잠금 상한이다([01-auth-onboarding §1-4](../api/specs/01-auth-onboarding.md)).
+- **값이 없으면 키 자체가 나가지 않는다**(`@JsonInclude(NON_NULL)`). 따라서 이 개정으로 **기존 에러 응답의 외형은 한 글자도 바뀌지 않는다.**
+- **도메인 개념을 봉투에 새기지 않는다.** `details`는 문자열 키 맵이고 어떤 키가 실리는지는 각 API 스펙이 정한다. 공유 커널이 특정 모듈의 어휘를 알게 되면 모듈 경계가 깨진다.
+- **남용 금지.** 스펙에 적히지 않은 데이터를 임의로 싣지 않는다. Decision 4(클라이언트는 `error.code`로 분기)는 그대로이며 `details`는 분기 기준이 아니라 **표시용 데이터**다.
+
+> 검토한 대안: ⓐ `message` 문장에 값을 끼워 넣기 — 번역 문자열이라 클라이언트가 파싱해야 하고 Decision 4와 충돌한다. ⓑ `errors[]` 재활용 — `field`가 「클라이언트가 보낸 요청 필드 이름」으로 정의돼 있어 의미가 맞지 않는다. ⓒ 응답 헤더 — 저장소에 선례가 없고 CORS 노출 설정이 새로 필요하다.
 
 ## Alternatives
 

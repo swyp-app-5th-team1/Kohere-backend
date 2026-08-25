@@ -6,7 +6,9 @@ import static org.springframework.restdocs.payload.PayloadDocumentation.response
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import com.epages.restdocs.apispec.ResourceSnippetParameters;
+import java.util.List;
 import org.springframework.restdocs.mockmvc.RestDocumentationResultHandler;
+import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.restdocs.request.ParameterDescriptor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultMatcher;
@@ -33,6 +35,29 @@ public final class ApiDocsErrors {
                 .summary(summary)
                 .description(description)
                 .responseFields(ApiDocsFields.errorFields(errorCodes))
+                .build()));
+  }
+
+  /**
+   * 응답 기술자를 직접 넘기는 변형(#270) — {@code error.details.*}처럼 그 오퍼레이션에만 있는 필드를 실을 때 쓴다.
+   *
+   * <p>{@link ApiDocsFields#errorFieldsWith}가 만든 목록을 넘기며, <b>같은 {@code (path, method, status)}의
+   * 스니펫은 전부 같은 목록</b>을 써야 한다(dedup·last-wins).
+   */
+  public static RestDocumentationResultHandler errorSnippet(
+      String identifier,
+      String tag,
+      String summary,
+      String description,
+      List<FieldDescriptor> responseFields) {
+    return document(
+        identifier,
+        resource(
+            ResourceSnippetParameters.builder()
+                .tag(tag)
+                .summary(summary)
+                .description(description)
+                .responseFields(responseFields)
                 .build()));
   }
 

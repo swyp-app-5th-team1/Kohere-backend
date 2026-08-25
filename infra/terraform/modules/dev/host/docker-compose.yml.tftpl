@@ -31,7 +31,11 @@ services:
       # 임대인 웹 릴리스(#232). 호스트가 소유하고 Caddy는 읽기만 한다 — deploy-web.sh 가 current 링크를
       # 갈아끼우면 다음 요청부터 새 릴리스가 나간다(root 가 요청마다 해석되므로 컨테이너를 건드리지 않는다).
       - /opt/kohere/web:/srv:ro
-      - caddy_data:/data
+      # 인증서·ACME 계정 키는 EBS 에 둔다. 이름 있는 볼륨은 /var/lib/docker 즉 루트 볼륨에 저장돼
+      # EC2 를 교체할 때마다 사라지고, 그러면 Let's Encrypt 가 같은 도메인에 대해 주 5장까지만
+      # 발급하므로 여섯 번째 교체부터 HTTPS 가 끊긴다. MySQL·Mongo 와 같은 이유로 EBS 에 얹는다.
+      - /data/caddy:/data
+      # /config 는 Caddy 가 자동 저장하는 사본이라 잃어도 재생성된다 — 이름 있는 볼륨 그대로 둔다.
       - caddy_config:/config
   mysql:
     image: mysql:8.0
@@ -112,5 +116,4 @@ services:
       # 연락처 SMS(SOLAPI)·사업자번호(비즈노)·네이버 지역 검색(#160/#162)·NCP 주소 검색(#223)·카카오 로컬(#224) 설정은 enabled·from·API 키·Client ID/Secret 모두
       # .env(SSM→refresh-env, env_file)로만 주입한다. compose(부팅 1회 렌더)에 박지 않아 tfvars 변경이 재배포(refresh-env 재실행 + app recreate)만으로 반영된다(ADR-0024/0034/0033).
 volumes:
-  caddy_data:
   caddy_config:
