@@ -38,7 +38,7 @@ dev는 EC2 1대 위 `docker-compose`로 **app(Spring Boot/JVM) · mysql:8.0 · m
 - **엔진 베이스라인 캡** ([docker-compose.yml.tftpl](../../infra/terraform/modules/dev/host/docker-compose.yml.tftpl))
   - **mongo**: `command: ["--wiredTigerCacheSizeGB", "0.25"]` — 캐시를 512MB→256MB로 절반. 엔트리포인트가 `--auth`는 그대로 유지.
   - **mysql**: `command: ["--innodb-buffer-pool-size=128M", "--performance-schema=OFF"]` — `performance_schema` OFF가 핵심(수백 MB 절감), 버퍼풀은 명시.
-  - **app(JVM)**: `JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=160m"` — 힙을 *명시*한다. mem_limit이 없으면 `MaxRAMPercentage`는 호스트 2GB를 기준으로 산정하므로 의미가 없어 **명시 `-Xmx`** 로 잡는다.
+  - **app(JVM)**: `JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m -XX:+ExitOnOutOfMemoryError"` — 힙을 *명시*하고, Google SDK가 첫 호출 때 추가로 불러오는 클래스까지 담을 수 있도록 Metaspace를 256MB로 둔다. mem_limit이 없으면 `MaxRAMPercentage`는 호스트 2GB를 기준으로 산정하므로 의미가 없어 **명시 `-Xmx`** 로 잡는다. 메모리 부족이 발생하면 불안정한 JVM을 계속 사용하지 않고 종료하며, Compose의 `restart: unless-stopped`가 앱 컨테이너를 다시 실행한다.
 - **스왑 2GB** ([user_data.sh.tftpl](../../infra/terraform/modules/dev/host/user_data.sh.tftpl) step 0) — `/swapfile`(`vm.swappiness=10`). 정상 워크로드는 RAM에 두고, GC·쿼리·이미지 pull 같은 **일시적 스파이크만 스왑으로 흡수**해 하드 OOM을 막는다. 스왑 설정 실패가 부팅을 막지 않도록 best-effort(`set -e` 회피).
 
 캡 적용 후 dev 호스트 실측(2026-07-29):
