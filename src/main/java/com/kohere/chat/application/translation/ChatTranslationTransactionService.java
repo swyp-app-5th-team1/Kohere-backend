@@ -93,10 +93,41 @@ public class ChatTranslationTransactionService {
     return complete(translationId, current -> current.fail(failureCode, now));
   }
 
+  /**
+   * 마지막 호출 중 서버가 종료돼 최대 시도 횟수에서 멈춘 작업을 FAILED로 종결한다.
+   *
+   * <p>복구 조회와 실제 변경 사이에 상태가 달라질 수 있으므로 행 잠금 안에서 PROCESSING·호출 횟수·lease 만료를 모두 다시 확인한다.
+   */
+  @Transactional
+  public Optional<ChatTranslationCompletion> completeExpiredExhausted(
+      long translationId, Instant now, int maxAttempts) {
+    ChatMessageTranslation current =
+        translationRepository.findByIdForUpdate(translationId).orElse(null);
+    if (current == null || !current.shouldFailAfterExhaustedLease(now, maxAttempts)) {
+      return Optional.empty();
+    }
+
+    Message original = messageRepository.findById(current.getMessageId()).orElse(null);
+    if (original == null || original.getType() != MessageType.TEXT) {
+      translationRepository.save(current.fail("ORIGINAL_MESSAGE_MISSING", now));
+      return Optional.empty();
+    }
+
+    ChatMessageTranslation completed =
+        translationRepository.save(current.fail("MAX_ATTEMPTS_EXHAUSTED", now));
+    return Optional.of(new ChatTranslationCompletion(original, completed));
+  }
+
   /** 복구 scheduler가 처리 후보 ID만 가볍게 조회한다. 실제 소유권은 claim의 잠금이 정한다. */
   @Transactional(readOnly = true)
   public List<Long> findRecoverableIds(Instant now, int maxAttempts, int batchSize) {
     return translationRepository.findRecoverableIds(now, maxAttempts, batchSize);
+  }
+
+  /** provider를 더 호출할 수 없고 lease가 끝난 작업 후보를 조회한다. */
+  @Transactional(readOnly = true)
+  public List<Long> findExpiredExhaustedIds(Instant now, int maxAttempts, int batchSize) {
+    return translationRepository.findExpiredExhaustedIds(now, maxAttempts, batchSize);
   }
 
   /** 같은 최종 상태 저장 절차를 한곳에 모아 중복 publisher 실행을 막는다. */

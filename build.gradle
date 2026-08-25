@@ -215,6 +215,19 @@ tasks.register('verifyOpenApiSpec') {
         'v1-listing-favorite-remove',
     ] as Set
 
+    // 채팅 REST는 모두 로그인 완료 사용자 전용이다. REST Docs 스니펫 병합 순서 때문에 security가 빠지면
+    // Swagger의 Authorize 토큰이 실제 요청 헤더에 붙지 않으므로 산출물 단계에서 바로 실패시킨다.
+    def REQUIRED_CHAT_BEARER_OPERATIONS = [
+        'chat-room-list',
+        'chat-room-detail',
+        'chat-room-delete',
+        'chat-stomp-guide',
+        'chat-room-block',
+        'chat-message-history',
+        'chat-room-report',
+        'chat-inquiry',
+    ] as Set
+
     spec.paths.each { path, methods ->
       methods.each { method, op ->
         def id = op.operationId
@@ -252,6 +265,11 @@ tasks.register('verifyOpenApiSpec') {
           violations << "${where}: operationId '${id}' 가 ${seenOperationIds[id]} 와 중복이다"
         } else {
           seenOperationIds[id] = where
+        }
+
+        if (REQUIRED_CHAT_BEARER_OPERATIONS.contains(id)
+            && !(op.security?.any { requirement -> requirement.containsKey('bearerAuthJWT') })) {
+          violations << "${where}: 채팅 로그인 API인데 bearerAuthJWT security 없음"
         }
 
         if (!NO_SUCCESS_RESPONSE.contains(id)

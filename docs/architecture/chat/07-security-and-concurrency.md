@@ -158,7 +158,7 @@ TEXT SEND, room ensure, BOOKING_CARD 저장, DELETE, 신고 snapshot이 같은 �
 - 같은 `clientMessageId` 재시도와 worker 재시도는 번역 행과 Google 요청을 불필요하게 중복 생성하지 않는다.
 - timeout·연결 오류·429·5xx만 한 Worker 작업 안에서 짧고 설정 가능한 backoff를 두고 최초 요청 포함 최대 5회 호출한다.
 - 호출 직전에 `attempt_count`를 증가시키고, crash 복구 뒤에는 남은 횟수만 처리해 총 provider 호출이 5회를 넘지 않게 한다.
-- 별도의 다음 재시도 시각은 저장하지 않으며, 5회 실패 또는 잘못된 요청·인증·설정 오류는 `FAILED`로 끝낸다.
+- 별도의 다음 재시도 시각은 저장하지 않으며, 5회 실패 또는 잘못된 요청·인증·설정 오류는 `FAILED`로 끝낸다. 마지막 호출 중 프로세스가 종료된 `attempt_count=5` 작업도 lease 만료 뒤 추가 호출 없이 `FAILED`로 종결한다.
 - provider 장애가 길어질 때 요청 폭증을 막기 위해 timeout과 circuit breaker를 둔다.
 - Google 장애·지원하지 않는 언어·과도한 결과 크기는 원문 SEND 오류가 아니다.
 - 최종 번역 실패는 수신자 개인 번역 이벤트로 알리고 원문을 유지한다.

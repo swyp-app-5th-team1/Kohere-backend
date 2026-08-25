@@ -420,7 +420,8 @@ public final class ChatDocsFields {
       - `BOOKING_CARD`: 신청 완료 이벤트로 서버가 만든 카드다. `bookingCard`에 신청 시점 정보가 있고 `originalContent`·`clientMessageId`·`senderId`는 null이다.
       - 카드의 `listing.thumbnailUrl`은 신청 카드 상단 대표 이미지다. 채팅방 목록의 프로필 이미지와는 관계없다.
       - 카드 문구·항목명은 앱이 `myRole`과 지원 언어 `ko/en`에 맞춰 표시하고, 카드 payload 자체는 Google 자동 번역 대상이 아니다.
-      - 자동 번역이 아직 저장되지 않았거나 실패한 경우에도 원문은 반환하며 `translation=null`이다.
+      - 자동 번역이 아직 처리 중이거나 내가 보낸 메시지이면 `translation=null`이다.
+      - 번역 실패가 최종 확정되면 `translation.status=FAILED`, `translation.content=null`이며 `originalContent`를 표시한다.
 
       **삭제와 보안 규칙**
 

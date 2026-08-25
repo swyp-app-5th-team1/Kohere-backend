@@ -58,6 +58,16 @@ public class ChatTranslationWorker {
   @Scheduled(fixedDelayString = "${app.chat.translation.recovery-interval:60s}")
   public void recoverUnfinishedWork() {
     Instant now = Instant.now();
+
+    // 마지막 호출 중 프로세스가 종료된 작업은 더 호출할 수 없다. FAILED로 끝내 수신자가 원문을 볼 수 있게 한다.
+    for (Long translationId :
+        transactions.findExpiredExhaustedIds(
+            now, properties.getMaxAttempts(), properties.getRecoveryBatchSize())) {
+      publish(
+          transactions.completeExpiredExhausted(translationId, now, properties.getMaxAttempts()));
+    }
+
+    // 아직 호출 횟수가 남은 작업만 다시 executor에 제출한다.
     for (Long translationId :
         transactions.findRecoverableIds(
             now, properties.getMaxAttempts(), properties.getRecoveryBatchSize())) {

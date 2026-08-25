@@ -88,8 +88,9 @@ services:
       - mongo
       - redis
     environment:
-      # t3.small(2GB) JVM 힙 캡 — 컨테이너 mem_limit 미설정이라 호스트 2GB 기준 자동산정 대신 명시(ADR-0026).
-      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=160m"
+      # Google SDK가 첫 호출 때 지연 로딩하는 클래스까지 수용하도록 Metaspace를 256MB로 둔다.
+      # OOM 뒤 손상된 JVM을 계속 쓰지 않고 Docker가 깨끗하게 재시작하게 ExitOnOutOfMemoryError도 켠다(ADR-0026).
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m -XX:MaxMetaspaceSize=256m -XX:+ExitOnOutOfMemoryError"
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${db_name}?serverTimezone=UTC
       SPRING_DATASOURCE_USERNAME: ${mysql_username}

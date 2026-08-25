@@ -56,4 +56,24 @@ interface ChatMessageTranslationJpaRepository
       @Param("pending") ChatTranslationStatus pending,
       @Param("processing") ChatTranslationStatus processing,
       Pageable pageable);
+
+  /**
+   * 마지막 provider 호출 중 프로세스가 종료돼 최종 상태를 저장하지 못한 작업을 찾는다.
+   *
+   * <p>호출 횟수를 모두 사용했으므로 다시 Google을 호출하지 않고 FAILED로 종결할 대상이다.
+   */
+  @Query(
+      """
+      select translation.id
+      from ChatMessageTranslationJpaEntity translation
+      where translation.status = :processing
+        and translation.attemptCount >= :maxAttempts
+        and translation.leaseUntil <= :now
+      order by translation.id asc
+      """)
+  List<Long> findExpiredExhaustedIds(
+      @Param("now") Instant now,
+      @Param("maxAttempts") int maxAttempts,
+      @Param("processing") ChatTranslationStatus processing,
+      Pageable pageable);
 }

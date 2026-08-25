@@ -27,4 +27,7 @@ public interface ChatMessageTranslationRepository {
 
   /** 즉시 처리 신호를 놓친 PENDING과 lease가 끝난 PROCESSING 작업 ID를 오래된 순으로 찾는다. */
   List<Long> findRecoverableIds(Instant now, int maxAttempts, int size);
+
+  /** 최대 호출 횟수를 모두 사용한 뒤 lease까지 끝난 PROCESSING 작업 ID를 찾는다. */
+  List<Long> findExpiredExhaustedIds(Instant now, int maxAttempts, int size);
 }

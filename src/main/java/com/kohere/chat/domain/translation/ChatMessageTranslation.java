@@ -90,6 +90,19 @@ public class ChatMessageTranslation {
         && !leaseUntil.isAfter(now);
   }
 
+  /**
+   * 마지막 provider 호출 중 서버가 종료돼 결과를 저장하지 못한 작업인지 확인한다.
+   *
+   * <p>호출 횟수를 모두 사용한 PROCESSING 작업은 더 호출할 수 없다. lease까지 끝났다면 실행 중인 Worker도 없다고 보고 FAILED로 마무리해야 영원히
+   * 처리 중으로 남지 않는다.
+   */
+  public boolean shouldFailAfterExhaustedLease(Instant now, int maxAttempts) {
+    return status == ChatTranslationStatus.PROCESSING
+        && attemptCount >= maxAttempts
+        && leaseUntil != null
+        && !leaseUntil.isAfter(now);
+  }
+
   /** Worker가 짧은 DB 트랜잭션에서 작업을 확보하고 외부 호출 전에 lock을 풀 수 있게 한다. */
   public ChatMessageTranslation claim(Instant now, Duration leaseDuration) {
     return toBuilder()

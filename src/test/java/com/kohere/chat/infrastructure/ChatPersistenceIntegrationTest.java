@@ -565,9 +565,42 @@ class ChatPersistenceIntegrationTest {
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
+  /** 복구 조회가 재시도 가능 작업과 최대 시도 소진 작업을 정확히 나누는지 실제 MySQL에서 확인한다. */
+  @Test
+  void separatesRetryableAndExhaustedExpiredTranslationJobs() {
+    Instant recoveryAt = now();
+    ChatMessageTranslation retryable =
+        translationRepository.save(processingTranslation(7_001L, 4, recoveryAt.minusSeconds(60)));
+    ChatMessageTranslation exhausted =
+        translationRepository.save(processingTranslation(7_002L, 5, recoveryAt.minusSeconds(60)));
+    ChatMessageTranslation active =
+        translationRepository.save(processingTranslation(7_003L, 5, recoveryAt));
+
+    entityManager.flush();
+    entityManager.clear();
+
+    assertThat(translationRepository.findRecoverableIds(recoveryAt, 5, 100))
+        .contains(retryable.getId())
+        .doesNotContain(exhausted.getId(), active.getId());
+    assertThat(translationRepository.findExpiredExhaustedIds(recoveryAt, 5, 100))
+        .containsExactly(exhausted.getId());
+  }
+
   /** 테스트 비교와 DATETIME(6) 왕복이 일치하도록 현재 시각을 MySQL 마이크로초 정밀도로 맞춘다. */
   private static Instant now() {
     return Instant.now().truncatedTo(ChronoUnit.MICROS);
+  }
+
+  /** 지정한 횟수만큼 provider 호출을 시작한 PROCESSING 번역 작업을 만든다. */
+  private static ChatMessageTranslation processingTranslation(
+      long messageId, int attemptCount, Instant attemptStartedAt) {
+    ChatMessageTranslation translation =
+        ChatMessageTranslation.pending(messageId, 202L, "en", attemptStartedAt.minusSeconds(1))
+            .claim(attemptStartedAt, java.time.Duration.ofSeconds(30));
+    for (int attempt = 0; attempt < attemptCount; attempt++) {
+      translation = translation.beginAttempt(attemptStartedAt, java.time.Duration.ofSeconds(30), 5);
+    }
+    return translation;
   }
 
   /** 고유 매물 ID와 시각을 받아 메시지가 없는 신규 채팅방 테스트 fixture를 만든다. */

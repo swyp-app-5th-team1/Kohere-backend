@@ -65,6 +65,7 @@ import static com.kohere.docs.ChatDocsFields.roomListResponseFields;
 import static com.kohere.docs.ChatDocsFields.stompGuideResponseFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
+import static com.kohere.docs.DocsTokens.forgedAccessToken;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
@@ -705,12 +706,24 @@ class ChatDocsTest {
                 MESSAGE_HISTORY_404));
   }
 
-  /** 토큰이 없는 메시지 이력 조회가 컨트롤러 전에 401로 차단되는 계약을 문서화한다. */
+  /** 토큰이 없는 메시지 이력 조회가 컨트롤러 전에 401로 차단되는지 확인한다. */
   @Test
-  @DisplayName("채팅방 메시지 인증 누락 문서화")
+  @DisplayName("채팅방 메시지 인증 누락 거부")
   void getMessagesUnauthenticated() throws Exception {
     mockMvc
         .perform(get("/api/v1/chat-rooms/{roomId}/messages", 556L))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+  }
+
+  /** 401 문서 예시에도 Bearer 헤더를 남겨 Swagger가 이 API를 인증 API로 항상 생성하게 한다. */
+  @Test
+  @DisplayName("채팅방 메시지 위조 토큰 거부 문서화")
+  void getMessagesWithForgedToken() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/v1/chat-rooms/{roomId}/messages", 556L)
+                .header(HttpHeaders.AUTHORIZATION, bearer(forgedAccessToken())))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
         .andDo(

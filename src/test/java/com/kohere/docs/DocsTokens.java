@@ -18,6 +18,26 @@ public final class DocsTokens {
   }
 
   /**
+   * 구조는 정상 JWT지만 서버와 다른 키로 서명한 문서 테스트용 access token이다.
+   *
+   * <p>401 예시에도 Bearer 헤더를 남겨 restdocs-api-spec이 스니펫 병합 순서와 무관하게 Swagger 보안 스킴을 생성하게 한다.
+   */
+  public static String forgedAccessToken() {
+    Instant now = Instant.now();
+    return Jwts.builder()
+        .issuer("kohere")
+        .subject("1")
+        .claim("onboardingCompleted", true)
+        .issuedAt(Date.from(now))
+        .expiration(Date.from(now.plusSeconds(3600)))
+        .signWith(
+            Keys.hmacShaKeyFor(
+                "forged-doc-only-wrong-secret-please-override-32bytes-min!!"
+                    .getBytes(StandardCharsets.UTF_8)))
+        .compact();
+  }
+
+  /**
    * 만료된 access 토큰. 서명은 유효하고 {@code exp}만 과거다 — 위조 토큰과 달리 게스트로 강등되지 않고 401 {@code TOKEN_EXPIRED}로
    * 재발급을 유도한다.
    *

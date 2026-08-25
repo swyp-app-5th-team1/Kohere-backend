@@ -171,6 +171,25 @@ class ChatMessageHistoryServiceTest {
     assertThat(translated.translation().targetLanguage()).isEqualTo("ko");
   }
 
+  /** 최종 번역 실패는 translation 자체를 숨기지 않고 FAILED 상태와 원문을 함께 반환한다. */
+  @Test
+  @DisplayName("번역 실패 메시지는 FAILED 상태와 원문을 반환한다")
+  void mapsFailedTranslationWithOriginalFallback() {
+    prepareVisibleRoom(0L);
+    Message received = text(303L, COUNTERPART_ID);
+    given(messageRepository.findBefore(ROOM_ID, null, 2)).willReturn(List.of(received));
+    given(translationRepository.findByMessageIdsAndRecipientUserId(List.of(303L), USER_ID))
+        .willReturn(List.of(failedTranslation(received.getId())));
+
+    MessageResponse result =
+        service.getMessages(USER_ID, ROOM_ID, null, null, 1).content().getFirst();
+
+    assertThat(result.originalContent()).isEqualTo("message-303");
+    assertThat(result.translation()).isNotNull();
+    assertThat(result.translation().status()).isEqualTo(TranslationResultStatus.FAILED);
+    assertThat(result.translation().content()).isNull();
+  }
+
   /** cursor와 afterMessageId를 함께 보내면 어느 방향으로 정렬할지 모호하므로 400 입력 오류로 거부한다. */
   @Test
   @DisplayName("두 종류의 커서를 동시에 사용할 수 없다")
@@ -304,6 +323,24 @@ class ChatMessageHistoryServiceTest {
         .provider(TranslationProvider.GOOGLE_CLOUD_TRANSLATION)
         .model("NMT")
         .attemptCount(1)
+        .translatedAt(SENT_AT)
+        .createdAt(SENT_AT)
+        .updatedAt(SENT_AT)
+        .build();
+  }
+
+  /** 최종 실패 상태도 REST가 원문 fallback 판단에 사용할 수 있게 하는 fixture다. */
+  private static ChatMessageTranslation failedTranslation(long messageId) {
+    return ChatMessageTranslation.builder()
+        .id(902L)
+        .messageId(messageId)
+        .recipientUserId(USER_ID)
+        .targetLanguage("ko")
+        .status(ChatTranslationStatus.FAILED)
+        .provider(TranslationProvider.GOOGLE_CLOUD_TRANSLATION)
+        .model("NMT")
+        .attemptCount(5)
+        .lastFailureCode("MAX_ATTEMPTS_EXHAUSTED")
         .translatedAt(SENT_AT)
         .createdAt(SENT_AT)
         .updatedAt(SENT_AT)

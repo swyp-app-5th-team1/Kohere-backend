@@ -70,6 +70,13 @@ public class ChatMessageTranslationRepositoryImpl implements ChatMessageTranslat
         PageRequest.of(0, size));
   }
 
+  /** {@inheritDoc} */
+  @Override
+  public List<Long> findExpiredExhaustedIds(Instant now, int maxAttempts, int size) {
+    return jpaRepository.findExpiredExhaustedIds(
+        now, maxAttempts, ChatTranslationStatus.PROCESSING, PageRequest.of(0, size));
+  }
+
   /** JPA 행을 외부 기술에 의존하지 않는 도메인 객체로 복원한다. */
   private ChatMessageTranslation toDomain(ChatMessageTranslationJpaEntity entity) {
     return ChatMessageTranslation.builder()

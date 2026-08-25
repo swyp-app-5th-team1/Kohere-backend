@@ -157,11 +157,12 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 미설정 언어가 기존 규칙대로 `en`으로 fallback
 - 현재 채팅 미지원 언어 값은 `en`으로 정규화
 - 발신자의 `users.lang`을 원문 언어로 사용하지 않고 provider 자동 감지
-- 원문 commit·ACK·room broadcast가 Google timeout·4xx·5xx와 독립
+- 원문 commit·발신자 ACK가 Google timeout·4xx·5xx와 독립이며, 수신자 메시지 이벤트는 최종 번역 상태와 원문을 함께 전달
 - `PENDING → PROCESSING → SUCCEEDED | NOT_REQUIRED | FAILED` 상태 전이
 - 재시도 가능한 오류는 최초 요청 포함 최대 5회만 호출하고 별도 다음 재시도 시각을 저장하지 않음
 - timeout·연결 오류·429·5xx는 최대 5회, 잘못된 요청·인증·설정 오류는 한 번에 `FAILED`
 - n번째 호출 뒤 Worker가 중단되면 lease 회수 후 남은 `5-n`회만 실행
+- 5번째 호출 중 Worker가 중단되면 lease 만료 뒤 추가 호출 없이 `FAILED`로 종결하고 원문 전달
 - 여러 Worker가 경합해도 같은 번역의 provider 총 호출은 5회 이하
 - lease 만료 작업을 worker가 안전하게 다시 처리
 - 같은 `clientMessageId` 재시도와 동시 worker 실행에도 번역 행 한 개
@@ -395,9 +396,9 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. 신규 TEXT 원문과 수신자별 `PENDING` 번역 작업을 같은 트랜잭션에 저장한다. BOOKING_CARD에는 번역 작업을 만들지 않는다.
 3. provider 독립 `ChatTranslationClient`, Google Cloud Translation Advanced v3 adapter와 번역 비활성 환경용 구현을 둔다.
 4. 번역 대상은 수신자의 `users.lang`에서 정한다. `ko`는 한국어, 그 밖의 값이나 미설정 값은 현재 지원 범위의 `en`으로 정규화하고 원문 언어는 provider가 자동 감지한다.
-5. Translation Worker는 commit 직후 작업을 깨우고, 놓친 작업은 기본 60초의 설정 가능한 복구 조회로 다시 찾는다. 이 조회는 일반 번역 지연이나 재시도 시각을 만드는 polling이 아니라 신호 유실·재시작의 안전망이다.
+5. Translation Worker는 commit 직후 작업을 깨우고, 놓친 작업은 기본 60초의 설정 가능한 복구 조회로 다시 찾는다. 이 조회는 일반 번역 지연이나 재시도 시각을 만드는 polling이 아니라 신호 유실·재시작의 안전망이며, 최대 시도에서 멈춘 작업도 최종 실패로 정리한다.
 6. worker는 timeout·연결 오류·429·5xx에 기본 0.2초부터 짧고 설정 가능한 backoff를 적용한다. 최초 요청 포함 최대 5회와 전체 기본 5초 전달 기한 안에서 `SUCCEEDED`, `NOT_REQUIRED`, `FAILED`로 저장한다.
-7. provider 호출 직전에 `attempt_count`를 증가시키며, 다음 재시도 시각은 저장하지 않고 상태와 crash 복구용 lease만 저장한다. 재시작 뒤에는 남은 횟수만 이어서 처리한다.
+7. provider 호출 직전에 `attempt_count`를 증가시키며, 다음 재시도 시각은 저장하지 않고 상태와 crash 복구용 lease만 저장한다. 재시작 뒤에는 남은 횟수만 이어서 처리하고, `attempt_count=5`에서 lease가 끝난 작업은 추가 호출 없이 `FAILED`로 종결한다.
 8. 최종 결과는 수신자 개인 queue로만 전달한다. `SUCCEEDED`는 원문+번역본, `NOT_REQUIRED`·`FAILED`는 원문+상태를 한 payload로 보내며 REST 이력도 같은 저장 결과를 복구한다.
 9. 재시도 가능한 오류는 최초 포함 최대 5회, 전체 기본 5초 기한 안에서 처리한다. 번역 실패·지연은 원문 저장과 발신자 ACK 성공을 변경하지 않는다.
 10. 기능 도입 전 과거 메시지는 일괄 번역하지 않고 도입 후 신규 메시지만 처리한다.
@@ -496,7 +497,7 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 - 원문은 공백·줄바꿈 포함 Unicode code point 3,000자까지 허용한다.
 - 받은 메시지는 사용자 언어 번역본을 우선 표시하고 원문을 확인할 수 있다.
 - 내가 보낸 메시지는 원문을 우선 표시한다.
-- 번역 장애가 원문 저장·ACK·실시간 전달을 실패시키지 않는다.
+- 번역 장애가 원문 저장·발신자 ACK를 취소하지 않으며, 수신자는 최종 `FAILED`와 원문을 한 이벤트로 받는다.
 - 번역 결과는 지정 수신자에게만 전달되고 REST 이력으로 복구된다.
 - 후속 물리 삭제를 구현할 때 원문과 번역본의 생명주기를 함께 처리한다.
 - WebSocket 단절 중 메시지를 REST catch-up으로 복구한다.

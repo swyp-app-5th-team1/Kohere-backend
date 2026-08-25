@@ -160,6 +160,24 @@ class ChatTranslationWorkerTest {
     verifyNoMoreInteractions(resultPublisher);
   }
 
+  /** 마지막 호출 중 서버가 종료된 작업은 여섯 번째 호출 없이 FAILED 원문 결과로 끝낸다. */
+  @Test
+  @DisplayName("최대 호출 횟수에서 멈춘 작업은 복구 시 실패로 종결한다")
+  void completesExpiredExhaustedWorkAsFailure() {
+    ChatTranslationCompletion completion = completion(ChatTranslationStatus.FAILED, null);
+    given(transactions.findExpiredExhaustedIds(any(), eq(5), anyInt()))
+        .willReturn(java.util.List.of(TRANSLATION_ID));
+    given(transactions.completeExpiredExhausted(eq(TRANSLATION_ID), any(), eq(5)))
+        .willReturn(Optional.of(completion));
+    given(transactions.findRecoverableIds(any(), eq(5), anyInt())).willReturn(java.util.List.of());
+
+    worker.recoverUnfinishedWork();
+
+    verify(transactions).completeExpiredExhausted(eq(TRANSLATION_ID), any(), eq(5));
+    verify(resultPublisher).publish(completion.originalMessage(), completion.translation());
+    verifyNoMoreInteractions(translationClient);
+  }
+
   /** 지정한 시도 횟수와 대상 언어를 가진 처리 snapshot을 만든다. */
   private static ChatTranslationWorkItem workItem(int attemptCount, String targetLanguage) {
     Instant now = Instant.parse("2026-08-22T01:00:00Z");
