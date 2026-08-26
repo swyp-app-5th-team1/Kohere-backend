@@ -71,7 +71,8 @@ public class ChatRoomController {
    * 채팅방 화면의 헤더와 상대·매물 정보를 한 건 조회한다.
    *
    * <p>목록을 거치지 않는 알림·딥링크 진입에서도 사용할 수 있다. 메시지는 포함하지 않으며, 실제 대화는 {@code GET
-   * /api/v1/chat-rooms/{roomId}/messages}로 별도 조회한다.
+   * /api/v1/chat-rooms/{roomId}/messages}로 별도 조회한다. 임차인 화면의 신청 배너는 응답의 {@code canApply}로 표시 여부를
+   * 결정한다.
    *
    * @param principal 검증된 access token에서 만든 로그인 사용자 정보
    * @param roomId 목록·알림·딥링크에서 받은 서버 채팅방 ID

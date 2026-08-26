@@ -8,12 +8,13 @@
  * <p>모듈 경계·계층 규칙은 docs/convention/code-style.md §3을 따른다. 공유 커널 {@code common}에 의존하고, 모듈 간 통신은 도메인
  * 이벤트 기반이다(ADR-0002). booking 모듈이 발행하는 {@code BookingCreatedEvent}를 구독하므로 {@code booking}을 허용 의존에
  * 둔다(이벤트 타입에 대한 단방향 의존; booking은 chat을 모른다). 문의 방을 만들 때는 {@code listing :: api}로 공개 매물·임대인을 확인하고,
- * 참여자 표시 정보·언어·차단 여부는 {@code user :: api} 공개 계약으로만 조회한다.
+ * 참여자 표시 정보·언어·차단 여부는 {@code user :: api} 공개 계약으로만 조회한다. 채팅방 신청 배너는 {@code booking :: api} 공개 조회로
+ * 현재 신청 가능 여부만 받는다.
  *
  * <p>문의 방 생성처럼 즉시 결과가 필요한 협력은 공개 query API로, 신청 카드 생성처럼 비동기 부수효과는 도메인 이벤트로 연결한다. 다른 모듈의 내부 도메인·영속
  * 타입을 직접 import하지 않는다.
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Chat",
-    allowedDependencies = {"common", "booking", "listing :: api", "user :: api"})
+    allowedDependencies = {"common", "booking", "booking :: api", "listing :: api", "user :: api"})
 package com.kohere.chat;

@@ -45,6 +45,11 @@ public class BookingRepositoryImpl implements BookingRepository {
   }
 
   @Override
+  public boolean existsByTenantIdAndListingId(long tenantId, String listingId) {
+    return jpaRepository.existsByTenantIdAndListingId(tenantId, listingId);
+  }
+
+  @Override
   public List<Booking> findVisibleByTenantId(
       Long tenantId, Collection<Long> blockedIds, int page, int size) {
     return jpaRepository

@@ -24,6 +24,14 @@ public interface BookingRepository {
   /** 동일 세입자·동일 방 상품에 이미 예약이 있는지(신규 신청 중복 방지 사전 검사). */
   boolean existsByTenantIdAndRoomOfferId(long tenantId, String roomOfferId);
 
+  /**
+   * 동일 세입자가 해당 매물의 방 상품 중 하나에라도 신청한 기록이 있는지 확인한다.
+   *
+   * <p>채팅방 신청 배너는 매물 단위라 방 상품을 구분하지 않는다. 사용자별 삭제 시각도 목록 표시 상태일 뿐 신청 취소가 아니므로 이 조회에서는 제외 조건으로 쓰지
+   * 않는다.
+   */
+  boolean existsByTenantIdAndListingId(long tenantId, String listingId);
+
   /** 표시 가능한 내 예약을 최신순(createdAt desc)으로 오프셋 조회한다(세입자 분기). */
   List<Booking> findVisibleByTenantId(
       Long tenantId, Collection<Long> blockedIds, int page, int size);

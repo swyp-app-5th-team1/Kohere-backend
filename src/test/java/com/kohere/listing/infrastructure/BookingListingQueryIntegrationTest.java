@@ -86,6 +86,7 @@ class BookingListingQueryIntegrationTest {
     assertThat(view.deposit()).isEqualTo(500000);
     assertThat(view.monthlyRent()).isEqualTo(550000);
     assertThat(view.landlordId()).isEqualTo(1L);
+    assertThat(bookingListingQueryService.hasPublishedActiveRoomOffer(LISTING_ID)).isTrue();
   }
 
   @Test
@@ -106,6 +107,7 @@ class BookingListingQueryIntegrationTest {
 
     assertThat(bookingListingQueryService.findPublishedRoomOffer(LISTING_ID, ROOM_OFFER_ID))
         .isEmpty();
+    assertThat(bookingListingQueryService.hasPublishedActiveRoomOffer(LISTING_ID)).isFalse();
   }
 
   @Test
@@ -141,6 +143,7 @@ class BookingListingQueryIntegrationTest {
             bookingListingQueryService.findPublishedRoomOffer(
                 "6858e20000000000000000ff", ROOM_OFFER_ID))
         .isEmpty();
+    assertThat(bookingListingQueryService.hasPublishedActiveRoomOffer(LISTING_ID)).isFalse();
   }
 
   @Test

@@ -293,6 +293,8 @@ public final class ChatDocsFields {
       - 상대 프로필 이미지와 일반 채팅방용 매물 이미지는 반환하지 않는다. 앱은 기본 프로필 아이콘을 사용한다.
       - `myRole`은 앱이 BOOKING_CARD를 임차인용 또는 임대인용으로 표시할 때 사용한다.
       - `blocked=true`이면 어느 방향으로든 차단 관계가 있어 새 메시지를 보낼 수 없다. 누가 차단했는지는 노출하지 않는다.
+      - `canApply=true`이면 임차인 화면 상단에 Apply now 배너를 표시한다. 이미 해당 매물에 신청했거나 신청 불가능한 상태이면 false다.
+      - `canApply`는 배너 노출을 위한 사전 판단이다. 실제 신청 API는 선택한 방 상품과 입주 희망일을 포함한 전체 규칙을 다시 검증한다.
 
       **보안 규칙**
 
@@ -854,6 +856,10 @@ public final class ChatDocsFields {
         field("data.counterpart.userId", JsonFieldType.NUMBER, "현재 대화 상대의 서버 사용자 ID"),
         field("data.counterpart.displayName", JsonFieldType.STRING, "채팅방 상단에 표시할 상대방 이름"),
         field("data.blocked", JsonFieldType.BOOLEAN, "어느 방향이든 차단 관계가 있어 새 메시지를 보낼 수 없으면 true"),
+        field(
+            "data.canApply",
+            JsonFieldType.BOOLEAN,
+            "현재 임차인이 이 매물에 신청할 수 있어 Apply now 배너를 표시해야 하면 true. 이미 신청함·임대인·차단·매물 비공개·활성 방 상품 없음이면 false"),
         errorNull());
   }
 

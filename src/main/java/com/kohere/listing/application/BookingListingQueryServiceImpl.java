@@ -36,6 +36,18 @@ public class BookingListingQueryServiceImpl implements BookingListingQueryServic
   }
 
   @Override
+  public boolean hasPublishedActiveRoomOffer(String listingId) {
+    return listingRepository
+        .findById(listingId)
+        .filter(listing -> listing.getStatus() == Listing.ListingStatus.PUBLISHED)
+        .map(
+            listing ->
+                listing.getRoomOffers().stream()
+                    .anyMatch(offer -> offer.status() == Listing.RoomOfferStatus.ACTIVE))
+        .orElse(false);
+  }
+
+  @Override
   public Optional<RoomOfferBookingView> findRoomOfferForExistingBooking(
       String listingId, String roomOfferId) {
     return listingRepository

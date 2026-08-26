@@ -306,6 +306,8 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 9. 신청 성공 뒤 앱이 같은 문의 API로 채팅방에 진입하도록 하고, event handler는 같은 방에 `(chatRoomId, bookingId)` 기준으로 카드를 한 번 저장한다.
 10. 신규 카드만 마지막 메시지·방 재표시를 만들고 동일 bookingId 재처리는 아무 상태도 변경하지 않는다. 실시간 발행은 STOMP 단계에서 commit 이후로 연결한다.
 11. 사용자 탈퇴·익명화 이벤트가 오면 저장된 BOOKING_CARD의 신청자 PII도 ADR-0014에 맞게 익명화한다.
+12. 채팅방 단건 응답은 임차인의 기존 매물 신청 기록과 현재 매물 상태를 확인해 Apply now 배너용 `canApply`를 반환한다. 기존 신청 중복 기준
+    `(tenant_id, room_offer_id)`와 DB 구조는 변경하지 않는다.
 
 완료 조건:
 
@@ -314,6 +316,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 임차인과 임대인이 같은 카드 데이터를 역할에 맞는 UI로 표시할 수 있다.
 - 다른 매물은 다른 채팅방을 반환한다.
 - 본인 매물 문의와 비참여자의 채팅방 조회가 거부된다.
+- 미신청·기존 신청·임대인·차단·매물 비공개 상태별 `canApply` 값이 정확하다.
 - 목록·단건·이력 REST Docs 테스트가 통과한다.
 
 #### 4단계: 사용자별 삭제와 차단 만들기

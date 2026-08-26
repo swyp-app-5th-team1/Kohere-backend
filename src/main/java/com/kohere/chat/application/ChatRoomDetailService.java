@@ -1,8 +1,10 @@
 package com.kohere.chat.application;
 
+import com.kohere.booking.api.BookingEligibilityQueryService;
 import com.kohere.chat.application.dto.ChatCounterpartResponse;
 import com.kohere.chat.application.dto.ChatListingSummaryResponse;
 import com.kohere.chat.application.dto.ChatRoomDetailResponse;
+import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
@@ -32,6 +34,7 @@ public class ChatRoomDetailService {
   private final ChatRoomMemberRepository memberRepository;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
+  private final BookingEligibilityQueryService bookingEligibilityQueryService;
 
   /**
    * 로그인 사용자가 볼 수 있는 채팅방 한 건의 헤더 정보를 반환한다.
@@ -51,6 +54,7 @@ public class ChatRoomDetailService {
     long counterpartId = member.getCounterpartId();
     String counterpartName = userAccountService.getUserName(counterpartId);
     boolean blocked = userBlockService.isBlockedBetween(userId, counterpartId);
+    boolean canApply = canApply(member, room, blocked);
 
     // 매물 원본을 다시 조회하지 않고 방 생성 시 저장한 snapshot을 사용한다. 매물이 비공개·삭제돼도 대화 맥락이 유지된다.
     ChatListingSummaryResponse listing =
@@ -64,7 +68,22 @@ public class ChatRoomDetailService {
         member.getRole(),
         listing,
         new ChatCounterpartResponse(counterpartId, counterpartName),
-        blocked);
+        blocked,
+        canApply);
+  }
+
+  /**
+   * 채팅방 상단의 신청 배너를 표시할지 결정한다.
+   *
+   * <p>임대인은 신청 주체가 아니고, 차단 상태에서는 실제 신청 API도 거부하므로 별도 booking 조회 없이 바로 {@code false}를 반환한다. 정상 임차인만
+   * booking 모듈에 현재 매물 신청 가능 여부를 묻는다.
+   */
+  private boolean canApply(ChatRoomMember member, ChatRoom room, boolean blocked) {
+    if (member.getRole() != ChatParticipantRole.TENANT || blocked) {
+      return false;
+    }
+    return bookingEligibilityQueryService.canApply(
+        member.getUserId(), room.getListingId(), room.getLandlordId());
   }
 
   /** 참여 중이고 현재 사용자 화면에서 숨기지 않은 member 행만 반환한다. */

@@ -13,6 +13,13 @@ public interface BookingListingQueryService {
   Optional<RoomOfferBookingView> findPublishedRoomOffer(String listingId, String roomOfferId);
 
   /**
+   * 매물이 현재 공개 상태이고 신청할 수 있는 활성 방 상품이 하나 이상 있는지 확인한다.
+   *
+   * <p>채팅방 신청 배너는 특정 방 상품을 아직 고르기 전이므로 {@code roomOfferId} 없이 매물 전체의 신청 가능성만 확인한다.
+   */
+  boolean hasPublishedActiveRoomOffer(String listingId);
+
+  /**
    * <b>이미 존재하는 예약</b>의 표시용 조회다. 매물 상태와 방 상품 상태를 <b>둘 다 보지 않는다</b>.
    *
    * <p>예약 카드의 매물명·사진·금액은 예약 문서에 없고 매번 여기로 물어본다. 공개 매물만 대상으로 하면 임대인이 매물을 고치는 동안(수정 심사)이나 방을 내린 뒤에

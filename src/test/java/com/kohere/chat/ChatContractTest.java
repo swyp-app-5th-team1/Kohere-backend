@@ -14,6 +14,7 @@ import com.kohere.chat.application.dto.BookingCardResponse;
 import com.kohere.chat.application.dto.ChatCounterpartResponse;
 import com.kohere.chat.application.dto.ChatLastMessageResponse;
 import com.kohere.chat.application.dto.ChatListingSummaryResponse;
+import com.kohere.chat.application.dto.ChatRoomDetailResponse;
 import com.kohere.chat.application.dto.ChatRoomResponse;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.application.dto.MessageResponse;
@@ -81,6 +82,26 @@ class ChatContractTest {
     assertThat(json.has("unreadCount")).isFalse();
     assertThat(json.path("listing").has("thumbnailUrl")).isFalse();
     assertThat(json.path("counterpart").has("profileImageUrl")).isFalse();
+  }
+
+  /** 채팅방 화면이 신청 배너 노출 여부를 별도 계산 없이 바로 판단할 수 있는지 확인한다. */
+  @Test
+  void roomDetailContainsCanApply() {
+    ChatRoomDetailResponse response =
+        new ChatRoomDetailResponse(
+            556L,
+            ChatParticipantRole.TENANT,
+            new ChatListingSummaryResponse(
+                "6858e2000000000000000001", "Hongdae Studio share", "Seogyo-dong, Mapo-gu"),
+            new ChatCounterpartResponse(42L, "Hongdae landlord"),
+            false,
+            true);
+
+    JsonNode json = objectMapper.valueToTree(response);
+
+    assertThat(fieldNames(json))
+        .containsExactly("chatRoomId", "myRole", "listing", "counterpart", "blocked", "canApply");
+    assertThat(json.path("canApply").asBoolean()).isTrue();
   }
 
   /** TEXT가 원문을 잃지 않은 채 현재 수신자용 번역본을 별도 객체로 제공하는지 확인한다. */

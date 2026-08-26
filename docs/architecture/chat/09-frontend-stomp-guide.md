@@ -204,7 +204,8 @@ Authorization: Bearer <accessToken>
       "userId": 7,
       "displayName": "Gil dong Hong"
     },
-    "blocked": false
+    "blocked": false,
+    "canApply": false
   },
   "error": null
 }
@@ -220,10 +221,13 @@ Authorization: Bearer <accessToken>
 | `data.counterpart.userId` | 현재 대화 상대의 `users.id` |
 | `data.counterpart.displayName` | 채팅방 상단에 표시할 상대방 이름 |
 | `data.blocked` | 어느 방향이든 차단 관계가 있어 새 TEXT를 보낼 수 없으면 true |
+| `data.canApply` | 임차인 화면에서 Apply now 배너를 표시해야 하면 true |
 
 - `listing`은 방을 만들 때 저장한 표시용 정보다. 매물이 나중에 비공개돼도 기존 채팅방에서 어떤 매물에 관한 대화인지 보여 줄 수 있다.
 - `counterpart.userId`는 상대방의 `users.id`다. 차단 해제처럼 상대 ID가 필요한 기존 user API에서 사용할 수 있다.
 - `blocked=true`이면 과거 대화는 보여 주되 TEXT 입력창을 비활성화한다.
+- `canApply=true`이면 Apply now 배너를 표시하고, false이면 숨긴다. 이미 이 매물에 신청했거나 임대인·차단·매물 비공개·활성 방 상품 없음 상태이면 false다.
+- 목록에서 숨긴 신청은 취소가 아니므로 `canApply=false`를 유지한다. 실제 신청 요청은 신청 API가 최종 검증한다.
 - 방이 없거나 현재 사용자가 참여자가 아니거나 현재 사용자에게 숨겨진 방이면 `404 CHAT_ROOM_NOT_FOUND`다.
 
 ## 6. 연결 주소
@@ -832,6 +836,7 @@ Simple Broker는 연결이 끊긴 동안의 이벤트를 다시 재생하지 않
 - [ ] 문의하기 응답의 신규·기존 여부와 관계없이 반환된 `chatRoomId`로 채팅방을 연다.
 - [ ] 목록의 `counterpart`에는 아직 프로필 이미지가 없으므로 기본 아이콘을 사용한다.
 - [ ] 목록·상세의 `blocked=true`이면 과거 이력은 표시하고 TEXT 입력창만 비활성화한다.
+- [ ] 상세의 `canApply=true`일 때만 임차인 화면에 Apply now 배너를 표시한다.
 - [ ] 최근 이력의 `nextCursor`는 `hasNext=true`일 때 같은 조회 방향의 다음 요청에 사용한다.
 - [ ] 개발 `wss`, 로컬 `ws` 주소를 환경별로 사용한다.
 - [ ] JWT는 URL이 아니라 STOMP CONNECT native header에 넣는다.

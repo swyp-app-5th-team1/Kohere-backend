@@ -84,6 +84,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.kohere.TestcontainersConfiguration;
+import com.kohere.booking.api.BookingEligibilityQueryService;
 import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
@@ -159,6 +160,7 @@ class ChatDocsTest {
   @MockitoBean private ChatListingQueryService listingQueryService;
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private UserBlockService userBlockService;
+  @MockitoBean private BookingEligibilityQueryService bookingEligibilityQueryService;
 
   private MockMvc mockMvc;
 
@@ -178,6 +180,8 @@ class ChatDocsTest {
         .willReturn(Optional.of(listingView(LANDLORD_ID)));
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
     given(userAccountService.getUserName(LANDLORD_ID)).willReturn("Hongdae landlord");
+    given(bookingEligibilityQueryService.canApply(TENANT_ID, LISTING_ID, LANDLORD_ID))
+        .willReturn(true);
   }
 
   /** 실제 STOMP 상수로 만든 안내 응답과 프런트용 설명을 Swagger의 Chats 항목에 함께 노출한다. */
@@ -385,6 +389,7 @@ class ChatDocsTest {
         .andExpect(jsonPath("$.data.counterpart.userId").value(LANDLORD_ID))
         .andExpect(jsonPath("$.data.counterpart.displayName").value("Hongdae landlord"))
         .andExpect(jsonPath("$.data.blocked").value(false))
+        .andExpect(jsonPath("$.data.canApply").value(true))
         .andDo(
             document(
                 "chat-room-detail",

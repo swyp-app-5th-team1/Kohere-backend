@@ -18,6 +18,9 @@ interface BookingJpaRepository extends JpaRepository<BookingJpaEntity, Long> {
 
   boolean existsByTenantIdAndRoomOfferId(Long tenantId, String roomOfferId);
 
+  /** 배너 판단은 사용자별 목록 숨김과 무관하게 실제 신청 행 존재 여부만 확인한다. */
+  boolean existsByTenantIdAndListingId(Long tenantId, String listingId);
+
   @Query(
       "select b from BookingJpaEntity b where b.tenantId = :tenantId "
           + "and b.tenantDeletedAt is null and b.landlordId not in :blockedIds")
