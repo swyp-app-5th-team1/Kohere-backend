@@ -192,6 +192,8 @@ module "host" {
   chat_translation_enabled            = var.chat_translation_enabled
   chat_translation_project_id         = var.google_cloud_project_id
   chat_translation_location           = "global"
+  firebase_enabled                    = var.firebase_enabled
+  firebase_project_id                 = var.google_cloud_project_id
 
   # 임대인 웹 릴리스(#232) — deploy-web.sh 렌더와 부팅 복원(current.txt)이 이 버킷을 쓴다.
   web_artifacts_bucket = module.web.bucket_name

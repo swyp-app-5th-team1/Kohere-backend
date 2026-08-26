@@ -9,6 +9,8 @@ aws_region = "ap-northeast-2"
 google_cloud_project_id                = "project-bdb9704d-3952-475b-a1c"
 google_translation_service_account_email = "kohere@project-bdb9704d-3952-475b-a1c.iam.gserviceaccount.com"
 # chat_translation_enabled = true
+# Firebase도 위 Google 프로젝트와 WIF 서비스 계정을 재사용한다. APNs·앱 토큰 준비 뒤 실제 발송 환경에서 켠다.
+# firebase_enabled = true
 
 # ----- 앱 이미지 (필수) -----
 # CI가 ECR에 push한 dev 태그 이미지.

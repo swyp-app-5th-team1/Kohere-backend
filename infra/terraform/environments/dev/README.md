@@ -158,7 +158,7 @@ apply 전에 아래 7개는 반드시 준비한다. 모두 `default`가 없어 �
 | Route53 호스팅 영역 ID | `route53_zone_id` | 해당 도메인의 **이미 존재하는** 호스팅 영역 Z-ID |
 | 이미지 CDN 도메인 | `cdn_domain_name` | 이미지 서빙용 커스텀 도메인(예: `cdn.dev.kohere.app`) |
 | 이미지 S3 버킷명 | `images_bucket_name` | 콘텐츠 이미지 버킷 이름(S3 전역 유일 — 직접 지정, 자동생성 없음) |
-| Google 프로젝트 ID | `google_cloud_project_id` | Cloud Translation과 WIF를 구성한 프로젝트 ID |
+| Google 프로젝트 ID | `google_cloud_project_id` | Cloud Translation·Firebase와 WIF를 구성한 프로젝트 ID |
 | 번역 서비스 계정 | `google_translation_service_account_email` | `kohere@...iam.gserviceaccount.com` 형식의 기존 서비스 계정 이메일 |
 
 > **Route53 사전 조건(중요)**: `route53_zone_id` 가 필수이므로 apply 전에 그 호스팅 영역이 계정에 **이미 존재**하고, 도메인 등록·NS 위임이 끝나 있어야 한다. NS 위임이 안 끝났으면 `module.cdn_acm` 의 ACM **DNS 검증이 통과하지 못하고 무한 대기/타임아웃**한다.
@@ -234,6 +234,8 @@ aws_region = "ap-northeast-2"
 # --- Google 채팅 자동 번역(필수, 비밀키 아님) ---
 google_cloud_project_id                   = "project-bdb9704d-3952-475b-a1c"
 google_translation_service_account_email = "kohere@project-bdb9704d-3952-475b-a1c.iam.gserviceaccount.com"
+# Firebase도 같은 프로젝트와 WIF 서비스 계정을 사용한다. APNs·앱 토큰 준비 뒤 실제 발송 환경에서 켠다.
+# firebase_enabled = true
 
 # --- AWS 필수 5개 (default 없음) ---
 # CI가 ECR에 push할 dev 태그 이미지 (account_id 는 본인 것으로)
@@ -349,7 +351,7 @@ terraform output github_deploy_role_arn   # 다음 단계에서 사용
 | 바꾼 것 | 반영 방법 |
 | --- | --- |
 | SSM으로 주입되는 값 — `.env` 항목(`APP_WEB_BASE_URL`·`SMTP_USERNAME`·`SOLAPI_*` 등) | `terraform apply` 후 서버에서 `refresh-env.sh` 재실행 + app 컨테이너 recreate |
-| 그 밖의 `user_data` 내용 — compose 환경변수(`MAIL_FROM`·`SPRING_MAIL_HOST`)·Caddyfile·마운트·스크립트 | **EC2 교체** |
+| 그 밖의 `user_data` 내용 — compose 환경변수(`MAIL_FROM`·`SPRING_MAIL_HOST`·`APP_FIREBASE_*`)·Caddyfile·마운트·스크립트 | **EC2 교체** |
 
 ```bash
 terraform plan  -replace="module.host.aws_instance.host"   # destroy 대상이 EC2 하나인지 확인
@@ -430,10 +432,10 @@ sudo cat /var/log/devhost-init.log
 # 4) 컨테이너 상태 — app/mysql/mongo/redis/caddy 가 Up 이어야 함
 cd /opt/kohere && sudo docker compose ps
 
-# 5) WIF 파일과 번역 환경변수 확인 — 파일 내용이나 토큰은 출력하지 않는다.
+# 5) WIF 파일과 번역·Firebase 환경변수 확인 — 파일 내용이나 토큰은 출력하지 않는다.
 sudo test -r /opt/kohere/google-wif-credentials.json && echo "WIF 설정 파일 확인"
 sudo docker inspect kohere-app --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|APP_CHAT_TRANSLATION_)'
+  | grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|APP_CHAT_TRANSLATION_|APP_FIREBASE_)'
 ```
 
 > `public_ip` 로 직접(`https://<IP>`) 접속하면 인증서가 도메인용이라 브라우저 경고가 뜬다 — 정상 접속 경로는 `app_url`(HTTPS) 이다. app만 빠져 있으면 보통 ECR에 `:dev` 이미지가 없는 것이다(6단계 대안 B). CI 배포를 한 번 돌리면 채워진다. SMTP(`smtp_host`)를 비워 둔 경우 이메일 인증 플로우는 dev에서 동작하지 않는다(dev엔 MailHog 등 로컬 SMTP가 없다). 마찬가지로 `naver_search_client_id`/`naver_search_client_secret` 를 비워 두면 지도 장소 검색(`GET /api/v1/listings/places`)이 502(`UPSTREAM_ERROR`)로 실패한다 — 키를 채우고 재배포하면 반영된다.

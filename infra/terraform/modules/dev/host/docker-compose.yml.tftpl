@@ -113,6 +113,9 @@ services:
       APP_CHAT_TRANSLATION_ENABLED: "${chat_translation_enabled}"
       APP_CHAT_TRANSLATION_PROJECT_ID: ${chat_translation_project_id}
       APP_CHAT_TRANSLATION_LOCATION: ${chat_translation_location}
+      # Firebase Admin SDK도 위 ADC/WIF 인증을 공유한다. 프로젝트 ID는 번역과 같은 Google 프로젝트다.
+      APP_FIREBASE_ENABLED: "${firebase_enabled}"
+      APP_FIREBASE_PROJECT_ID: "${firebase_project_id}"
       # 연락처 SMS(SOLAPI)·사업자번호(비즈노)·네이버 지역 검색(#160/#162)·NCP 주소 검색(#223)·카카오 로컬(#224) 설정은 enabled·from·API 키·Client ID/Secret 모두
       # .env(SSM→refresh-env, env_file)로만 주입한다. compose(부팅 1회 렌더)에 박지 않아 tfvars 변경이 재배포(refresh-env 재실행 + app recreate)만으로 반영된다(ADR-0024/0034/0033).
 volumes:

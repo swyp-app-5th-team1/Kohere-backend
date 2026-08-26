@@ -107,7 +107,7 @@ variable "images_cdn_domain" {
   default     = ""
 }
 
-# ----- Google Cloud Translation WIF -----
+# ----- Google Cloud Translation·Firebase WIF -----
 variable "google_wif_credential_configuration" {
   description = "EC2 앱이 ADC로 읽을 비밀키 없는 Google external_account 설정 JSON"
   type        = string
@@ -127,6 +127,16 @@ variable "chat_translation_location" {
   description = "Cloud Translation API location"
   type        = string
   default     = "global"
+}
+
+variable "firebase_enabled" {
+  description = "앱의 Firebase Admin SDK·FCM 활성화 여부"
+  type        = bool
+}
+
+variable "firebase_project_id" {
+  description = "FCM 요청 대상 Firebase 프로젝트 ID"
+  type        = string
 }
 
 # ----- 로그 반출 (ADR-0038 롤아웃 ⑥) -----

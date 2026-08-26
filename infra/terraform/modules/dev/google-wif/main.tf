@@ -9,7 +9,7 @@ data "google_project" "current" {
 }
 
 locals {
-  # WIF와 서비스 계정 가장, 번역 호출에 필요한 API만 활성화한다.
+  # WIF와 서비스 계정 가장, 번역·FCM 호출에 필요한 API만 활성화한다.
   # destroy 시 API를 다시 끄면 같은 프로젝트의 다른 워크로드가 영향을 받을 수 있으므로 disable_on_destroy=false로 둔다.
   required_services = toset([
     "cloudresourcemanager.googleapis.com",
@@ -17,6 +17,7 @@ locals {
     "iamcredentials.googleapis.com",
     "sts.googleapis.com",
     "translate.googleapis.com",
+    "fcm.googleapis.com",
   ])
 
   # 공식 AWS attribute mapping대로 assumed-role ARN에서 역할 이름을 추출한다.

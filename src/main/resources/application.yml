@@ -75,6 +75,12 @@ logging:
 # 인증·토큰 정책값(비밀 아님). 시크릿·환경 의존값(secret·pepper·oidc audience·datasource)은
 # 프로파일별 파일에서 주입한다 — base에는 운영-위험 기본값(시크릿 폴백·접속정보)을 두지 않는다.
 app:
+  firebase:
+    # 로컬·테스트에서는 Google 자격증명 없이도 기동할 수 있도록 기본값을 끈다.
+    # dev에서만 인프라 설정으로 켜며, 활성화되면 기존 ADC/WIF 인증으로 Firebase Admin SDK를 초기화한다.
+    enabled: ${APP_FIREBASE_ENABLED:false}
+    # FCM 요청 대상 Firebase 프로젝트. dev는 기존 Google Cloud 프로젝트 ID를 그대로 전달한다.
+    project-id: ${APP_FIREBASE_PROJECT_ID:}
   chat:
     websocket:
       # 값을 비워 두면 Spring의 안전한 기본값인 같은 Origin만 허용한다. 웹과 API가 다른 Origin으로

@@ -26,6 +26,8 @@ locals {
     chat_translation_enabled    = var.chat_translation_enabled
     chat_translation_project_id = var.chat_translation_project_id
     chat_translation_location   = var.chat_translation_location
+    firebase_enabled            = var.firebase_enabled
+    firebase_project_id         = var.firebase_project_id
   })
 
 }

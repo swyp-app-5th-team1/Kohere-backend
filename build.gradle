@@ -96,6 +96,9 @@ dependencies {
   implementation platform("com.google.cloud:libraries-bom:${googleCloudLibrariesBomVersion}")
   implementation 'com.google.cloud:google-cloud-translate'
 
+  // iOS 앱에 시스템 푸시 알림을 보내기 위한 Firebase Cloud Messaging 서버 SDK다.
+  implementation 'com.google.firebase:firebase-admin:9.10.0'
+
   // 매물 사진 업로드 — S3(로컬은 endpoint만 바꿔 MinIO, ADR-0041). apache-client는 이 한 경로에 과하고
   // 전이 의존이 넓어 url-connection-client로 대체한다(동기 PutObject/DeleteObjects만 쓴다).
   implementation('software.amazon.awssdk:s3') {

@@ -16,9 +16,9 @@ variable "aws_region" {
   default     = "ap-northeast-2"
 }
 
-# ----- Google Cloud Translation + AWS Workload Identity Federation -----
+# ----- Google Cloud Translation·Firebase + AWS Workload Identity Federation -----
 variable "google_cloud_project_id" {
-  description = "Cloud Translation API와 WIF를 구성할 Google Cloud 프로젝트 ID"
+  description = "Cloud Translation·Firebase API와 WIF를 구성할 Google Cloud 프로젝트 ID"
   type        = string
 }
 
@@ -36,6 +36,12 @@ variable "chat_translation_enabled" {
   description = "dev 앱의 1:1 채팅 Google 자동 번역 활성화 여부"
   type        = bool
   default     = true
+}
+
+variable "firebase_enabled" {
+  description = "dev 앱의 Firebase Admin SDK·FCM 활성화 여부"
+  type        = bool
+  default     = false
 }
 
 variable "app_image" {

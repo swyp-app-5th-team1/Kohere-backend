@@ -1,5 +1,5 @@
 variable "google_project_id" {
-  description = "Cloud Translation과 Workload Identity Federation을 구성할 Google Cloud 프로젝트 ID"
+  description = "Cloud Translation·Firebase와 Workload Identity Federation을 구성할 Google Cloud 프로젝트 ID"
   type        = string
 }
 
