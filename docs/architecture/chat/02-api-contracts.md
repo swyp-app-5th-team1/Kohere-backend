@@ -9,7 +9,7 @@
 | 구분 | Method | Path | 설명 | 성공 |
 | --- | --- | --- | --- | --- |
 | 기존 재사용 | POST | `/api/v1/listings/{listingId}/bookings` | 기존 입주 신청 생성 | 201 |
-| 골격 완성 | POST | `/api/v1/listings/{listingId}/inquiries` | 해당 매물의 채팅방 조회 또는 생성 | 신규 201 / 기존 200 |
+| 구현 | POST | `/api/v1/listings/{listingId}/inquiries` | 해당 매물의 채팅방을 보장하고 문의서 카드를 한 번 저장 | 신규 201 / 기존 200 |
 | 골격 완성 | GET | `/api/v1/chat-rooms` | 내 채팅방 목록 | 200 |
 | 신규 | GET | `/api/v1/chat-rooms/{roomId}` | 방 헤더·상대·매물 정보 | 200 |
 | 골격 완성 | GET | `/api/v1/chat-rooms/{roomId}/messages` | 과거 메시지 또는 연결 중 놓친 메시지 조회 | 200 |
@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | WebSocket 연결 | `/ws/chat` | 실시간 연결 시작 |
 | 메시지 전송 | `/app/chat-rooms/{roomId}/messages` | 텍스트를 애플리케이션 서버에 전송 |
-| 방 메시지 구독 | `/topic/chat-rooms/{roomId}` | 서버가 만든 새 BOOKING_CARD 수신 |
+| 방 메시지 구독 | `/topic/chat-rooms/{roomId}` | 서버가 만든 새 INQUIRY_CARD·BOOKING_CARD 수신 |
 | 저장 결과 | `/user/queue/chat-acks` | 내가 보낸 메시지의 DB 저장 결과 |
 | 오류 | `/user/queue/chat-errors` | 권한·차단·본문 검증 오류 |
 | 방 목록 이벤트 | `/user/queue/chat-room-events` | 새 방·목록 갱신·방 재노출 알림 |
@@ -58,7 +58,7 @@
 
 `POST /api/v1/listings/{listingId}/inquiries`
 
-요청 본문은 없다. 서버가 JWT에서 `tenantId`를 얻고 listing 모듈에서 `landlordId`를 찾는다. 따라서 앱이 사용자 ID를 보내거나 상대 사용자를 직접 선택하지 않는다.
+요청 본문은 없다. 서버가 JWT에서 `tenantId`를 얻고 listing 모듈에서 `landlordId`와 문의서에 필요한 공개 매물 정보를 찾는다. 따라서 앱이 사용자 ID·상대 사용자·카드 내용·가격을 직접 보내지 않는다.
 
 ```json
 {
@@ -75,8 +75,13 @@
 
 - 신규 방이면 `201 Created`, `created=true`
 - 기존 방이면 `200 OK`, `created=false`
+- `created=true`이면 새 방·참여자 두 명·`INQUIRY_CARD`를 함께 저장한 결과다.
+- 기존 방이면 `created=false`이며 `INQUIRY_CARD`를 새로 추가하지 않는다.
+- 따라서 신청 이벤트로 먼저 생성된 방에는 `BOOKING_CARD`만 유지되고, 신청 완료 뒤 같은 API로 roomId를 받아도 문의서가 추가되지 않는다.
 - 본인 매물 문의와 차단 관계는 거부
 - 동시 요청에서도 `(listingId, tenantId, landlordId)` UNIQUE로 한 방만 생성
+
+서버는 문의서 저장이 완료된 뒤 응답한다. 앱은 반환된 `chatRoomId`로 room topic을 구독하고 메시지 이력 API를 호출한다. `INQUIRY_CARD`는 대표 이미지, 매물 제목, city·district code, 매물 유형 code, 활성 방의 최소·최대 월세와 상세 이동용 `listingId`를 포함한다.
 
 주요 오류는 다음과 같다.
 
@@ -86,7 +91,7 @@
 - 매물이 없거나 공개 상태가 아님: `404 LISTING_NOT_FOUND`
 - 본인이 소유한 매물에 문의함: `422 CHAT_SELF_INQUIRY_NOT_ALLOWED`
 
-이 endpoint는 이름이 `inquiries`이지만 실질적으로 “같은 방을 보장하고 roomId를 반환하는” 멱등 API다. 문의하기와 신청 완료 후 진입이 함께 사용한다.
+이 endpoint는 “같은 방을 보장하고, 새 방이면 문의서를 함께 저장한 뒤 roomId를 반환하는” 멱등 API다. 문의 API를 재시도해도 방과 문의서를 중복 생성하지 않는다. 신청 완료 후 방 진입도 같은 `roomId` 기준을 사용하지만 이미 방이 있으므로 문의서를 추가하지 않으며, `BOOKING_CARD`는 Booking 이벤트가 별도로 생성한다.
 
 ### 5.2 채팅방 목록
 
@@ -123,15 +128,17 @@
 }
 ```
 
-빈 방이면 `lastMessage`는 null이다. 마지막 메시지가 `BOOKING_CARD`이면 `preview`는 null이고 앱이 `myRole`에 맞는 고정 문구를 표시한다.
+빈 방이면 `lastMessage`는 null이다. 마지막 메시지가 `INQUIRY_CARD` 또는 `BOOKING_CARD`이면 `preview`는 null이고 앱이 타입과 `myRole`에 맞는 고정 문구를 표시한다.
 
 `counterpart.displayName`은 user 공개 API가 제공하는 현재 표시 이름이다. `blocked=true`는 어느 방향이든 차단 관계가 있어 새 채팅을 보낼 수 없다는 뜻이며, 상대가 나를 차단했는지는 별도 필드로 노출하지 않는다.
 
-현재 user 모듈에는 프로필 이미지 계약이 없으므로 `counterpart`에는 이미지 URL을 넣지 않는다. 앱은 채팅방 목록과 헤더에서 기본 프로필 아이콘을 표시한다. `listing`에도 일반 채팅방에서 사용하지 않는 매물 대표 이미지를 넣지 않으며, 매물 이미지가 필요한 신청 카드는 `bookingCard.listing.thumbnailUrl`을 별도로 사용한다. 이 내용은 목록·단건 Swagger 응답 필드 설명에도 동일하게 명시한다.
+현재 user 모듈에는 프로필 이미지 계약이 없으므로 `counterpart`에는 이미지 URL을 넣지 않는다. 앱은 채팅방 목록과 헤더에서 기본 프로필 아이콘을 표시한다. `listing`에도 일반 채팅방에서 사용하지 않는 매물 대표 이미지를 넣지 않으며, 매물 이미지가 필요한 문의서와 신청 카드는 각각 `inquiryCard.thumbnailUrl`, `bookingCard.listing.thumbnailUrl`을 사용한다. 이 내용은 목록·단건 Swagger 응답 필드 설명에도 동일하게 명시한다.
 
 마지막 메시지가 내가 받은 메시지이고 현재 언어 번역본이 저장돼 있으면 preview는 번역본을 우선 사용한다. 내가 보낸 메시지이거나 번역본이 없으면 원문을 사용한다.
 
 마지막 메시지가 `BOOKING_CARD`이면 앱이 `myRole`에 맞는 고정 문구를 표시한다. 예를 들어 임차인은 “신청이 접수되었습니다”, 임대인은 “새로운 입주 신청이 도착했습니다”로 표시할 수 있다. 이 고정 문구는 Google 번역 결과가 아니라 앱의 `ko/en` UI 문구다.
+
+마지막 메시지가 `INQUIRY_CARD`이면 앱은 `preview` 대신 “매물 문의가 시작되었습니다” 같은 고정 문구를 현재 화면 언어로 표시할 수 있다. 문의서 자체의 city·district·매물 유형도 서버 code를 기준으로 앱이 `ko/en` label을 선택한다.
 
 ### 5.3 채팅방 단건
 
@@ -199,9 +206,10 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 }
 ```
 
-메시지 응답은 `TEXT`와 `BOOKING_CARD` 두 종류다.
+메시지 응답은 `TEXT`, `INQUIRY_CARD`, `BOOKING_CARD` 세 종류다.
 
 - `TEXT`: `originalContent`를 항상 포함하고, 로그인 사용자의 현재 언어에 맞는 번역본이 저장돼 있으면 `translation` 객체를, 없으면 null을 반환한다.
+- `INQUIRY_CARD`: `inquiryCard`에 문의 시점의 대표 이미지·매물 제목·주소 code·매물 유형·최소/최대 월세를 포함한다. 원문과 번역본은 없다.
 - `BOOKING_CARD`: `bookingCard`에 신청 시점의 매물·신청자·입주 조건·금액 스냅샷을 포함한다. 원문과 번역본은 없다.
 
 ```json
@@ -214,6 +222,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
   "type": "TEXT",
   "originalContent": "Is the room still available?",
   "bookingCard": null,
+  "inquiryCard": null,
   "translation": {
     "status": "SUCCEEDED",
     "content": "아직 방을 구할 수 있나요?",
@@ -231,6 +240,35 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 - `FAILED`와 `NOT_REQUIRED`에서는 함께 반환된 `originalContent`를 표시한다.
 - 백엔드는 `번역 중` 같은 사용자 표시 문구를 반환하지 않는다.
 
+문의서 카드 응답 예시:
+
+```json
+{
+  "messageId": 70050,
+  "clientMessageId": null,
+  "chatRoomId": 556,
+  "senderId": null,
+  "mine": false,
+  "type": "INQUIRY_CARD",
+  "originalContent": null,
+  "bookingCard": null,
+  "inquiryCard": {
+    "listingId": "6858e2000000000000000001",
+    "thumbnailUrl": "https://cdn.example.com/listings/cover.jpg",
+    "title": "Hongdae Studio share",
+    "city": "SEOUL",
+    "district": "MAPO_GU",
+    "listingType": "CO_LIVING",
+    "monthlyRentMin": 350000,
+    "monthlyRentMax": 500000
+  },
+  "translation": null,
+  "sentAt": "2026-08-19T10:14:30.123456Z"
+}
+```
+
+`thumbnailUrl`은 매물의 첫 번째 대표 이미지이며 이미지가 없으면 null이다. 월세 범위는 문의 시점의 `ACTIVE` 방 상품만 사용하고 단위는 KRW다. `View Detail`은 별도 API가 아니라 `inquiryCard.listingId`로 기존 매물 상세 화면을 연다. 문의서는 사용자 TEXT가 아니므로 `senderId`, `clientMessageId`, `originalContent`, `translation`이 null이고 `mine=false`다.
+
 신청 카드 응답 예시:
 
 ```json
@@ -243,6 +281,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
   "type": "BOOKING_CARD",
   "originalContent": null,
   "translation": null,
+  "inquiryCard": null,
   "bookingCard": {
     "bookingId": 123,
     "listing": {
@@ -324,7 +363,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 - `receivedAt`: 서버 접수 시각
 - `evidenceThroughMessageId`: 신고자에게 현재 보이는 마지막 TEXT 메시지
 
-신고자는 현재 표시된 방만 신고할 수 있고, 신고자에게 보이는 TEXT가 최소 한 개 있어야 한다. 서버는 보이는 최근 TEXT 원문을 최대 20개 증거로 저장하며 `BOOKING_CARD`와 번역문은 제외한다. 같은 신고자가 같은 방을 다시 신고하면 새 행을 만들거나 최초 사유·증거를 덮어쓰지 않고 기존 결과를 `200`으로 반환한다.
+신고자는 현재 표시된 방만 신고할 수 있고, 신고자에게 보이는 TEXT가 최소 한 개 있어야 한다. 서버는 보이는 최근 TEXT 원문을 최대 20개 증거로 저장하며 `INQUIRY_CARD`, `BOOKING_CARD`, 번역문은 제외한다. 같은 신고자가 같은 방을 다시 신고하면 새 행을 만들거나 최초 사유·증거를 덮어쓰지 않고 기존 결과를 `200`으로 반환한다.
 
 신규 접수는 `201`, 같은 방 재요청은 `200`이며 두 경우 모두 `reportId`, `chatRoomId`, `reason`, `status`, `receivedAt`을 반환한다. 이 응답으로 접수 성공을 확인하므로 사용자용 신고 상태 조회 API는 만들지 않는다. 신고 접수는 상대방 차단이나 채팅방 삭제를 자동 실행하지 않는다.
 
@@ -347,7 +386,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 본문은 공백과 줄바꿈을 포함해 Unicode code point 최대 3,000자다. `sourceLanguage`, `targetLanguage`와 번역문은 클라이언트가 보내지 않는다.
 
-클라이언트는 `type`이나 `bookingCard`를 SEND할 수 없다. STOMP SEND는 사용자 `TEXT` 전용이고 `BOOKING_CARD`는 신청 저장 후 서버만 생성한다.
+클라이언트는 `type`, `inquiryCard`, `bookingCard`를 SEND할 수 없다. STOMP SEND는 사용자 `TEXT` 전용이고 `INQUIRY_CARD`와 `BOOKING_CARD`는 검증된 서버 흐름만 생성한다.
 
 ### 6.2 TEXT 저장 ACK
 
@@ -365,7 +404,36 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
 
 발신 앱은 `clientMessageId`가 같은 임시 말풍선을 찾아 서버 `messageId`와 연결한다. 같은 `(roomId, senderId, clientMessageId)`가 재전송되면 기존 저장 결과를 `duplicate=true`로 돌려주고 새 DB 행과 번역 작업을 만들지 않는다. 같은 ID에 다른 본문이 오면 충돌로 거부한다.
 
-### 6.3 서버가 만든 신청 카드 이벤트
+### 6.3 서버가 만든 문의서·신청 카드 이벤트
+
+문의서가 새로 저장되면 서버가 같은 room topic으로 다음 이벤트를 발행한다. 프런트가 보내는 이벤트가 아니므로 `clientMessageId`와 `senderId`는 null이다.
+
+```json
+{
+  "version": 1,
+  "eventType": "MESSAGE_CREATED",
+  "messageId": 70050,
+  "clientMessageId": null,
+  "chatRoomId": 556,
+  "senderId": null,
+  "type": "INQUIRY_CARD",
+  "originalContent": null,
+  "bookingCard": null,
+  "inquiryCard": {
+    "listingId": "6858e2000000000000000001",
+    "thumbnailUrl": "https://cdn.example.com/listings/cover.jpg",
+    "title": "Hongdae Studio share",
+    "city": "SEOUL",
+    "district": "MAPO_GU",
+    "listingType": "CO_LIVING",
+    "monthlyRentMin": 350000,
+    "monthlyRentMax": 500000
+  },
+  "sentAt": "2026-08-19T10:14:30.123456Z"
+}
+```
+
+서버는 새 문의 방과 문의서를 함께 저장해 문의 API 재시도와 동시 호출이 방·카드·broadcast를 중복 생성하지 않게 한다. 기존 방을 반환하는 호출에서는 문의서 이벤트를 발행하지 않는다.
 
 신청 저장이 완료되면 서버가 같은 room topic으로 다음 이벤트를 발행한다. 프런트엔드가 보내는 이벤트가 아니므로 `clientMessageId`와 `senderId`는 null이다.
 
@@ -379,6 +447,7 @@ GET /api/v1/chat-rooms/556/messages?afterMessageId=69950&size=100
   "senderId": null,
   "type": "BOOKING_CARD",
   "originalContent": null,
+  "inquiryCard": null,
   "bookingCard": {
     "bookingId": 123,
     "listing": {

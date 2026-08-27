@@ -6,6 +6,7 @@ Kohere의 기존 예약·인증·차단·다국어 기능을 재사용해 다음
 
 - 로그인 완료 사용자 간 세입자·임대인 1:1 채팅
 - 문의하기와 신청하기가 동일 채팅방을 사용하는 흐름
+- 문의하기 최초 실행 시 같은 채팅방에 매물 요약 `INQUIRY_CARD` 표시
 - 신청 완료 시 같은 채팅방에 임차인·임대인 화면용 `BOOKING_CARD` 표시
 - MySQL 기반 메시지 영속화
 - WebSocket + STOMP 실시간 송수신
@@ -43,11 +44,13 @@ WebSocket 위에서 `CONNECT`, `SUBSCRIBE`, `SEND`처럼 메시지의 목적을 
 - 내가 보낸 메시지는 원문을 먼저 표시한다.
 - 번역 실패는 원문 메시지의 저장 성공을 취소하지 않는다.
 
-### BOOKING_CARD와 payload
+### INQUIRY_CARD·BOOKING_CARD와 payload
+
+`INQUIRY_CARD`는 사용자가 매물의 문의하기를 실행해 새 채팅방이 만들어질 때 서버가 함께 만드는 매물 문의서 카드다. 프런트는 `listingId`만 보내며, 서버가 공개 매물에서 대표 이미지·매물 제목·city·district·매물 유형·활성 방의 최소/최대 월세를 조회해 저장한다. 기존 방을 반환할 때는 카드를 추가하지 않으므로 신청으로 시작한 방에는 `BOOKING_CARD`만 유지되고, 문의 API를 다시 호출해도 문의서가 중복 저장되지 않는다.
 
 `BOOKING_CARD`는 사용자가 직접 보내는 채팅이 아니라 입주 신청이 저장됐을 때 서버가 만드는 신청 정보 카드다. 문의로 이미 만든 채팅방이 있으면 그 방에 추가하고, 방이 없을 때만 같은 기준으로 새 방을 만든다.
 
-`payload`는 카드에 필요한 신청 정보를 묶은 JSON 데이터다. 일반 `TEXT`는 `content`에 원문을 저장하고, `BOOKING_CARD`는 `payload`에 매물·신청자·입주일·기간·금액 정보를 저장한다. 외부 API 응답에서는 더 이해하기 쉬운 `bookingCard`라는 이름으로 반환한다.
+카드 payload는 카드 화면에 필요한 값을 묶은 JSON 데이터다. 일반 `TEXT`는 `content`에 원문을 저장하고, `INQUIRY_CARD`는 문의 당시 매물 요약을, `BOOKING_CARD`는 매물·신청자·입주일·기간·금액 정보를 저장한다. 외부 API 응답에서는 각각 `inquiryCard`, `bookingCard`라는 이름으로 반환한다.
 
 ## 3. 채팅방의 기준
 
@@ -126,7 +129,7 @@ flowchart LR
 5. 그림의 `DB 커밋 후`는 위 내용이 모두 저장됐다는 뜻이다. 하나라도 저장에 실패하면 Broker로 메시지를 전달하지 않는다.
 6. Simple Broker는 저장이 끝난 메시지를 현재 접속해 구독 중인 앱에 전달한다. Broker가 본문을 검사하거나 기록을 장기간 보관하지는 않는다.
 7. Translation Worker는 직접 번역하지 않는다. MySQL의 번역 대기 작업을 찾아 Google API에 요청하고, Google이 만든 번역본을 저장·전달하는 백엔드 작업이다.
-8. Booking Service는 입주 신청을 저장하면서 카드에 필요한 신청 당시 정보를 `BookingCreatedEvent`에 함께 담는다. 이벤트를 받은 Chat Application은 문의하기와 같은 채팅방을 보장하고 그 정보를 `BOOKING_CARD` 메시지로 한 번만 저장한다. Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
+8. 문의 API는 Listing 공개 API에서 받은 매물 요약으로 새 문의 방에 `INQUIRY_CARD`를 함께 저장한다. 기존 방이면 문의서를 추가하지 않는다. Booking Service는 입주 신청을 저장하면서 카드에 필요한 신청 당시 정보를 `BookingCreatedEvent`에 함께 담는다. 이벤트를 받은 Chat Application은 문의하기와 같은 채팅방을 보장하고 그 정보를 `BOOKING_CARD` 메시지로 한 번만 저장한다. Report Application은 현재 범위에서 사용자 신고 접수를 담당한다.
 
 입주 신청의 경우에는 기존 Booking Service가 신청을 만들 때 이미 조회한 매물·객실 정보와 신청자 정보를 재사용한다. 별도의 조회 API를 다시 호출하지 않고, 신청 시점의 매물 이미지·제목·주소·객실명, 신청자 정보, 입주일·계약 기간, 보증금·총금액을 이벤트에 담는다. Chat Application은 이 사본으로 `BOOKING_CARD`를 만들며, 이벤트가 늦게 다시 처리돼도 `bookingId`가 같은 카드를 두 번 저장하지 않는다.
 
@@ -135,14 +138,15 @@ flowchart LR
 한 줄로 줄이면 다음과 같다.
 
 ```text
-문의·신청 → 같은 채팅방 보장 → 신청이면 BOOKING_CARD 저장
+문의 → 같은 채팅방 보장 → INQUIRY_CARD 한 번 저장
+신청 → 같은 채팅방 보장 → BOOKING_CARD 한 번 저장
 TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실시간 전달 → Google 번역 결과 저장·전달
 ```
 
 ### 책임 분리
 
 1. REST는 방 생성·목록·방 정보·과거/누락 메시지 조회·삭제·차단·신고를 담당한다.
-2. STOMP는 연결 중 새 텍스트 메시지와 서버가 저장한 신청 카드의 실시간 수신을 담당한다. 클라이언트가 SEND할 수 있는 타입은 `TEXT`뿐이다.
+2. STOMP는 연결 중 새 텍스트 메시지와 서버가 저장한 문의서·신청 카드의 실시간 수신을 담당한다. 클라이언트가 SEND할 수 있는 타입은 `TEXT`뿐이다.
 3. Chat Application은 인증 사용자, 참여 권한, 차단, 본문, 중복을 검사한다.
 4. MySQL은 방·메시지·상태의 정본이다.
 5. Simple Broker는 MySQL 커밋이 끝난 메시지만 구독자에게 전달한다.
@@ -159,6 +163,7 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 | JWT | `JwtTokenService` | REST와 STOMP CONNECT가 같은 검증 규칙 사용 |
 | 사용자 신원 | `AuthPrincipal` | userId를 API 요청자와 메시지 발신자로 사용 |
 | 신청 | 기존 Booking API·`BookingService` | chat 안에 예약 로직을 복제하지 않음 |
+| 문의 카드 데이터 | `ChatListingQueryService`, Listing의 대표 이미지·주소 code·유형·활성 방 가격 | 프런트가 보낸 값을 신뢰하지 않고 공개 매물 정본으로 `INQUIRY_CARD` 생성 |
 | 신청 카드 데이터 | 신청 생성 과정에서 이미 조회한 매물·객실·신청자 정보와 기존 금액 계산 방식 | `BookingCreatedEvent`에 신청 당시 사본을 함께 담아 카드 생성에 사용 |
 | 차단 | `UserBlockService`, `user_blocks` | 서버가 방의 상대를 도출해 호출 |
 | 언어 | `UserAccountService.getLanguage` | 채팅 번역 대상 언어 결정. 채팅방 신고 label은 프런트가 `ko/en`으로 관리 |
@@ -195,12 +200,12 @@ TEXT 전송 → 인증·검증 → 원문과 번역 대기 작업 저장 → 실
 
 필요한 작은 공개 interface:
 
-- `ChatListingQueryService`: `listingId`로 공개 상태·landlordId·제목·주소 조회
+- `ChatListingQueryService`: `listingId`로 공개 상태·landlordId·제목·주소와 문의 카드용 대표 이미지·주소 code·매물 유형·활성 방 월세 범위 조회
 - `ChatCounterpartQueryService`: userId로 채팅 표시 이름 조회
 - `ChatReportQueryService`: 방 참여자·상대·증거 사본 조회
 - `MessageTranslationPort`: 원문과 대상 언어를 받아 번역 결과 반환
 
-매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 제목·주소 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 채팅 API는 이미지 URL을 반환하지 않고 앱이 기본 프로필 아이콘을 표시한다. 매물 대표 이미지는 일반 방 응답이 아니라 이미지가 실제로 보이는 `BOOKING_CARD`에만 포함한다.
+매물이나 상대 계정이 나중에 사라져도 기존 방 헤더를 표시할 수 있도록 방 생성 시 매물 제목·주소 사본을 저장한다. 현재 사용자 프로필 이미지 계약은 없으므로 상대 사용자 이미지 URL은 반환하지 않고 앱이 기본 프로필 아이콘을 표시한다. 매물 대표 이미지는 일반 방 응답이 아니라 이미지가 실제로 보이는 `INQUIRY_CARD`와 `BOOKING_CARD`에 포함한다.
 
 ## 7. 외부 예제 참고 범위
 
@@ -233,5 +238,5 @@ Kohere에는 JWT 검증 정본이 있으므로 예제의 JWT 코드를 복사하
 - 사용자가 언어를 바꾸면 이후 새 메시지부터 적용하고 과거 메시지는 자동 일괄 재번역하지 않는다.
 - 번역본은 수신자 전용 STOMP queue로 전달하며 공용 room topic의 원문을 바꾸지 않는다.
 - 신고 증거와 메시지 무결성의 기준은 항상 원문이다.
-- `BOOKING_CARD`의 구조화 데이터는 Google 번역 대상이 아니다. 카드의 이름·성별·국적·금액 같은 값은 그대로 보내고, 고정 화면 라벨은 앱이 `ko/en`으로 표시한다.
+- `INQUIRY_CARD`와 `BOOKING_CARD`의 구조화 데이터는 Google 번역 대상이 아니다. city·district·매물 유형 code와 고정 화면 라벨은 앱이 `ko/en`으로 표시하고, 신청자·금액 같은 값은 저장된 그대로 사용한다.
 - Google credential은 서버만 보유하고 앱에는 노출하지 않는다.

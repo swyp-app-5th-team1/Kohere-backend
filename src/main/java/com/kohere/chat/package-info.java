@@ -1,7 +1,7 @@
 /**
  * 채팅 Bounded Context. 매물 임대인과의 1:1 채팅방(ChatRoom)과 메시지(Message)를 담당한다. 문의(inquiry)는 매물 임대인과의 채팅방을
- * 생성/반환하고, 채팅방 목록·메시지 조회·STOMP TEXT 전송·서버 BOOKING_CARD 생성을 제공한다. 읽음 처리는 후속 범위이며 커뮤니티의 이웃(NEIGHBOR)
- * 채팅도 현재 사용자 API에는 노출하지 않는다.
+ * 생성/반환하고, 채팅방 목록·메시지 조회·STOMP TEXT 전송·서버 INQUIRY_CARD·BOOKING_CARD 생성을 제공한다. 읽음 처리는 후속 범위이며 커뮤니티의
+ * 이웃(NEIGHBOR) 채팅도 현재 사용자 API에는 노출하지 않는다.
  *
  * <p>도메인 에러 코드 prefix: {@code CHAT}. 현재 채팅 스펙: docs/architecture/chat/README.md.
  *

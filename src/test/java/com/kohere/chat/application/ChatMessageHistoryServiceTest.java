@@ -15,6 +15,7 @@ import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomNotFoundException;
 import com.kohere.chat.domain.ChatRoomRepository;
+import com.kohere.chat.domain.InquiryCardPayload;
 import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
@@ -156,6 +157,28 @@ class ChatMessageHistoryServiceTest {
         .isEqualTo("https://cdn.example.com/cover.jpg");
   }
 
+  /** 서버 문의서는 TEXT·신청 필드 없이 구조화된 inquiryCard 응답으로 변환한다. */
+  @Test
+  @DisplayName("INQUIRY_CARD 메시지를 문의서 응답으로 변환한다")
+  void mapsInquiryCard() {
+    prepareVisibleRoom(0L);
+    given(messageRepository.findBefore(ROOM_ID, null, 2)).willReturn(List.of(inquiryCard(200L)));
+
+    MessageResponse result =
+        service.getMessages(USER_ID, ROOM_ID, null, null, 1).content().getFirst();
+
+    assertThat(result.type()).isEqualTo(MessageType.INQUIRY_CARD);
+    assertThat(result.clientMessageId()).isNull();
+    assertThat(result.senderId()).isNull();
+    assertThat(result.originalContent()).isNull();
+    assertThat(result.translation()).isNull();
+    assertThat(result.bookingCard()).isNull();
+    assertThat(result.inquiryCard().listingId()).isEqualTo("6858e2000000000000000001");
+    assertThat(result.inquiryCard().listingType()).isEqualTo("CO_LIVING");
+    assertThat(result.inquiryCard().monthlyRentMin()).isEqualTo(350_000);
+    assertThat(result.inquiryCard().monthlyRentMax()).isEqualTo(500_000);
+  }
+
   /** 받은 TEXT에는 저장된 최종 번역을 원문과 함께 반환하고 내가 보낸 TEXT에는 상대용 번역을 붙이지 않는다. */
   @Test
   @DisplayName("수신자용 번역 결과를 원문과 함께 반환한다")
@@ -293,6 +316,28 @@ class ChatMessageHistoryServiceTest {
         .type(MessageType.BOOKING_CARD)
         .payload(payload)
         .bookingId(payload.bookingId())
+        .sentAt(SENT_AT)
+        .build();
+  }
+
+  /** 문의 당시 공개 매물 요약을 JSON payload로 가진 INQUIRY_CARD fixture다. */
+  private static Message inquiryCard(long messageId) {
+    InquiryCardPayload payload =
+        new InquiryCardPayload(
+            "6858e2000000000000000001",
+            "https://cdn.example.com/inquiry-cover.jpg",
+            "Hongdae Studio share",
+            "SEOUL",
+            "MAPO_GU",
+            "CO_LIVING",
+            350_000,
+            500_000);
+
+    return Message.builder()
+        .id(messageId)
+        .chatRoomId(ROOM_ID)
+        .type(MessageType.INQUIRY_CARD)
+        .inquiryPayload(payload)
         .sentAt(SENT_AT)
         .build();
   }

@@ -71,7 +71,7 @@ public final class ChatDocsFields {
 
       **5. 채팅방 구독**
 
-      `/topic/chat-rooms/{roomId}`를 구독하면 서버가 만든 새 `BOOKING_CARD`를 실시간으로 받는다.
+      `/topic/chat-rooms/{roomId}`를 구독하면 서버가 만든 새 `INQUIRY_CARD`와 `BOOKING_CARD`를 실시간으로 받는다.
       여기서 topic은 방 참여자들이 같은 실시간 이벤트를 받도록 만든 **방송 경로**이며, 데이터를 저장하는 장소는 아니다. 정본은 MySQL이다.
 
       구독이 서버 broker에 실제 등록되면 개인 control queue로 `SUBSCRIPTION_READY`가 온다.
@@ -121,7 +121,8 @@ public final class ChatDocsFields {
       `FAILED`여도 `originalContent`가 함께 오므로 앱은 원문 말풍선을 표시할 수 있다. 같은 언어여서 번역이 필요 없는
       `NOT_REQUIRED`도 원문을 표시한다. 백엔드는 `번역 중` 같은 화면 문구를 보내지 않는다.
 
-      입주 신청이 저장되면 서버가 `BOOKING_CARD`를 자동 생성해 같은 room topic으로 전달한다. 프런트가 카드를 SEND하지 않는다.
+      새 문의 채팅방이 생성되면 서버가 `INQUIRY_CARD`를 첫 메시지로 저장하고, 입주 신청이 저장되면 `BOOKING_CARD`를 자동 생성해 같은 room
+      topic으로 전달한다. 프런트는 두 카드를 직접 SEND하지 않는다.
 
       **7. ACK: 내가 보낸 TEXT의 저장 결과**
 
@@ -144,7 +145,7 @@ public final class ChatDocsFields {
 
       임시 말풍선은 사용자가 전송 버튼을 누른 즉시 앱이 화면에 먼저 보여 주는 전송 중 메시지다. 앱은 임시 말풍선과 SEND에 같은
       `clientMessageId`를 넣고, ACK가 오면 같은 UUID의 말풍선에 서버 `messageId`를 연결해 전송 완료로 바꾼다.
-      `BOOKING_CARD`는 서버가 만들기 때문에 ACK가 없다.
+      `INQUIRY_CARD`와 `BOOKING_CARD`는 서버가 만들기 때문에 ACK가 없다.
 
       **8. 오류 처리**
 
@@ -189,12 +190,14 @@ public final class ChatDocsFields {
 
       **프론트 처리 방법**
 
-      - 새 방을 만든 경우 `201 Created`, `created=true`다.
+      - 새 방을 만든 경우 `201 Created`, `created=true`이며 서버가 첫 메시지 `INQUIRY_CARD`도 함께 저장한다.
       - 기존 방을 반환한 경우 `200 OK`, `created=false`다.
       - 두 응답의 JSON 구조는 같다. 프론트는 두 경우 모두 `chatRoomId`로 채팅방 화면을 열면 된다.
       - `created`는 새 방인지 구분하는 참고값이다. 화면 이동 여부를 이 값으로 나누지 않는다.
-      - 이 응답은 프로필 이미지나 매물 대표 이미지를 제공하지 않는다. 채팅방 목록의 상대 이미지는 앱이 기본 아이콘으로 표시한다.
-      - 매물 신청 완료 뒤 표시하는 `BOOKING_CARD`의 대표 이미지는 메시지 이력 응답의 `bookingCard` 안에 별도로 포함된다.
+      - 문의 응답 자체에는 카드가 없다. 응답을 받은 뒤 메시지 이력 API를 호출해 저장된 `INQUIRY_CARD`를 읽는다.
+      - 신규 방의 room topic은 프론트 구독 전에 카드가 발행될 수 있으므로 `created=true`여도 메시지 이력 조회를 생략하지 않는다.
+      - 기존 방이면 문의서를 새로 추가하지 않는다. 따라서 반복 문의나 신청으로 먼저 만들어진 방에 카드가 중복되지 않는다.
+      - 채팅방 목록의 상대 이미지는 앱이 기본 아이콘으로 표시한다. 문의서 대표 이미지는 메시지 이력의 `inquiryCard.thumbnailUrl`에 있다.
 
       **에러 코드**
 
@@ -245,6 +248,7 @@ public final class ChatDocsFields {
       - 상대 프로필 이미지와 일반 채팅방용 매물 이미지는 반환하지 않는다. 앱은 상대방 자리에 기본 프로필 아이콘을 표시한다.
       - 빈 채팅방이나 사용자가 삭제한 과거 메시지만 남은 채팅방은 `lastMessage=null`이다.
       - 마지막 메시지가 `TEXT`이면 `preview`에 표시할 문자열을 반환한다. 현재 단계에서는 저장된 원문이며 자동 번역 연결 뒤에는 수신자용 번역본을 우선한다.
+      - 마지막 메시지가 `INQUIRY_CARD`이면 `preview=null`이다. 앱이 “매물 문의가 시작되었습니다” 같은 고정 문구를 `ko/en`으로 표시한다.
       - 마지막 메시지가 `BOOKING_CARD`이면 `preview=null`이다. 앱이 `myRole`과 `ko/en` UI 문구로 “신청이 접수되었습니다” 또는 “새로운 입주 신청이 도착했습니다”를 표시한다.
       - `blocked=true`이면 두 사용자 사이 어느 방향으로든 차단 관계가 있어 새 메시지를 보낼 수 없다. 차단 방향은 노출하지 않는다.
       - 채팅방이 하나도 없으면 `content=[]`, `totalElements=0`, `totalPages=0`, `hasNext=false`다. 빈 화면으로 처리하면 된다.
@@ -349,6 +353,16 @@ public final class ChatDocsFields {
       BOOKING_CARD를 "채팅방에 전달"한다는 말은 프론트가 카드 전송 API를 호출한다는 뜻이 아니다. 백엔드가 예약 이벤트를 처리해
       `chat_messages`에 저장하고, 이 API는 이미 저장된 카드를 읽어 프론트에 반환한다. 프론트는 `type=BOOKING_CARD`를 보고 카드 UI만 그린다.
 
+      **문의하기 뒤 INQUIRY_CARD를 받는 흐름**
+
+      1. `POST /api/v1/listings/{listingId}/inquiries`를 호출한다.
+      2. 새 방이면 서버가 방·참여자 두 명·문의서를 함께 저장하고 `created=true`를 반환한다.
+      3. 반환된 `chatRoomId`로 이 메시지 이력 API를 호출한다.
+      4. `type=INQUIRY_CARD`인 항목의 `inquiryCard`로 문의서 UI를 그린다.
+
+      새 방의 문의서는 프론트가 room topic을 구독하기 전에 저장·발행될 수 있다. 따라서 문의 응답 직후의 메시지 이력 조회가 최초 문의서를 받는 기본 방법이고,
+      room topic은 연결 중 새로 생기는 서버 카드 수신과 재연결 보조에 사용한다.
+
       이벤트 처리는 예약 HTTP 응답 뒤 비동기로 진행된다. 신청 직후 첫 조회에 카드가 아직 없으면 짧게 기다린 뒤 이 API를 한 번 다시 조회할 수 있다.
       지속 polling은 필요하지 않으며, STOMP 단계가 연결되면 새 카드는 실시간 메시지 이벤트로도 받게 된다.
 
@@ -420,8 +434,9 @@ public final class ChatDocsFields {
       **메시지 종류**
 
       - `TEXT`: 사용자가 보낸 변경되지 않은 원문을 `originalContent`로 반환한다. `clientMessageId`는 전송 시 프런트가 생성한 UUID다.
+      - `INQUIRY_CARD`: 문의하기로 새 방을 만들 때 서버가 저장한 문의서다. `inquiryCard`에 대표 이미지·제목·지역 code·매물 유형·최소/최대 월세가 있다.
       - `BOOKING_CARD`: 신청 완료 이벤트로 서버가 만든 카드다. `bookingCard`에 신청 시점 정보가 있고 `originalContent`·`clientMessageId`·`senderId`는 null이다.
-      - 카드의 `listing.thumbnailUrl`은 신청 카드 상단 대표 이미지다. 채팅방 목록의 프로필 이미지와는 관계없다.
+      - 문의서의 `inquiryCard.thumbnailUrl`과 신청서의 `bookingCard.listing.thumbnailUrl`은 각 카드 상단 대표 이미지다. 채팅방 목록의 프로필 이미지와는 관계없다.
       - 카드 문구·항목명은 앱이 `myRole`과 지원 언어 `ko/en`에 맞춰 표시하고, 카드 payload 자체는 Google 자동 번역 대상이 아니다.
       - 자동 번역이 아직 저장되지 않았거나 실패한 경우에도 원문은 반환하며 `translation=null`이다.
 
@@ -592,7 +607,8 @@ public final class ChatDocsFields {
       - 상세 사유 문자열: 지원하지 않는다.
       - 증거 메시지: 서버가 신고자에게 현재 보이는 최근 TEXT 원문을 최대 20개 수집한다.
 
-      BOOKING_CARD와 자동 번역문은 신고 증거에서 제외한다. 사용자가 이전에 채팅방을 삭제했다가 다시 들어왔다면 삭제 전에 숨긴 과거 TEXT도 증거로 복원하지 않는다.
+      INQUIRY_CARD·BOOKING_CARD와 자동 번역문은 신고 증거에서 제외한다. 사용자가 이전에 채팅방을 삭제했다가 다시 들어왔다면 삭제 전에 숨긴 과거 TEXT도
+      증거로 복원하지 않는다.
 
       **성공 응답 처리**
 
@@ -668,7 +684,7 @@ public final class ChatDocsFields {
         field(
             "data.roomSubscribeDestination",
             JsonFieldType.STRING,
-            "서버 생성 BOOKING_CARD를 실시간 수신할 방 topic 형식. {roomId}를 서버 채팅방 번호로 교체"),
+            "서버 생성 INQUIRY_CARD·BOOKING_CARD를 실시간 수신할 방 topic 형식. {roomId}를 서버 채팅방 번호로 교체"),
         field(
             "data.messageSendDestination",
             JsonFieldType.STRING,
@@ -713,7 +729,7 @@ public final class ChatDocsFields {
         field(
             "data.created",
             JsonFieldType.BOOLEAN,
-            "이번 요청으로 새 채팅방을 만들었으면 true, 이미 있던 채팅방을 반환했으면 false. 값과 관계없이 chatRoomId로 화면 이동"),
+            "새 채팅방·참여자 두 명·첫 INQUIRY_CARD를 이번 요청에서 함께 저장했으면 true. 기존 방을 반환해 문의서를 추가하지 않았으면 false. 값과 관계없이 chatRoomId로 화면 이동"),
         errorNull());
   }
 
@@ -758,11 +774,11 @@ public final class ChatDocsFields {
         optEnumField(
             "data.content[].lastMessage.type",
             MessageType.class,
-            "마지막 메시지 종류. TEXT 또는 BOOKING_CARD이며 lastMessage가 null이면 없음"),
+            "마지막 메시지 종류. TEXT·INQUIRY_CARD·BOOKING_CARD 중 하나이며 lastMessage가 null이면 없음"),
         optField(
             "data.content[].lastMessage.preview",
             JsonFieldType.STRING,
-            "채팅 목록 두 번째 줄에 표시할 TEXT 문자열. BOOKING_CARD이면 null이므로 앱이 myRole에 맞는 신청 안내 문구 표시"),
+            "채팅 목록 두 번째 줄에 표시할 TEXT 문자열. 서버 카드면 null이므로 앱이 type·myRole·언어에 맞는 안내 문구 표시"),
         optField(
             "data.content[].lastMessage.sentAt",
             JsonFieldType.STRING,
@@ -880,7 +896,7 @@ public final class ChatDocsFields {
     };
   }
 
-  /** TEXT와 BOOKING_CARD가 함께 사용하는 커서 응답 필드를 Swagger schema에 고정한다. */
+  /** TEXT·INQUIRY_CARD·BOOKING_CARD가 함께 사용하는 커서 응답 필드를 Swagger schema에 고정한다. */
   public static List<FieldDescriptor> messageHistoryResponseFields() {
     return List.of(
         field("success", JsonFieldType.BOOLEAN, "성공 여부 — 성공 응답은 항상 true"),
@@ -892,12 +908,12 @@ public final class ChatDocsFields {
         optField(
             "data.content[].clientMessageId",
             JsonFieldType.STRING,
-            "TEXT를 보내기 전에 프론트가 생성한 UUID. 전송 결과를 임시 말풍선과 연결하고 재시도 중복 저장을 막는 값. 같은 메시지를 재시도할 때 같은 UUID를 사용하며 BOOKING_CARD는 null"),
+            "TEXT를 보내기 전에 프론트가 생성한 UUID. 전송 결과를 임시 말풍선과 연결하고 재시도 중복 저장을 막는 값. 같은 메시지를 재시도할 때 같은 UUID를 사용하며 서버 카드는 null"),
         field("data.content[].chatRoomId", JsonFieldType.NUMBER, "메시지가 속한 서버 채팅방 ID"),
         optField(
             "data.content[].senderId",
             JsonFieldType.NUMBER,
-            "TEXT를 보낸 사용자의 서버 사용자 ID. 서버가 만든 BOOKING_CARD는 null"),
+            "TEXT를 보낸 사용자의 서버 사용자 ID. 서버가 만든 INQUIRY_CARD·BOOKING_CARD는 null"),
         field(
             "data.content[].mine",
             JsonFieldType.BOOLEAN,
@@ -905,11 +921,11 @@ public final class ChatDocsFields {
         enumField(
             "data.content[].type",
             MessageType.class,
-            "화면에 그릴 메시지 종류. TEXT=일반 말풍선, BOOKING_CARD=매물 신청 카드"),
+            "화면에 그릴 메시지 종류. TEXT=일반 말풍선, INQUIRY_CARD=매물 문의서, BOOKING_CARD=매물 신청 카드"),
         optField(
             "data.content[].originalContent",
             JsonFieldType.STRING,
-            "사용자가 입력한 TEXT 원문. 번역본이 있어도 원문 보기 기능을 위해 함께 반환하며 BOOKING_CARD는 null"),
+            "사용자가 입력한 TEXT 원문. 번역본이 있어도 원문 보기 기능을 위해 함께 반환하며 서버 카드는 null"),
         optField(
             "data.content[].bookingCard",
             JsonFieldType.OBJECT,
@@ -958,9 +974,42 @@ public final class ChatDocsFields {
         optField("data.content[].bookingCard.deposit", JsonFieldType.NUMBER, "보증금(KRW)"),
         optField("data.content[].bookingCard.totalAmount", JsonFieldType.NUMBER, "총 초기 비용(KRW)"),
         optField(
+            "data.content[].inquiryCard",
+            JsonFieldType.OBJECT,
+            "매물 문의서 UI를 그리는 정보. type=INQUIRY_CARD일 때만 있고 다른 타입은 null"),
+        optField(
+            "data.content[].inquiryCard.listingId",
+            JsonFieldType.STRING,
+            "문의한 매물 ID. View Detail을 누르면 이 ID로 기존 매물 상세 화면을 연다"),
+        optField(
+            "data.content[].inquiryCard.thumbnailUrl",
+            JsonFieldType.STRING,
+            "문의 당시 첫 번째 대표 이미지 URL. 이미지가 없으면 null"),
+        optField("data.content[].inquiryCard.title", JsonFieldType.STRING, "문의 당시 매물 제목"),
+        optField(
+            "data.content[].inquiryCard.city",
+            JsonFieldType.STRING,
+            "주소의 city code. 프론트가 현재 언어의 label로 표시"),
+        optField(
+            "data.content[].inquiryCard.district",
+            JsonFieldType.STRING,
+            "주소의 district code. 프론트가 현재 언어의 label로 표시"),
+        optField(
+            "data.content[].inquiryCard.listingType",
+            JsonFieldType.STRING,
+            "매물 유형 code. GOSHIWON·CO_LIVING·SHARE_HOUSE 중 하나이며 프론트가 ko/en label로 표시"),
+        optField(
+            "data.content[].inquiryCard.monthlyRentMin",
+            JsonFieldType.NUMBER,
+            "문의 당시 ACTIVE 방 상품의 최소 월세(KRW)"),
+        optField(
+            "data.content[].inquiryCard.monthlyRentMax",
+            JsonFieldType.NUMBER,
+            "문의 당시 ACTIVE 방 상품의 최대 월세(KRW)"),
+        optField(
             "data.content[].translation",
             JsonFieldType.OBJECT,
-            "현재 로그인 사용자에게 보여 줄 받은 TEXT의 최종 번역 정보. 처리가 끝나지 않았거나 내가 보낸 TEXT·BOOKING_CARD이면 null"),
+            "현재 로그인 사용자에게 보여 줄 받은 TEXT의 최종 번역 정보. 처리가 끝나지 않았거나 내가 보낸 TEXT·서버 카드이면 null"),
         optEnumField(
             "data.content[].translation.status",
             TranslationResultStatus.class,

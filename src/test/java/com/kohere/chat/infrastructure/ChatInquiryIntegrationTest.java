@@ -2,11 +2,15 @@ package com.kohere.chat.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.kohere.chat.application.ChatRoomCreator;
 import com.kohere.chat.application.ChatRoomEnsurer;
 import com.kohere.chat.application.ChatService;
+import com.kohere.chat.application.InquiryCardRealtimePublisher;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.domain.ChatListingUnavailableException;
 import com.kohere.chat.domain.ChatParticipantRole;
@@ -16,7 +20,9 @@ import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.ChatTenantOnlyException;
 import com.kohere.chat.domain.ChatUnavailableException;
+import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
+import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.domain.SelfInquiryNotAllowedException;
 import com.kohere.listing.api.ChatListingQueryService;
 import com.kohere.listing.api.ChatListingView;
@@ -62,6 +68,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Import({
   ChatRoomRepositoryImpl.class,
   ChatRoomMemberRepositoryImpl.class,
+  MessageRepositoryImpl.class,
   ChatRoomCreator.class,
   ChatRoomEnsurer.class,
   ChatService.class
@@ -78,12 +85,13 @@ class ChatInquiryIntegrationTest {
   @Autowired private ChatService chatService;
   @Autowired private ChatRoomRepository chatRoomRepository;
   @Autowired private ChatRoomMemberRepository memberRepository;
+  @Autowired private MessageRepository messageRepository;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @MockitoBean private ChatListingQueryService listingQueryService;
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private UserBlockService userBlockService;
-  @MockitoBean private MessageRepository messageRepository;
+  @MockitoBean private InquiryCardRealtimePublisher inquiryCardRealtimePublisher;
 
   /** 동시성 테스트가 커밋한 행도 다음 테스트에 남지 않도록 no-FK 삭제 순서로 직접 비운다. */
   @BeforeEach
@@ -97,7 +105,7 @@ class ChatInquiryIntegrationTest {
     given(userBlockService.isBlockedBetween(TENANT_ID, LANDLORD_ID)).willReturn(false);
   }
 
-  /** 새 문의는 공유 방 한 행과 서로를 가리키는 참여자 두 행을 같은 트랜잭션으로 저장한다. */
+  /** 새 문의는 공유 방·참여자 두 명·문의서 첫 메시지를 같은 트랜잭션으로 저장한다. */
   @Test
   @DisplayName("신규 문의는 채팅방과 임차인·임대인 참여자를 저장한다")
   void createsRoomAndTwoMembers() {
@@ -122,6 +130,19 @@ class ChatInquiryIntegrationTest {
     assertThat(members)
         .extracting(ChatRoomMember::getCounterpartId)
         .containsExactly(LANDLORD_ID, TENANT_ID);
+
+    Message inquiryCard = messageRepository.findBefore(room.getId(), null, 10).getFirst();
+    assertThat(inquiryCard.getType()).isEqualTo(MessageType.INQUIRY_CARD);
+    assertThat(inquiryCard.getSenderId()).isNull();
+    assertThat(inquiryCard.getContent()).isNull();
+    assertThat(inquiryCard.getClientMessageId()).isNull();
+    assertThat(inquiryCard.getInquiryPayload().thumbnailUrl())
+        .isEqualTo("https://cdn.kohere.com/listings/inquiry-thumb.jpg");
+    assertThat(inquiryCard.getInquiryPayload().listingType()).isEqualTo("CO_LIVING");
+    assertThat(inquiryCard.getInquiryPayload().monthlyRentMin()).isEqualTo(350_000);
+    assertThat(inquiryCard.getInquiryPayload().monthlyRentMax()).isEqualTo(500_000);
+    assertThat(room.getLastMessageId()).isEqualTo(inquiryCard.getId());
+    verify(inquiryCardRealtimePublisher).publishNewInquiryCard(any(), any());
   }
 
   /** 같은 요청을 반복하면 새 행을 만들지 않고 최초 roomId를 200 응답용 결과로 돌려준다. */
@@ -136,6 +157,8 @@ class ChatInquiryIntegrationTest {
     assertThat(second.chatRoomId()).isEqualTo(first.chatRoomId());
     assertThat(count("chat_rooms")).isEqualTo(1);
     assertThat(count("chat_room_members")).isEqualTo(2);
+    assertThat(count("chat_messages")).isEqualTo(1);
+    verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any(), any());
   }
 
   /** 직접 재문의는 방만 목록에 다시 표시하고 사용자가 이미 숨긴 과거 메시지 경계와 삭제 시각은 보존한다. */
@@ -203,6 +226,8 @@ class ChatInquiryIntegrationTest {
       assertThat(results).filteredOn(InquiryResponse::created).hasSize(1);
       assertThat(count("chat_rooms")).isEqualTo(1);
       assertThat(count("chat_room_members")).isEqualTo(2);
+      assertThat(count("chat_messages")).isEqualTo(1);
+      verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any(), any());
     } finally {
       executor.shutdownNow();
     }
@@ -253,7 +278,16 @@ class ChatInquiryIntegrationTest {
   /** 채팅용 매물 공개 뷰의 fixture를 한곳에서 만들어 검증값이 테스트마다 달라지지 않게 한다. */
   private static ChatListingView listingView(long landlordId) {
     return new ChatListingView(
-        LISTING_ID, landlordId, "Hongdae Studio share", "Seogyo-dong, Mapo-gu");
+        LISTING_ID,
+        landlordId,
+        "Hongdae Studio share",
+        "Seogyo-dong, Mapo-gu",
+        "https://cdn.kohere.com/listings/inquiry-thumb.jpg",
+        "SEOUL",
+        "MAPO_GU",
+        "CO_LIVING",
+        350_000,
+        500_000);
   }
 
   /** no-FK 테이블의 실제 행 수를 확인해 도메인 반환만 맞고 저장이 중복되는 회귀를 막는다. */

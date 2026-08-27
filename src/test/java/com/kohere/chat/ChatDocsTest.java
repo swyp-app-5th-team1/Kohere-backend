@@ -504,6 +504,7 @@ class ChatDocsTest {
   @DisplayName("채팅방 최근 메시지 조회 문서화")
   void getRecentMessages() throws Exception {
     long roomId = createRoomThroughInquiry();
+    Message inquiryCard = messageRepository.findBefore(roomId, null, 1).getFirst();
     Message bookingCard =
         messageRepository.save(
             Message.builder()
@@ -545,6 +546,7 @@ class ChatDocsTest {
             jsonPath("$.data.content[0].originalContent")
                 .value("The room is available from September 1."))
         .andExpect(jsonPath("$.data.content[0].bookingCard").isEmpty())
+        .andExpect(jsonPath("$.data.content[0].inquiryCard").isEmpty())
         .andExpect(jsonPath("$.data.content[0].translation.status").value("SUCCEEDED"))
         .andExpect(
             jsonPath("$.data.content[0].translation.content").value("이 방은 9월 1일부터 입주할 수 있습니다."))
@@ -563,6 +565,24 @@ class ChatDocsTest {
                 .value("https://cdn.kohere.com/listings/card-thumb.jpg"))
         .andExpect(jsonPath("$.data.content[1].bookingCard.applicant.name").value("Gil dong Hong"))
         .andExpect(jsonPath("$.data.content[1].bookingCard.totalAmount").value(6_500_000))
+        .andExpect(jsonPath("$.data.content[1].inquiryCard").isEmpty())
+        .andExpect(jsonPath("$.data.content[2].messageId").value(inquiryCard.getId()))
+        .andExpect(jsonPath("$.data.content[2].type").value("INQUIRY_CARD"))
+        .andExpect(jsonPath("$.data.content[2].clientMessageId").isEmpty())
+        .andExpect(jsonPath("$.data.content[2].senderId").isEmpty())
+        .andExpect(jsonPath("$.data.content[2].originalContent").isEmpty())
+        .andExpect(jsonPath("$.data.content[2].bookingCard").isEmpty())
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.listingId").value(LISTING_ID))
+        .andExpect(
+            jsonPath("$.data.content[2].inquiryCard.thumbnailUrl")
+                .value("https://cdn.kohere.com/listings/inquiry-thumb.jpg"))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.title").value("Hongdae Studio share"))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.city").value("SEOUL"))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.district").value("MAPO_GU"))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.listingType").value("CO_LIVING"))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.monthlyRentMin").value(350_000))
+        .andExpect(jsonPath("$.data.content[2].inquiryCard.monthlyRentMax").value(500_000))
+        .andExpect(jsonPath("$.data.content[2].translation").isEmpty())
         .andExpect(jsonPath("$.data.nextCursor").isEmpty())
         .andExpect(jsonPath("$.data.hasNext").value(false))
         .andDo(
@@ -1416,10 +1436,19 @@ class ChatDocsTest {
                 errorCodes));
   }
 
-  /** ChatListingView는 일반 방에서 사용하는 제목·주소만 담고 신청 카드 이미지는 별도 payload가 담당한다. */
+  /** Swagger 문의 예시가 같은 매물 요약과 월세 범위를 사용하도록 공개 매물 fixture를 한곳에서 만든다. */
   private static ChatListingView listingView(long landlordId) {
     return new ChatListingView(
-        LISTING_ID, landlordId, "Hongdae Studio share", "Seogyo-dong, Mapo-gu");
+        LISTING_ID,
+        landlordId,
+        "Hongdae Studio share",
+        "Seogyo-dong, Mapo-gu",
+        "https://cdn.kohere.com/listings/inquiry-thumb.jpg",
+        "SEOUL",
+        "MAPO_GU",
+        "CO_LIVING",
+        350_000,
+        500_000);
   }
 
   /** JSON의 공백·줄바꿈 형식에 의존하지 않고 숫자 roomId를 꺼내 두 번째 요청의 동일성을 검증한다. */

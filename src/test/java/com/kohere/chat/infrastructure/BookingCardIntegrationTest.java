@@ -103,7 +103,16 @@ class BookingCardIntegrationTest {
         .willReturn(
             Optional.of(
                 new ChatListingView(
-                    LISTING_ID, LANDLORD_ID, "Hongdae Studio share", "Seogyo-dong, Mapo-gu")));
+                    LISTING_ID,
+                    LANDLORD_ID,
+                    "Hongdae Studio share",
+                    "Seogyo-dong, Mapo-gu",
+                    "https://cdn.kohere.com/listings/inquiry-thumb.jpg",
+                    "SEOUL",
+                    "MAPO_GU",
+                    "CO_LIVING",
+                    350_000,
+                    500_000)));
   }
 
   /** 신청만 먼저 해도 서버가 방·참여자·카드를 자동 생성하고 카드 JSON을 신청 시점 값으로 보존한다. */
@@ -168,7 +177,7 @@ class BookingCardIntegrationTest {
         messageHistoryService.getMessages(TENANT_ID, room.getId(), null, null, 30);
     assertThat(history.content())
         .extracting(MessageResponse::type)
-        .containsExactly(MessageType.BOOKING_CARD, MessageType.TEXT);
+        .containsExactly(MessageType.BOOKING_CARD, MessageType.TEXT, MessageType.INQUIRY_CARD);
     assertThat(history.content().get(1).messageId()).isEqualTo(oldText.getId());
   }
 

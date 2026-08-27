@@ -2,7 +2,7 @@
 
 이 문서는 실시간 연결, 인증, 구독, 메시지 전송, 재연결 동기화의 정본이다. REST endpoint는 [02-api-contracts.md](02-api-contracts.md)를 따른다.
 
-> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충, TEXT 자동 번역과 서버 생성 BOOKING_CARD의 실시간 전달까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. 신규 TEXT는 발신자에게 저장 ACK를 즉시 보내고, 수신자에게는 번역 최종 상태가 정해진 뒤 원문과 번역본을 개인 queue의 한 이벤트로 전달한다. 신규 BOOKING_CARD는 room topic으로 전달한다.
+> **현재 구현 상태:** 연결·JWT 인증, 구독 권한·누락 보충, TEXT 자동 번역과 서버 생성 INQUIRY_CARD·BOOKING_CARD의 실시간 전달까지 구현했다. 정확한 다섯 개인 queue와 사용자가 참여 중이며 현재 보이는 room topic만 구독할 수 있다. `PING/PONG`, 실제 broker 등록 뒤 `SUBSCRIPTION_READY`도 동작한다. 신규 TEXT는 발신자에게 저장 ACK를 즉시 보내고, 수신자에게는 번역 최종 상태가 정해진 뒤 원문과 번역본을 개인 queue의 한 이벤트로 전달한다.
 
 ## 1. 기본 원칙
 
@@ -11,7 +11,7 @@
 - MySQL이 기록의 정본이고 broker는 저장 완료 메시지를 실시간 전달한다.
 - 클라이언트가 보낸 메시지를 broker로 바로 보내지 않는다.
 - 애플리케이션이 인증·참여자·차단·본문·중복을 검사하고 MySQL 커밋을 마친 뒤 발행한다.
-- 공용 room topic은 서버 생성 `BOOKING_CARD`를 전달한다. 받은 `TEXT`는 원문과 사용자별 최종 번역 결과를 개인 queue의 한 이벤트로 전달한다.
+- 공용 room topic은 서버 생성 `INQUIRY_CARD`와 `BOOKING_CARD`를 전달한다. 받은 `TEXT`는 원문과 사용자별 최종 번역 결과를 개인 queue의 한 이벤트로 전달한다.
 - 번역은 원문 커밋 후 비동기로 처리하며 실패해도 메시지 저장 성공을 바꾸지 않는다.
 - 실시간 수신을 놓치면 REST 메시지 조회로 보충한다.
 
@@ -152,6 +152,20 @@ ping·pong과 `SUBSCRIPTION_READY`의 정확한 JSON은 [API 계약 §6.5](02-ap
 
 Google API는 7번 저장 트랜잭션 안에서 호출하지 않는다. 원문과 번역 작업이 모두 커밋된 뒤 별도 Worker가 호출하므로 Google 장애가 원문 저장 성공을 되돌리지 않는다.
 
+### 서버가 만드는 INQUIRY_CARD
+
+`INQUIRY_CARD`는 STOMP SEND로 만들지 않는다. 세입자가 문의 REST API를 호출해 새 방이 생성될 때 Chat Application이 다음 순서로 처리한다.
+
+1. Listing 공개 API에서 실제 임대인과 문의서용 매물 요약을 조회한다.
+2. 본인 매물과 양방향 차단 관계를 검사한다.
+3. 새 채팅방·두 참여자·`INQUIRY_CARD`를 같은 트랜잭션으로 저장한다.
+4. 문의서는 매물의 첫 대표 이미지, 매물 제목, city·district code, 매물 유형 code, `ACTIVE` 방의 최소·최대 월세, 상세 이동용 listingId를 보존한다.
+5. 커밋된 신규 카드만 room topic으로 발행하고 두 사용자에게 방 목록 `ROOM_CREATED` 신호를 보낸다.
+6. 기존 방을 반환한 문의 API 호출은 문의서를 추가하거나 다시 발행하지 않는다.
+7. 앱이 실시간 이벤트를 놓쳐도 메시지 이력 REST API에서 저장된 카드를 다시 조회할 수 있다.
+
+문의서에는 `clientMessageId`, `senderId`, TEXT 원문과 번역 결과가 없다. city·district·매물 유형의 고정 label은 앱이 code를 기준으로 `ko/en` 언어에 맞춰 표시하고, `View Detail`은 `inquiryCard.listingId`로 기존 매물 상세 화면을 연다.
+
 ### 서버가 만드는 BOOKING_CARD
 
 `BOOKING_CARD`는 위 SEND destination으로 들어오지 않는다. 기존 Booking Service가 신청을 저장한 뒤 공개 `BookingCreatedEvent`를 발행하면 Chat Application이 다음 순서로 자동 처리한다.
@@ -164,7 +178,7 @@ Google API는 7번 저장 트랜잭션 안에서 호출하지 않는다. 원문�
 6. 같은 예약 이벤트가 다시 전달되면 기존 카드를 반환하고 room topic에는 다시 발행하지 않는다.
 7. 앱이 실시간 이벤트를 놓치더라도 메시지 이력 REST API에서 저장된 카드를 다시 조회할 수 있다.
 
-카드에는 프런트 UUID `clientMessageId`가 없고, 서버 생성 메시지이므로 `senderId`도 null이다. 임차인·임대인은 같은 카드 데이터를 받고 앱이 채팅방의 `myRole`에 따라 화면을 다르게 배치한다. 카드 데이터는 Google 번역 대상이 아니다.
+두 서버 카드에는 프런트 UUID `clientMessageId`가 없고, 서버 생성 메시지이므로 `senderId`도 null이다. 임차인·임대인은 같은 카드 데이터를 받고 앱이 메시지 `type`과 채팅방의 `myRole`에 따라 화면을 다르게 배치한다. 카드 데이터는 Google 번역 대상이 아니다.
 
 ## 7. 채팅 메시지 자동 번역
 
@@ -200,7 +214,7 @@ Simple Broker는 번역 이벤트를 재생하지 않는다. 연결 중 놓친 �
 
 ## 8. clientMessageId
 
-`clientMessageId`는 사용자가 보내는 `TEXT`에 대해 서버가 아니라 클라이언트가 전송 직전에 만드는 UUID다. 서버 생성 `BOOKING_CARD`에는 사용하지 않는다.
+`clientMessageId`는 사용자가 보내는 `TEXT`에 대해 서버가 아니라 클라이언트가 전송 직전에 만드는 UUID다. 서버 생성 `INQUIRY_CARD`와 `BOOKING_CARD`에는 사용하지 않는다.
 
 네트워크 timeout 뒤 클라이언트가 같은 메시지를 다시 보내더라도 같은 UUID를 사용한다. 서버는 `(roomId, senderId, clientMessageId)` UNIQUE 제약으로 이미 저장된 요청을 알아낸다.
 
@@ -248,14 +262,14 @@ CONNECT 인증 실패는 STOMP ERROR 후 연결을 종료한다. 개별 SEND 오
   "version": 1,
   "eventType": "ROOM_CREATED",
   "roomId": 556,
-  "lastMessageId": null,
+  "lastMessageId": 70050,
   "occurredAt": "2026-08-19T10:15:30.123456Z"
 }
 ```
 
 `eventType`은 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나다. `ROOM_REOPENED`는 직접 문의나 실제 새 메시지로 숨긴 채팅방이 목록에 다시 나타났다는 뜻이며, 삭제한 과거 메시지를 복원했다는 뜻이 아니다. 이 이벤트는 목록을 즉시 갱신하기 위한 신호일 뿐 정본이 아니며, 오프라인에서 놓치면 다음 REST 채팅방 목록 조회로 보충한다.
 
-사용자가 보낸 TEXT는 원래 발신 session의 ACK로 임시 말풍선을 확정한다. 다른 사용자가 보낸 TEXT는 개인 translation queue의 결합 이벤트를 `messageId`로 중복 제거한다. 서버 생성 `BOOKING_CARD`에는 ACK가 없으며 room topic 이벤트의 `messageId`와 `bookingCard.bookingId`로 중복을 제거한다.
+사용자가 보낸 TEXT는 원래 발신 session의 ACK로 임시 말풍선을 확정한다. 다른 사용자가 보낸 TEXT는 개인 translation queue의 결합 이벤트를 `messageId`로 중복 제거한다. 서버 생성 카드에는 ACK가 없다. `INQUIRY_CARD`는 room topic 이벤트의 `messageId`로, `BOOKING_CARD`는 `messageId`와 `bookingCard.bookingId`로 중복을 제거한다.
 
 ## 10. 재연결과 누락 복구
 

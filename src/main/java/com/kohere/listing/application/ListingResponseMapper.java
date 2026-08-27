@@ -126,17 +126,24 @@ final class ListingResponseMapper {
   }
 
   /**
-   * chat 모듈이 채팅방 참여자와 매물 표시 사본을 만들 때 사용할 공개 뷰로 변환한다.
+   * chat 모듈이 채팅방 참여자·헤더 사본과 문의서 카드를 만들 때 사용할 공개 뷰로 변환한다.
    *
-   * <p>채팅방의 매물 제목과 주소는 양쪽 참여자가 공유하는 사본이므로 외국인 앱의 기본 언어인 영어를 사용한다. 매물 이미지는 일반 채팅방 목록·헤더에서 사용하지 않고,
-   * 신청 카드가 별도 사본으로 보존하므로 이 뷰에 포함하지 않는다.
+   * <p>채팅방의 매물 제목과 주소는 양쪽 참여자가 공유하는 사본이므로 외국인 앱의 기본 언어인 영어를 사용한다. 문의서 화면에 필요한 나머지 값은 이미 목록·추천 응답에서
+   * 사용하는 대표 이미지와 ACTIVE 방 가격 계산 규칙을 그대로 재사용한다.
    */
   static ChatListingView toChatListingView(Listing listing) {
+    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
     return new ChatListingView(
         listing.getId(),
         listing.getLandlordId(),
         listing.getTitle().resolve(LocalizedText.DEFAULT_LANGUAGE),
-        listing.getAddress().fullAddress().resolve(LocalizedText.DEFAULT_LANGUAGE));
+        listing.getAddress().fullAddress().resolve(LocalizedText.DEFAULT_LANGUAGE),
+        thumbnailUrl(listing),
+        listing.getAddress().city(),
+        listing.getAddress().district(),
+        listing.getType().name(),
+        minMonthlyRent(activeOffers),
+        maxMonthlyRent(activeOffers));
   }
 
   /** 지도 SDK가 개별 마커로 사용할 최소 좌표 DTO를 만든다. */

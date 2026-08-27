@@ -4,8 +4,11 @@ import com.kohere.chat.application.BookingCardRealtimePublisher;
 import com.kohere.chat.application.BookingCardResponseMapper;
 import com.kohere.chat.application.BookingCardService;
 import com.kohere.chat.application.BookingCardWriter;
+import com.kohere.chat.application.InquiryCardRealtimePublisher;
+import com.kohere.chat.application.InquiryCardResponseMapper;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.application.translation.ChatTranslationResultPublisher;
+import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.Message;
@@ -24,7 +27,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 커밋된 TEXT·BOOKING_CARD 결과를 용도에 맞는 Simple Broker 경로로 전달한다.
+ * 커밋된 TEXT·INQUIRY_CARD·BOOKING_CARD 결과를 용도에 맞는 Simple Broker 경로로 전달한다.
  *
  * <p>이 컴포넌트는 DB를 수정하지 않는다. broker 전송에 실패해도 이미 커밋된 원문은 MySQL에 남고, 앱은 재연결 뒤 REST 이력으로 복구한다. 로그에는 원문을
  * 남기지 않고 roomId·messageId·userId만 기록한다.
@@ -32,7 +35,9 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 public class ChatRealtimeMessagePublisher
-    implements BookingCardRealtimePublisher, ChatTranslationResultPublisher {
+    implements BookingCardRealtimePublisher,
+        InquiryCardRealtimePublisher,
+        ChatTranslationResultPublisher {
 
   private static final int PAYLOAD_VERSION = 1;
 
@@ -147,6 +152,23 @@ public class ChatRealtimeMessagePublisher
     }
   }
 
+  /**
+   * 신규 문의 방과 함께 저장된 INQUIRY_CARD를 room topic과 두 참여자의 목록 queue로 전달한다.
+   *
+   * <p>신규 방만 이 메서드를 호출하므로 목록 이벤트는 항상 ROOM_CREATED다. 프런트가 아직 새 room topic을 구독하지 못해 카드 이벤트를 놓쳐도 문의
+   * API 응답 직후 REST 메시지 이력으로 같은 정본을 읽을 수 있다.
+   */
+  @Override
+  public void publishNewInquiryCard(ChatRoom room, Message message) {
+    if (message.getType() != MessageType.INQUIRY_CARD) {
+      throw new IllegalArgumentException("Only INQUIRY_CARD can use inquiry publishing");
+    }
+
+    publishRoomMessage(message);
+    publishRoomListEvent(room.getTenantId(), message, ChatStompEventType.ROOM_CREATED);
+    publishRoomListEvent(room.getLandlordId(), message, ChatStompEventType.ROOM_CREATED);
+  }
+
   /** 신규 방·숨긴 방 재표시·일반 목록 갱신 중 프런트가 처리할 한 종류를 선택한다. */
   private static ChatStompEventType roomEventType(boolean roomCreated, boolean roomReopened) {
     if (roomCreated) {
@@ -155,9 +177,10 @@ public class ChatRealtimeMessagePublisher
     return roomReopened ? ChatStompEventType.ROOM_REOPENED : ChatStompEventType.ROOM_UPDATED;
   }
 
-  /** 두 참여자에게 동일한 서버 생성 BOOKING_CARD 저장 완료 이벤트를 room topic으로 보낸다. */
+  /** 두 참여자에게 동일한 서버 생성 문의서·신청서 저장 완료 이벤트를 room topic으로 보낸다. */
   private void publishRoomMessage(Message message) {
     boolean bookingCard = message.getType() == MessageType.BOOKING_CARD;
+    boolean inquiryCard = message.getType() == MessageType.INQUIRY_CARD;
     ChatMessageCreatedPayload payload =
         new ChatMessageCreatedPayload(
             PAYLOAD_VERSION,
@@ -169,6 +192,7 @@ public class ChatRealtimeMessagePublisher
             message.getType(),
             message.getContent(),
             bookingCard ? BookingCardResponseMapper.toResponse(message.getPayload()) : null,
+            inquiryCard ? InquiryCardResponseMapper.toResponse(message.getInquiryPayload()) : null,
             message.getSentAt());
 
     try {

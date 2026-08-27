@@ -10,8 +10,8 @@ import lombok.Getter;
  *
  * <p>이 객체는 상대방마다 복제하는 전달 큐가 아니다. 한 메시지를 {@code chat_messages}에 한 번 저장하고 {@code chatRoomId}와 {@code
  * senderId}로 소속 방과 발신자를 구분한다. {@link MessageType#TEXT}는 사용자 원문과 프런트 UUID를, {@link
- * MessageType#BOOKING_CARD}는 서버가 만든 신청 스냅샷과 bookingId를 가진다. 타입별 nullable 조합은 애플리케이션과 DB CHECK가 함께
- * 보호한다.
+ * MessageType#INQUIRY_CARD}는 서버가 만든 매물 문의 사본을, {@link MessageType#BOOKING_CARD}는 서버가 만든 신청 사본과
+ * bookingId를 가진다. 타입별 nullable 조합은 애플리케이션과 DB CHECK가 함께 보호한다.
  */
 @Getter
 public class Message {
@@ -25,14 +25,17 @@ public class Message {
   /** 메시지가 속한 {@code chat_rooms.id} 값이다. */
   private final Long chatRoomId;
 
-  /** TEXT를 보낸 {@code users.id}이며 서버 생성 BOOKING_CARD에서는 {@code null}이다. */
+  /** TEXT를 보낸 {@code users.id}이며 서버 생성 카드에서는 {@code null}이다. */
   private final Long senderId;
 
-  /** 사용자 원문인지 서버 신청 카드인지 결정하고 나머지 필드의 유효한 조합을 정한다. */
+  /** 사용자 원문·문의서·신청서 중 하나를 결정하고 나머지 필드의 유효한 조합을 정한다. */
   private final MessageType type;
 
-  /** 변경하지 않는 TEXT 원문이며 BOOKING_CARD에서는 {@code null}이다. */
+  /** 변경하지 않는 TEXT 원문이며 서버 생성 카드에서는 {@code null}이다. */
   private final String content;
+
+  /** INQUIRY_CARD의 매물 요약 사본이며 다른 타입에서는 {@code null}이다. */
+  private final InquiryCardPayload inquiryPayload;
 
   /** BOOKING_CARD의 구조화 스냅샷이며 TEXT에서는 {@code null}이다. */
   private final BookingCardPayload payload;
@@ -59,6 +62,7 @@ public class Message {
       Long senderId,
       MessageType type,
       String content,
+      InquiryCardPayload inquiryPayload,
       BookingCardPayload payload,
       Long bookingId,
       UUID clientMessageId,
@@ -68,6 +72,7 @@ public class Message {
     this.senderId = senderId;
     this.type = type;
     this.content = content;
+    this.inquiryPayload = inquiryPayload;
     this.payload = payload;
     this.bookingId = bookingId;
     this.clientMessageId = clientMessageId;
@@ -76,7 +81,7 @@ public class Message {
     validate();
   }
 
-  /** 공통 필수값과 TEXT·BOOKING_CARD의 서로 배타적인 필드를 검증한다. */
+  /** 공통 필수값과 TEXT·INQUIRY_CARD·BOOKING_CARD의 서로 배타적인 필드를 검증한다. */
   private void validate() {
     if (chatRoomId == null || type == null || sentAt == null) {
       throw new IllegalArgumentException("chatRoomId, type and sentAt are required");
@@ -84,6 +89,7 @@ public class Message {
 
     switch (type) {
       case TEXT -> validateText();
+      case INQUIRY_CARD -> validateInquiryCard();
       case BOOKING_CARD -> validateBookingCard();
     }
   }
@@ -94,6 +100,7 @@ public class Message {
         || content == null
         || content.isBlank()
         || clientMessageId == null
+        || inquiryPayload != null
         || bookingId != null
         || payload != null) {
       throw new IllegalArgumentException("TEXT message fields are invalid");
@@ -105,11 +112,24 @@ public class Message {
     }
   }
 
+  /** 문의서가 서버 발신자 없이 매물 요약만 가지며 TEXT·신청 필드를 함께 사용하지 않는지 확인한다. */
+  private void validateInquiryCard() {
+    if (senderId != null
+        || content != null
+        || clientMessageId != null
+        || inquiryPayload == null
+        || bookingId != null
+        || payload != null) {
+      throw new IllegalArgumentException("INQUIRY_CARD message fields are invalid");
+    }
+  }
+
   /** 서버 카드에만 허용되는 신청 번호·payload 조합과 두 bookingId의 일치를 확인한다. */
   private void validateBookingCard() {
     if (senderId != null
         || content != null
         || clientMessageId != null
+        || inquiryPayload != null
         || bookingId == null
         || payload == null) {
       throw new IllegalArgumentException("BOOKING_CARD message fields are invalid");

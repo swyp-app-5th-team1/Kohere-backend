@@ -1,6 +1,7 @@
 package com.kohere.chat.infrastructure;
 
 import com.kohere.chat.domain.BookingCardPayload;
+import com.kohere.chat.domain.InquiryCardPayload;
 import com.kohere.chat.domain.MessageType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -22,8 +23,8 @@ import org.hibernate.type.SqlTypes;
 /**
  * {@code chat_messages} 전용 JPA 엔티티다.
  *
- * <p>TEXT와 BOOKING_CARD를 한 시간축과 하나의 messageId cursor로 조회하기 위해 단일 테이블을 사용한다. 두 타입이 요구하는 필드가 다르므로
- * nullable 컬럼을 사용하되, Flyway의 타입별 CHECK가 잘못된 조합을 최종 차단한다.
+ * <p>TEXT·INQUIRY_CARD·BOOKING_CARD를 한 시간축과 하나의 messageId cursor로 조회하기 위해 단일 테이블을 사용한다. 세 타입이 요구하는
+ * 필드가 다르므로 nullable 컬럼을 사용하되, Flyway의 타입별 CHECK가 잘못된 조합을 최종 차단한다.
  */
 @Entity
 @Table(name = "chat_messages")
@@ -42,10 +43,10 @@ class MessageJpaEntity {
   @Column(nullable = false)
   private Long chatRoomId;
 
-  /** TEXT 발신자 users.id이며 서버가 만든 BOOKING_CARD에는 값이 없다. */
+  /** TEXT 발신자 users.id이며 서버가 만든 카드에는 값이 없다. */
   private Long senderId;
 
-  /** Java enum 이름을 그대로 저장해 DB CHECK의 TEXT/BOOKING_CARD 값과 일치시킨다. */
+  /** Java enum 이름을 그대로 저장해 DB CHECK의 TEXT/INQUIRY_CARD/BOOKING_CARD 값과 일치시킨다. */
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 32)
   private MessageType type;
@@ -53,6 +54,11 @@ class MessageJpaEntity {
   /** 사용자가 보낸 변경 불가 원문이며 카드에서는 null이다. 길이 3,000자 상한은 DB CHECK도 검증한다. */
   @Column(columnDefinition = "text")
   private String content;
+
+  /** 서버 INQUIRY_CARD의 매물 요약 사본이며 다른 타입에서는 null이다. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "inquiry_payload", columnDefinition = "json")
+  private InquiryCardPayload inquiryPayload;
 
   /** 서버 BOOKING_CARD의 구조화 스냅샷이며 TEXT에서는 null이다. */
   @JdbcTypeCode(SqlTypes.JSON)

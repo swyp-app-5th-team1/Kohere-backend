@@ -15,6 +15,7 @@ import com.kohere.chat.application.dto.ChatCounterpartResponse;
 import com.kohere.chat.application.dto.ChatLastMessageResponse;
 import com.kohere.chat.application.dto.ChatListingSummaryResponse;
 import com.kohere.chat.application.dto.ChatRoomResponse;
+import com.kohere.chat.application.dto.InquiryCardResponse;
 import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.application.dto.MessageResponse;
 import com.kohere.chat.application.dto.MessageTranslationResponse;
@@ -96,6 +97,7 @@ class ChatContractTest {
             MessageType.TEXT,
             "Is the room still available?",
             null,
+            null,
             new MessageTranslationResponse(
                 TranslationResultStatus.SUCCEEDED,
                 "아직 방을 구할 수 있나요?",
@@ -116,10 +118,12 @@ class ChatContractTest {
             "type",
             "originalContent",
             "bookingCard",
+            "inquiryCard",
             "translation",
             "sentAt");
     assertThat(json.path("mine").asBoolean()).isFalse();
     assertThat(json.path("bookingCard").isNull()).isTrue();
+    assertThat(json.path("inquiryCard").isNull()).isTrue();
     assertThat(json.path("translation").path("status").asText()).isEqualTo("SUCCEEDED");
     assertThat(json.path("translation").path("targetLanguage").asText()).isEqualTo("ko");
   }
@@ -155,6 +159,7 @@ class ChatContractTest {
             null,
             bookingCard,
             null,
+            null,
             SENT_AT);
 
     JsonNode json = objectMapper.valueToTree(response);
@@ -165,6 +170,45 @@ class ChatContractTest {
     assertThat(json.path("translation").isNull()).isTrue();
     assertThat(json.path("bookingCard").path("contractPeriod").asInt()).isEqualTo(3);
     assertThat(json.path("bookingCard").has("contractPeriodMonths")).isFalse();
+  }
+
+  /** INQUIRY_CARD는 상세 이동과 문의서 UI에 필요한 매물 요약만 사용하고 TEXT·신청 필드는 비운다. */
+  @Test
+  void inquiryCardUsesListingSummaryAndHasNoOtherMessageFields() {
+    InquiryCardResponse inquiryCard =
+        new InquiryCardResponse(
+            "6858e2000000000000000001",
+            "https://cdn.example.com/listings/cover.jpg",
+            "Hongdae Studio share",
+            "SEOUL",
+            "MAPO_GU",
+            "CO_LIVING",
+            350_000,
+            500_000);
+    MessageResponse response =
+        new MessageResponse(
+            70050L,
+            null,
+            556L,
+            null,
+            false,
+            MessageType.INQUIRY_CARD,
+            null,
+            null,
+            inquiryCard,
+            null,
+            SENT_AT);
+
+    JsonNode json = objectMapper.valueToTree(response);
+
+    assertThat(json.path("clientMessageId").isNull()).isTrue();
+    assertThat(json.path("senderId").isNull()).isTrue();
+    assertThat(json.path("originalContent").isNull()).isTrue();
+    assertThat(json.path("bookingCard").isNull()).isTrue();
+    assertThat(json.path("translation").isNull()).isTrue();
+    assertThat(json.path("inquiryCard").path("listingType").asText()).isEqualTo("CO_LIVING");
+    assertThat(json.path("inquiryCard").path("monthlyRentMin").asInt()).isEqualTo(350_000);
+    assertThat(json.path("inquiryCard").path("monthlyRentMax").asInt()).isEqualTo(500_000);
   }
 
   /** 프런트엔드가 만든 UUID와 원문만 SEND하며 잘못된 UUID는 binding 단계에서 거부되는지 확인한다. */
@@ -202,10 +246,11 @@ class ChatContractTest {
     assertThat(json.path("eventType").asText()).isEqualTo("SUBSCRIPTION_READY");
   }
 
-  /** 사용자가 보내는 TEXT와 서버가 만드는 BOOKING_CARD 외 타입을 공개 계약에 실수로 추가하지 않게 한다. */
+  /** 사용자가 보내는 TEXT와 서버가 만드는 두 카드 외 타입을 공개 계약에 실수로 추가하지 않게 한다. */
   @Test
-  void publicMessageTypesContainOnlyTextAndBookingCard() {
-    assertThat(MessageType.values()).containsExactly(MessageType.TEXT, MessageType.BOOKING_CARD);
+  void publicMessageTypesContainOnlySupportedTypes() {
+    assertThat(MessageType.values())
+        .containsExactly(MessageType.TEXT, MessageType.INQUIRY_CARD, MessageType.BOOKING_CARD);
   }
 
   /** Jackson이 내보낸 실제 필드 순서를 간결하게 비교하기 위한 도우미. */

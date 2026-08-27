@@ -44,7 +44,7 @@ class ChatListingQueryIntegrationTest {
     mongoTemplate.getCollection(LISTINGS_COLLECTION).deleteMany(new Document());
   }
 
-  /** 공개 매물의 실제 임대인과 영어 제목·주소를 채팅용 뷰로 반환한다. */
+  /** 공개 매물의 실제 임대인과 채팅방·문의서에 필요한 공개 정보를 함께 반환한다. */
   @Test
   @DisplayName("공개 매물을 채팅방 생성용 최소 정보로 조회한다")
   void findsPublishedListingForChat() {
@@ -57,6 +57,13 @@ class ChatListingQueryIntegrationTest {
     assertThat(result.landlordId()).isEqualTo(11L);
     assertThat(result.title()).isEqualTo("Sillim Stay");
     assertThat(result.address()).isEqualTo("56-15 Na-ro, Sillim-dong, Gwanak-gu, Seoul");
+    assertThat(result.thumbnailUrl())
+        .isEqualTo("https://cdn.kohere.app/listings/68e0000000000000000000a1/1.jpg");
+    assertThat(result.city()).isEqualTo("SEOUL");
+    assertThat(result.district()).isEqualTo("GWANAK_GU");
+    assertThat(result.listingType()).isEqualTo("GOSHIWON");
+    assertThat(result.monthlyRentMin()).isEqualTo(380_000);
+    assertThat(result.monthlyRentMax()).isEqualTo(520_000);
   }
 
   /** 공개되지 않은 매물의 상대방과 표시 정보는 chat 모듈에 전달하지 않는다. */

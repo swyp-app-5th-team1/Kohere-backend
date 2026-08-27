@@ -28,7 +28,7 @@ interface MessageJpaRepository extends JpaRepository<MessageJpaEntity, Long> {
   List<MessageJpaEntity> findByChatRoomIdAndIdGreaterThanOrderByIdAsc(
       Long chatRoomId, Long afterMessageId, Pageable pageable);
 
-  /** 숨김 경계 뒤의 TEXT만 최신순으로 읽어 BOOKING_CARD가 신고 증거에 섞이지 않게 한다. */
+  /** 숨김 경계 뒤의 TEXT만 최신순으로 읽어 서버 카드가 신고 증거에 섞이지 않게 한다. */
   List<MessageJpaEntity> findByChatRoomIdAndTypeAndIdGreaterThanOrderByIdDesc(
       Long chatRoomId, MessageType type, Long hiddenThroughMessageId, Pageable pageable);
 }

@@ -1,6 +1,7 @@
 package com.kohere.chat.application;
 
 import com.kohere.chat.application.dto.BookingCardResponse;
+import com.kohere.chat.application.dto.InquiryCardResponse;
 import com.kohere.chat.application.dto.MessageResponse;
 import com.kohere.chat.application.dto.MessageTranslationResponse;
 import com.kohere.chat.domain.ChatRoomMember;
@@ -182,7 +183,7 @@ public class ChatMessageHistoryService {
     return new CursorResponse<>(List.of(), null, false);
   }
 
-  /** 도메인 메시지를 프런트엔드가 TEXT와 BOOKING_CARD로 구분해 그릴 수 있는 응답으로 바꾼다. */
+  /** 도메인 메시지를 프런트엔드가 TEXT·INQUIRY_CARD·BOOKING_CARD로 구분해 그릴 수 있는 응답으로 바꾼다. */
   private static MessageResponse toResponse(
       long userId, Message message, ChatMessageTranslation translation) {
     boolean mine =
@@ -190,6 +191,10 @@ public class ChatMessageHistoryService {
     BookingCardResponse bookingCard =
         message.getType() == MessageType.BOOKING_CARD
             ? BookingCardResponseMapper.toResponse(message.getPayload())
+            : null;
+    InquiryCardResponse inquiryCard =
+        message.getType() == MessageType.INQUIRY_CARD
+            ? InquiryCardResponseMapper.toResponse(message.getInquiryPayload())
             : null;
 
     return new MessageResponse(
@@ -201,6 +206,7 @@ public class ChatMessageHistoryService {
         message.getType(),
         message.getContent(),
         bookingCard,
+        inquiryCard,
         toTranslationResponse(translation),
         message.getSentAt());
   }

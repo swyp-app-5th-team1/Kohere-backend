@@ -23,7 +23,7 @@ public record ChatStompGuideResponse(
     String connectHeaderValueFormat,
     /** 개인 queue 수신 여부를 PING/PONG으로 확인하는 SEND 경로. */
     String controlSendDestination,
-    /** 특정 채팅방의 서버 생성 BOOKING_CARD를 실시간 수신하는 구독 경로 형식. */
+    /** 특정 채팅방의 서버 생성 INQUIRY_CARD·BOOKING_CARD를 실시간 수신하는 구독 경로 형식. */
     String roomSubscribeDestination,
     /** 특정 채팅방에 사용자 TEXT를 보내는 SEND 경로 형식. */
     String messageSendDestination,

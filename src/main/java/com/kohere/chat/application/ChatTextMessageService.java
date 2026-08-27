@@ -55,7 +55,7 @@ public class ChatTextMessageService {
     validateInput(clientMessageId, content);
 
     /*
-     * 방 행을 모든 메시지 쓰기의 공통 잠금으로 사용한다. TEXT와 BOOKING_CARD가 동시에 들어와도
+     * 방 행을 모든 메시지 쓰기의 공통 잠금으로 사용한다. TEXT와 서버 생성 카드가 동시에 들어와도
      * messageId 확인 → INSERT → lastMessageId 갱신 순서가 한 줄로 실행돼 마지막 포인터가 과거로 돌아가지 않는다.
      */
     ChatRoom room =

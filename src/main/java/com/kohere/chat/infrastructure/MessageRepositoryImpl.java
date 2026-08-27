@@ -110,13 +110,14 @@ public class MessageRepositoryImpl implements MessageRepository {
    * @return 애플리케이션 계층이 사용할 메시지
    */
   private static Message toDomain(MessageJpaEntity entity) {
-    // TEXT와 BOOKING_CARD의 nullable 필드는 DB CHECK를 통과한 조합 그대로 복원한다.
+    // 세 메시지 타입의 nullable 필드는 DB CHECK를 통과한 조합 그대로 복원한다.
     return Message.builder()
         .id(entity.getId())
         .chatRoomId(entity.getChatRoomId())
         .senderId(entity.getSenderId())
         .type(entity.getType())
         .content(entity.getContent())
+        .inquiryPayload(entity.getInquiryPayload())
         .payload(entity.getPayload())
         .bookingId(entity.getBookingId())
         .clientMessageId(entity.getClientMessageId())
@@ -131,13 +132,14 @@ public class MessageRepositoryImpl implements MessageRepository {
    * @return Hibernate가 관리할 메시지 엔티티
    */
   private static MessageJpaEntity toEntity(Message domain) {
-    // payload와 UUID의 실제 JSON/BINARY 변환은 엔티티에 선언한 Hibernate 타입이 담당한다.
+    // 두 카드 payload와 UUID의 실제 JSON/BINARY 변환은 엔티티에 선언한 Hibernate 타입이 담당한다.
     return MessageJpaEntity.builder()
         .id(domain.getId())
         .chatRoomId(domain.getChatRoomId())
         .senderId(domain.getSenderId())
         .type(domain.getType())
         .content(domain.getContent())
+        .inquiryPayload(domain.getInquiryPayload())
         .payload(domain.getPayload())
         .bookingId(domain.getBookingId())
         .clientMessageId(domain.getClientMessageId())

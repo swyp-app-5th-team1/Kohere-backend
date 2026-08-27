@@ -192,7 +192,7 @@ public class ChatRoomListService {
       throw new IllegalStateException("Missing last message: " + lastMessageId);
     }
 
-    // BOOKING_CARD의 문구는 myRole과 앱 언어에 따라 프런트가 고정 label을 선택하므로 preview는 null이다.
+    // 서버 카드의 문구는 타입·역할·앱 언어에 따라 프런트가 고정 label을 선택하므로 preview는 null이다.
     String preview = null;
     if (message.getType() == MessageType.TEXT) {
       ChatMessageTranslation translation = translationsByMessageId.get(message.getId());

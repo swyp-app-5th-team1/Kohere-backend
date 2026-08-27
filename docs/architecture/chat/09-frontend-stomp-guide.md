@@ -2,7 +2,7 @@
 
 > 대상: 앱·웹 프론트엔드 개발자
 >
-> 최종 수정: 2026-08-22
+> 최종 수정: 2026-08-28
 >
 > Swagger: `Chats → GET /api/v1/chat/stomp-guide`
 
@@ -12,6 +12,8 @@ Swagger에서는 REST API를 직접 실행할 수 있다. WebSocket/STOMP는 Swa
 
 정확한 protocol 규칙이 필요하면 [03-websocket-stomp.md](03-websocket-stomp.md)를 따른다.
 
+문의서 카드만 연동할 때 필요한 API·응답·UI 규칙은 [10-inquiry-card-frontend-guide.md](10-inquiry-card-frontend-guide.md)에 따로 모았다.
+
 ## 1. 핵심 용어
 
 | 용어 | 쉬운 설명 |
@@ -20,7 +22,7 @@ Swagger에서는 REST API를 직접 실행할 수 있다. WebSocket/STOMP는 Swa
 | STOMP | WebSocket 통로에서 연결·구독·전송을 구분하는 메시지 규칙 |
 | SEND | 서버에 메시지나 제어 요청을 보내는 동작 |
 | SUBSCRIBE | 특정 경로에서 발생하는 새 이벤트를 계속 받겠다고 등록하는 동작 |
-| topic | 같은 채팅방 참여자에게 서버 생성 BOOKING_CARD를 방송하는 실시간 경로 |
+| topic | 같은 채팅방 참여자에게 서버 생성 INQUIRY_CARD·BOOKING_CARD를 방송하는 실시간 경로 |
 | 개인 queue | ACK·오류처럼 현재 사용자 session만 받아야 하는 결과 경로 |
 | ACK | 내가 보낸 TEXT가 MySQL에 저장됐다는 애플리케이션 결과 |
 
@@ -35,19 +37,19 @@ topic과 queue는 데이터를 저장하는 장소가 아니다. 채팅 기록�
   → 사용자가 채팅방 선택
   → 채팅방 상세와 저장된 메시지 조회
   → WebSocket/STOMP 연결·구독
-  → 새 TEXT와 BOOKING_CARD 실시간 수신
+  → 새 TEXT·INQUIRY_CARD·BOOKING_CARD 실시간 수신
 ```
 
 ### 매물 화면에서 처음 문의하는 경우
 
 ```text
 사용자가 문의하기 선택
-  → 서버가 기존 채팅방을 찾거나 새로 생성
+  → 서버가 기존 채팅방을 찾거나 새 방·문의서를 함께 생성
   → 응답으로 받은 chatRoomId로 채팅방 상세·메시지 조회
   → WebSocket/STOMP 연결·구독
 ```
 
-문의하기와 입주 신청은 매물·임차인·임대인이 같으면 같은 `chatRoomId`를 사용한다. 문의 중 입주 신청을 완료해도 새 채팅방으로 이동하지 않으며, 기존 대화 뒤에 서버가 만든 `BOOKING_CARD`가 추가된다.
+문의하기로 새 방이 만들어지면 서버가 매물 요약 `INQUIRY_CARD`를 첫 메시지로 함께 저장한다. 이미 방이 있으면 문의서를 추가하지 않고 기존 `chatRoomId`만 반환한다. 문의하기와 입주 신청은 매물·임차인·임대인이 같으면 같은 `chatRoomId`를 사용하며, 문의 중 입주 신청을 완료하면 기존 대화 뒤에 서버가 만든 `BOOKING_CARD`가 추가된다.
 
 모든 REST 요청에는 로그인으로 받은 access token을 다음 header로 보낸다.
 
@@ -97,12 +99,15 @@ Authorization: Bearer <accessToken>
 | 필드 | 의미 |
 | --- | --- |
 | `chatRoomId` | 채팅방 화면·REST 조회·STOMP 구독에 사용하는 서버 채팅방 ID |
-| `created` | 이번 요청으로 새 방을 만들었으면 true, 기존 방을 찾았으면 false |
+| `created` | 새 방·두 참여자·INQUIRY_CARD를 이번 요청에서 만들었으면 true, 기존 방을 찾았으면 false |
 
-- 새 방이면 `201 Created`와 `created=true`가 온다.
+- 새 방이면 `201 Created`와 `created=true`가 오며 문의서가 이미 MySQL에 저장된 상태다.
 - 이미 같은 매물·임차인·임대인의 방이 있으면 `200 OK`와 `created=false`가 온다.
+- `created=false`이면 문의서를 새로 추가하지 않는다. 신청으로 먼저 만들어진 방에도 문의서가 자동으로 끼어들지 않는다.
 - 프론트 처리는 두 경우가 같다. 반환된 `chatRoomId`로 같은 채팅방 화면을 연다.
 - 사용자가 과거에 이 방을 삭제했다가 다시 문의한 경우에도 기존 `chatRoomId`를 사용하지만, 그 사용자가 삭제 전에 보던 과거 메시지는 다시 보여 주지 않는다.
+
+신규 문의서는 POST 응답 전에 저장되지만, 프론트가 새 room topic을 구독하기 전이라 실시간 이벤트를 놓칠 수 있다. 따라서 문의 응답을 받은 뒤에는 항상 메시지 이력 API를 호출해 `INQUIRY_CARD`를 가져온다. 이후 연결 중 생기는 서버 카드는 room topic으로 받는다.
 
 ## 4. 내 채팅방 목록 조회
 
@@ -168,8 +173,8 @@ Authorization: Bearer <accessToken>
 | `data.content[].counterpart.displayName` | 목록에 표시할 상대방 이름. 프로필 이미지는 아직 없으므로 기본 아이콘 사용 |
 | `data.content[].lastMessage` | 현재 사용자에게 보이는 마지막 메시지. 메시지가 없으면 null |
 | `data.content[].lastMessage.messageId` | 마지막 메시지의 서버 ID. 정렬·중복 제거 기준 |
-| `data.content[].lastMessage.type` | 마지막 메시지 종류. `TEXT` 또는 `BOOKING_CARD` |
-| `data.content[].lastMessage.preview` | 목록 두 번째 줄에 표시할 TEXT 원문. BOOKING_CARD이면 null일 수 있음 |
+| `data.content[].lastMessage.type` | 마지막 메시지 종류. `TEXT`, `INQUIRY_CARD`, `BOOKING_CARD` |
+| `data.content[].lastMessage.preview` | 목록 두 번째 줄에 표시할 TEXT 원문. 카드이면 null일 수 있음 |
 | `data.content[].lastMessage.sentAt` | 마지막 메시지가 저장된 시각 |
 | `data.content[].blocked` | 어느 방향이든 차단 관계가 있어 새 TEXT를 보낼 수 없으면 true |
 | `data.page.number` | 현재 페이지 번호. 첫 페이지는 0 |
@@ -179,6 +184,8 @@ Authorization: Bearer <accessToken>
 | `data.page.hasNext` | 다음 채팅방 페이지가 더 있으면 true |
 
 `lastMessage.type=BOOKING_CARD`이면 `preview`는 null일 수 있다. 이때 프론트가 `myRole`에 맞게 “신청이 접수되었습니다” 또는 “새로운 입주 신청이 도착했습니다” 같은 고정 문구를 `ko/en`으로 표시한다.
+
+`lastMessage.type=INQUIRY_CARD`이면 프론트가 “매물 문의가 시작되었습니다” 같은 고정 문구를 현재 화면 언어로 표시한다.
 
 ## 5. 채팅방 상세 조회
 
@@ -270,7 +277,7 @@ WebSocket 연결
   → 채팅방 topic 구독
   → SUBSCRIPTION_READY 확인
   → REST로 누락 메시지 보충
-  → TEXT 전송·원문+번역 결합 수신 / BOOKING_CARD 수신
+  → TEXT 전송·원문+번역 결합 수신 / INQUIRY_CARD·BOOKING_CARD 수신
 ```
 
 사용자가 버튼을 눌러 각 단계를 실행하는 것이 아니다. 채팅방 화면에 들어갈 때 프론트 코드가 자동으로 수행한다.
@@ -334,7 +341,7 @@ WebSocket 연결
 /topic/chat-rooms/556
 ```
 
-이 topic으로 서버가 만든 새 `BOOKING_CARD`가 실시간으로 온다. 받은 사용자 `TEXT`는 원문과 번역 결과를 함께 보호해야 하므로 수신자 개인 `/user/queue/chat-translations`로 온다.
+이 topic으로 서버가 만든 새 `INQUIRY_CARD`와 `BOOKING_CARD`가 실시간으로 온다. 받은 사용자 `TEXT`는 원문과 번역 결과를 함께 보호해야 하므로 수신자 개인 `/user/queue/chat-translations`로 온다.
 
 ### SUBSCRIPTION_READY
 
@@ -408,6 +415,7 @@ TEXT 한 건이 포함된 응답 예시는 다음과 같다.
         "type": "TEXT",
         "originalContent": "Is the room still available?",
         "bookingCard": null,
+        "inquiryCard": null,
         "translation": {
           "status": "SUCCEEDED",
           "content": "아직 방을 구할 수 있나요?",
@@ -429,19 +437,20 @@ TEXT 한 건이 포함된 응답 예시는 다음과 같다.
 | --- | --- |
 | `content` | 화면에 추가할 메시지 배열 |
 | `messageId` | 서버가 만든 최종 메시지 ID. REST·STOMP 결과를 합칠 때 중복 제거 기준 |
-| `clientMessageId` | TEXT 전송 때 발신 프론트가 만든 UUID. BOOKING_CARD는 null |
+| `clientMessageId` | TEXT 전송 때 발신 프론트가 만든 UUID. 서버 카드는 null |
 | `chatRoomId` | 메시지가 속한 서버 채팅방 ID |
-| `senderId` | TEXT를 보낸 사용자의 서버 ID. BOOKING_CARD는 null |
+| `senderId` | TEXT를 보낸 사용자의 서버 ID. 서버 카드는 null |
 | `mine` | 현재 로그인 사용자가 보낸 TEXT이면 true |
-| `type` | `TEXT` 또는 `BOOKING_CARD` |
-| `originalContent` | 수정하지 않은 TEXT 원문. BOOKING_CARD는 null |
+| `type` | `TEXT`, `INQUIRY_CARD`, `BOOKING_CARD` |
+| `originalContent` | 수정하지 않은 TEXT 원문. 서버 카드는 null |
 | `translation` | 현재 사용자를 위한 최종 번역 결과. 없거나 아직 처리 중이면 null |
 | `translation.status` | `SUCCEEDED`, `NOT_REQUIRED`, `FAILED` 중 최종 번역 상태 |
 | `translation.content` | 번역 성공 시 표시할 번역문. 그 외 상태는 null |
 | `translation.sourceLanguage` | 번역 API가 감지한 원문 언어 코드 |
 | `translation.targetLanguage` | 현재 사용자의 대상 언어인 `ko` 또는 `en` |
 | `translation.provider` | 번역 제공자. 현재 `GOOGLE_CLOUD_TRANSLATION` |
-| `bookingCard` | 서버가 저장한 신청 카드. TEXT는 null이며 내부 필드는 15절의 표와 동일 |
+| `inquiryCard` | 서버가 저장한 문의서 카드. 다른 타입은 null이며 내부 필드는 15.1절의 표와 동일 |
+| `bookingCard` | 서버가 저장한 신청 카드. 다른 타입은 null이며 내부 필드는 15.2절의 표와 동일 |
 | `sentAt` | 메시지가 서버에 저장된 시각 |
 | `nextCursor` | 다음 페이지가 있을 때 다음 요청에 그대로 넣을 메시지 ID |
 | `hasNext` | 같은 방향으로 조회할 다음 페이지가 있으면 true |
@@ -451,6 +460,7 @@ TEXT 한 건이 포함된 응답 예시는 다음과 같다.
 - 받은 TEXT에서 `translation.status=SUCCEEDED`이면 `translation.content`를 기본 표시하고 원문 보기에서 `originalContent`를 보여 준다.
 - `translation=null`, `FAILED`, `NOT_REQUIRED`이면 `originalContent`를 표시한다.
 - 내가 보낸 TEXT는 `mine=true`이며 번역 없이 원문을 표시한다.
+- `type=INQUIRY_CARD`이면 `inquiryCard`를 문의서 UI로 그린다.
 - `type=BOOKING_CARD`이면 `bookingCard`를 카드 UI로 그린다.
 - 사용자가 과거에 채팅방을 삭제했다면 그 사용자에게 숨겨진 삭제 이전 메시지는 이 응답에 포함되지 않는다. 삭제하지 않은 상대방은 같은 방의 전체 과거 이력을 계속 조회할 수 있다.
 
@@ -524,7 +534,66 @@ TEXT 번역 작업이 끝나면 수신자의 `/user/queue/chat-translations`로 
 
 `SUCCEEDED`면 `translatedContent`를 먼저 표시하고 원문 보기에서 `originalContent`로 전환한다. `NOT_REQUIRED` 또는 `FAILED`면 `originalContent`를 표시한다. 프론트는 `messageId`를 최종 중복 제거 기준으로 사용한다.
 
-## 15. BOOKING_CARD 수신
+## 15. 서버 생성 카드 수신
+
+프론트는 카드를 직접 SEND하지 않는다. 서버가 저장을 완료한 `INQUIRY_CARD`와 `BOOKING_CARD`만 room topic으로 오며, 실시간 이벤트를 놓쳐도 메시지 이력 API에서 다시 받을 수 있다.
+
+### 15.1 INQUIRY_CARD 문의서
+
+문의하기 API가 새 채팅방을 만들면 서버가 같은 트랜잭션으로 `INQUIRY_CARD`를 저장한다. 기존 방을 반환한 경우에는 새 문의서 이벤트가 오지 않는다.
+
+```json
+{
+  "version": 1,
+  "eventType": "MESSAGE_CREATED",
+  "messageId": 70050,
+  "clientMessageId": null,
+  "chatRoomId": 556,
+  "senderId": null,
+  "type": "INQUIRY_CARD",
+  "originalContent": null,
+  "bookingCard": null,
+  "inquiryCard": {
+    "listingId": "6858e2000000000000000001",
+    "thumbnailUrl": "https://cdn.example.com/listings/cover.jpg",
+    "title": "Hongdae Studio share",
+    "city": "SEOUL",
+    "district": "MAPO_GU",
+    "listingType": "CO_LIVING",
+    "monthlyRentMin": 350000,
+    "monthlyRentMax": 500000
+  },
+  "sentAt": "2026-08-19T10:14:30.123456Z"
+}
+```
+
+다음 표는 room topic의 실시간 이벤트와 메시지 이력 REST 응답의 `inquiryCard`에서 공통으로 사용하는 값이다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `version` | 실시간 payload 형식 버전. 현재 1 |
+| `eventType` | 새 저장 메시지 이벤트인 `MESSAGE_CREATED` |
+| `messageId` | MySQL이 발급한 INQUIRY_CARD의 최종 메시지 ID |
+| `clientMessageId` | 서버가 만든 카드이므로 null |
+| `chatRoomId` | 카드가 저장된 채팅방 ID |
+| `senderId` | 사용자가 직접 보낸 TEXT가 아니므로 null |
+| `type` | 문의서 카드임을 나타내는 `INQUIRY_CARD` |
+| `originalContent` | TEXT 원문이 없으므로 null |
+| `bookingCard` | 문의서 메시지이므로 null |
+| `inquiryCard` | 문의서 UI를 그리는 전체 데이터 객체 |
+| `inquiryCard.listingId` | 문의한 매물 ID. `View Detail`을 누르면 이 ID로 기존 매물 상세 화면을 연다. |
+| `inquiryCard.thumbnailUrl` | 문의 당시 매물의 첫 번째 대표 이미지 URL. 이미지가 없으면 null |
+| `inquiryCard.title` | 문의 당시 매물 제목. 개별 RoomOffer 이름이 아니다. |
+| `inquiryCard.city` | 주소의 city code. 프론트가 현재 언어의 label로 표시 |
+| `inquiryCard.district` | 주소의 district code. 프론트가 현재 언어의 label로 표시 |
+| `inquiryCard.listingType` | `GOSHIWON`, `CO_LIVING`, `SHARE_HOUSE` 중 하나. 프론트가 현재 언어의 label로 표시 |
+| `inquiryCard.monthlyRentMin` | 문의 당시 `ACTIVE` 방 상품 중 최소 월세(KRW) |
+| `inquiryCard.monthlyRentMax` | 문의 당시 `ACTIVE` 방 상품 중 최대 월세(KRW) |
+| `sentAt` | INQUIRY_CARD가 서버에 저장된 시각 |
+
+프론트는 `thumbnailUrl`이 null이면 이미지 없음 UI를 사용한다. 최소·최대 월세가 같으면 한 금액만 표시할 수 있고, 다르면 범위로 표시한다. city·district·매물 유형의 label은 Google 번역 결과가 아니라 앱이 서버 code를 기준으로 `ko/en` 현지화한다.
+
+### 15.2 BOOKING_CARD 신청서
 
 입주 신청이 저장되면 서버가 같은 채팅방에 `BOOKING_CARD`를 자동 저장하고 room topic으로 전달한다. 프론트가 카드를 SEND하지 않는다.
 
@@ -538,6 +607,7 @@ TEXT 번역 작업이 끝나면 수신자의 `/user/queue/chat-translations`로 
   "senderId": null,
   "type": "BOOKING_CARD",
   "originalContent": null,
+  "inquiryCard": null,
   "bookingCard": {
     "bookingId": 123,
     "listing": {
@@ -578,6 +648,7 @@ TEXT 번역 작업이 끝나면 수신자의 `/user/queue/chat-translations`로 
 | `senderId` | 사용자가 직접 보낸 메시지가 아니므로 null |
 | `type` | 신청 카드임을 나타내는 `BOOKING_CARD` |
 | `originalContent` | TEXT 원문이 없으므로 null |
+| `inquiryCard` | 신청서 메시지이므로 null |
 | `bookingCard` | 신청 카드 UI를 그리는 전체 데이터 객체 |
 | `bookingCard.bookingId` | 이 카드가 나타내는 입주 신청 ID |
 | `bookingCard.listing` | 신청 당시 매물 표시 정보를 묶은 객체 |
@@ -697,7 +768,7 @@ CONNECT 인증 실패는 STOMP `ERROR` frame 뒤 연결이 종료된다.
 
 | `eventType` | 의미 |
 | --- | --- |
-| `ROOM_CREATED` | 사용자 목록에 새 채팅방이 생성됨 |
+| `ROOM_CREATED` | 사용자 목록에 새 채팅방이 생성됨. 문의로 시작하면 `lastMessageId`는 함께 저장된 INQUIRY_CARD ID |
 | `ROOM_UPDATED` | 기존 채팅방의 마지막 메시지 등이 바뀜 |
 | `ROOM_REOPENED` | 새 활동으로 숨긴 채팅방이 다시 목록에 표시됨 |
 
@@ -830,6 +901,7 @@ Simple Broker는 연결이 끊긴 동안의 이벤트를 다시 재생하지 않
 ## 23. 프론트 구현 체크리스트
 
 - [ ] 문의하기 응답의 신규·기존 여부와 관계없이 반환된 `chatRoomId`로 채팅방을 연다.
+- [ ] 문의하기의 `created=true`이면 메시지 이력에서 INQUIRY_CARD를 읽고, `created=false`이면 새 문의서가 추가됐다고 가정하지 않는다.
 - [ ] 목록의 `counterpart`에는 아직 프로필 이미지가 없으므로 기본 아이콘을 사용한다.
 - [ ] 목록·상세의 `blocked=true`이면 과거 이력은 표시하고 TEXT 입력창만 비활성화한다.
 - [ ] 최근 이력의 `nextCursor`는 `hasNext=true`일 때 같은 조회 방향의 다음 요청에 사용한다.
@@ -844,6 +916,9 @@ Simple Broker는 연결이 끊긴 동안의 이벤트를 다시 재생하지 않
 - [ ] ACK가 오면 같은 `clientMessageId`의 발신 임시 말풍선을 확정한다.
 - [ ] 최종 메시지 중복은 서버 `messageId`로 제거한다.
 - [ ] translation queue의 `SUCCEEDED`는 번역문 우선, `NOT_REQUIRED`·`FAILED`는 원문으로 렌더링한다.
+- [ ] room topic과 REST 이력의 `INQUIRY_CARD`는 문의서 UI로 렌더링한다.
+- [ ] 문의서의 city·district·listingType code는 앱 언어에 맞는 label로 표시한다.
+- [ ] 문의서의 `View Detail`은 `inquiryCard.listingId`로 기존 매물 상세 화면을 연다.
 - [ ] room topic의 `BOOKING_CARD`는 역할별 카드 UI로 렌더링한다.
 - [ ] 앱 로직은 오류 `message`가 아니라 `code`로 분기한다.
 - [ ] 재연결 때 개인 queue와 room topic을 모두 다시 구독한다.
@@ -869,6 +944,7 @@ Simple Broker는 연결이 끊긴 동안의 이벤트를 다시 재생하지 않
 
 아직 구현하지 않은 기능:
 
+- 문의로 새 방을 만들 때 INQUIRY_CARD 저장·조회·실시간 전달
 - 푸시 알림
 - 읽음 표시와 안 읽은 메시지 수
 - 사용자용 삭제 채팅방 복원

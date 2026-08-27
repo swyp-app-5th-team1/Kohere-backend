@@ -6,7 +6,7 @@ package com.kohere.chat.presentation.stomp.dto;
  * <p>프런트엔드는 destination만으로 payload 의미를 추측하지 않고 이 값을 함께 확인한다. 문자열 code는 와이어 계약이므로 이름 변경은 호환성 변경이다.
  */
 public enum ChatStompEventType {
-  /** 원문 TEXT 또는 서버 생성 BOOKING_CARD가 MySQL에 저장됨. */
+  /** 원문 TEXT 또는 서버 생성 INQUIRY_CARD·BOOKING_CARD가 MySQL에 저장됨. */
   MESSAGE_CREATED,
   /** 특정 수신자를 위한 번역 처리가 최종 상태에 도달함. */
   MESSAGE_TRANSLATION_UPDATED,

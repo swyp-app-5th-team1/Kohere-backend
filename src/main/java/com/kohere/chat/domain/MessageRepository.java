@@ -14,7 +14,7 @@ import java.util.UUID;
 public interface MessageRepository {
 
   /**
-   * 검증이 끝난 TEXT 또는 서버 BOOKING_CARD를 저장한다.
+   * 검증이 끝난 TEXT 또는 서버가 만든 INQUIRY_CARD·BOOKING_CARD를 저장한다.
    *
    * @param message 저장할 불변 메시지
    * @return DB가 발급한 messageId를 포함한 메시지
@@ -83,8 +83,8 @@ public interface MessageRepository {
   /**
    * 채팅방 신고 당시 사용자에게 보이는 경계 이후의 최근 TEXT 원문만 조회한다.
    *
-   * <p>일반 이력 조회 뒤 애플리케이션에서 BOOKING_CARD를 걸러내면 카드가 많은 방에서 TEXT 20개를 채우지 못한다. DB에서 처음부터 타입과 경계를 적용해
-   * 정확한 증거 개수를 읽는다.
+   * <p>일반 이력 조회 뒤 애플리케이션에서 서버 카드를 걸러내면 카드가 많은 방에서 TEXT 20개를 채우지 못한다. DB에서 처음부터 타입과 경계를 적용해 정확한 증거
+   * 개수를 읽는다.
    *
    * @param chatRoomId 신고할 채팅방 ID
    * @param hiddenThroughMessageId 신고자에게 계속 숨길 마지막 과거 messageId. 숨긴 이력이 없으면 0

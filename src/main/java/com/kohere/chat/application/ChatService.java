@@ -4,6 +4,7 @@ import com.kohere.chat.application.dto.InquiryResponse;
 import com.kohere.chat.domain.ChatListingUnavailableException;
 import com.kohere.chat.domain.ChatTenantOnlyException;
 import com.kohere.chat.domain.ChatUnavailableException;
+import com.kohere.chat.domain.InquiryCardPayload;
 import com.kohere.chat.domain.SelfInquiryNotAllowedException;
 import com.kohere.listing.api.ChatListingQueryService;
 import com.kohere.listing.api.ChatListingView;
@@ -37,9 +38,10 @@ public class ChatService {
   private final UserBlockService userBlockService;
   private final ChatRoomCreator roomCreator;
   private final ChatRoomEnsurer roomEnsurer;
+  private final InquiryCardRealtimePublisher inquiryCardRealtimePublisher;
 
   /**
-   * 매물·세입자·임대인 조합의 채팅방을 조회하거나 하나만 생성한다.
+   * 매물·세입자·임대인 조합의 채팅방을 조회하거나 문의서와 함께 하나만 생성한다.
    *
    * @param tenantId JWT에서 확인한 요청자 {@code users.id}
    * @param listingId 문의 대상 매물 식별자
@@ -58,13 +60,32 @@ public class ChatService {
     ChatRoomSeed seed =
         new ChatRoomSeed(
             listing.listingId(), listing.landlordId(), listing.title(), listing.address());
-    ChatRoomEnsurer.EnsureResult ensured = roomEnsurer.ensure(seed, tenantId, Instant.now());
+    InquiryCardPayload inquiryPayload = toInquiryCardPayload(listing);
+    Instant now = Instant.now();
+    ChatRoomEnsurer.InquiryEnsureResult ensured =
+        roomEnsurer.ensureInquiry(seed, tenantId, inquiryPayload, now);
 
     // 직접 문의는 사용자의 명시적 재진입이다. 기존 방만 다시 표시하며 과거 메시지 숨김 경계는 복원하지 않는다.
     if (!ensured.created()) {
-      roomCreator.showExistingRoomForTenant(ensured.room().getId(), tenantId, Instant.now());
+      roomCreator.showExistingRoomForTenant(ensured.room().getId(), tenantId, now);
+    } else {
+      // createInquiry 트랜잭션이 반환된 뒤이므로 DB commit이 끝난 카드만 실시간 채널에 전달한다.
+      inquiryCardRealtimePublisher.publishNewInquiryCard(ensured.room(), ensured.message());
     }
     return new InquiryResponse(ensured.room().getId(), ensured.created());
+  }
+
+  /** listing 공개 뷰를 chat 모듈이 영구 보존할 문의서 payload로 복사한다. */
+  private static InquiryCardPayload toInquiryCardPayload(ChatListingView listing) {
+    return new InquiryCardPayload(
+        listing.listingId(),
+        listing.thumbnailUrl(),
+        listing.title(),
+        listing.city(),
+        listing.district(),
+        listing.listingType(),
+        listing.monthlyRentMin(),
+        listing.monthlyRentMax());
   }
 
   /** 매물 문의는 세입자 전용이다. JWT userId로 서버의 현재 사용자 역할을 다시 확인한다. */

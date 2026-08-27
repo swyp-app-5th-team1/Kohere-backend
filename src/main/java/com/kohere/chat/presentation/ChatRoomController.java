@@ -85,7 +85,7 @@ public class ChatRoomController {
   }
 
   /**
-   * MySQL에 저장된 메시지를 과거 스크롤 또는 WebSocket 재연결 누락 보충 목적으로 조회한다.
+   * MySQL에 저장된 TEXT·문의서·신청서를 과거 스크롤 또는 WebSocket 재연결 누락 보충 목적으로 조회한다.
    *
    * <p>{@code cursor}는 더 오래된 메시지, {@code afterMessageId}는 끊긴 동안 생긴 더 새 메시지를 찾는다. 두 모드는 동시에 쓰지 않으며 이
    * API는 전송 endpoint가 아니다.

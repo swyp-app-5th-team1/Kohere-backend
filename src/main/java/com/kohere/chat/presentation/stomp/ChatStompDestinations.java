@@ -17,7 +17,7 @@ public final class ChatStompDestinations {
   /** {@code @MessageMapping}이 application prefix를 제거한 뒤 사용하는 TEXT handler 경로. */
   public static final String MESSAGE_APPLICATION_DESTINATION = "/chat-rooms/{roomId}/messages";
 
-  /** 서버 생성 BOOKING_CARD를 방 참여자에게 알리는 topic. 수신자용 TEXT는 개인 번역 queue로 결합 전달한다. */
+  /** 서버 생성 INQUIRY_CARD·BOOKING_CARD를 방 참여자에게 알리는 topic. 수신자용 TEXT는 개인 번역 queue로 결합 전달한다. */
   public static final String ROOM_TOPIC = "/topic/chat-rooms/{roomId}";
 
   /** 원래 TEXT SEND를 보낸 session만 구독하는 애플리케이션 저장 결과 queue. */

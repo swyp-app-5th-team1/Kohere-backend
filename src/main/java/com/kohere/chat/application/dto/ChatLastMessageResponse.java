@@ -12,7 +12,7 @@ import java.time.Instant;
 public record ChatLastMessageResponse(
     /** 미리보기의 근거가 된 서버 메시지 식별자. */
     Long messageId,
-    /** TEXT와 서버 생성 BOOKING_CARD를 구분하는 메시지 종류. */
+    /** TEXT와 서버 생성 INQUIRY_CARD·BOOKING_CARD를 구분하는 메시지 종류. */
     MessageType type,
     /** 목록 표시용 문자열. 서버가 별도 축약본을 저장하지 않으므로 앱이 UI 폭에 맞게 한 줄 말줄임한다. */
     String preview,

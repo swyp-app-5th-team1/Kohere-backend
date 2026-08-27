@@ -12,9 +12,13 @@ import com.kohere.chat.application.BookingCardService;
 import com.kohere.chat.application.BookingCardWriter;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.domain.BookingCardPayload;
+import com.kohere.chat.domain.ChatCategory;
 import com.kohere.chat.domain.ChatParticipantRole;
+import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
+import com.kohere.chat.domain.InquiryCardPayload;
+import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageType;
 import com.kohere.chat.domain.TranslationProvider;
@@ -208,6 +212,48 @@ class ChatRealtimeMessagePublisherTest {
     assertThat(senderEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
   }
 
+  /** 새 문의 방의 INQUIRY_CARD는 room topic과 두 참여자의 ROOM_CREATED 목록 신호로 전달한다. */
+  @Test
+  @DisplayName("신규 INQUIRY_CARD는 문의서와 ROOM_CREATED를 발행한다")
+  void publishesInquiryCardAndRoomCreatedEvents() {
+    ChatRoom room = inquiryRoom();
+    Message card = inquiryCardMessage();
+
+    publisher.publishNewInquiryCard(room, card);
+
+    ArgumentCaptor<ChatMessageCreatedPayload> roomPayload =
+        ArgumentCaptor.forClass(ChatMessageCreatedPayload.class);
+    verify(messagingTemplate)
+        .convertAndSend(eq(ChatStompDestinations.roomTopic(10L)), roomPayload.capture());
+
+    ArgumentCaptor<ChatRoomEventPayload> tenantEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(SENDER_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            tenantEvent.capture());
+    ArgumentCaptor<ChatRoomEventPayload> landlordEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(RECIPIENT_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            landlordEvent.capture());
+
+    ChatMessageCreatedPayload payload = roomPayload.getValue();
+    assertThat(payload.type()).isEqualTo(MessageType.INQUIRY_CARD);
+    assertThat(payload.originalContent()).isNull();
+    assertThat(payload.bookingCard()).isNull();
+    assertThat(payload.inquiryCard().listingId()).isEqualTo("listing-1");
+    assertThat(payload.inquiryCard().listingType()).isEqualTo("CO_LIVING");
+    assertThat(payload.inquiryCard().monthlyRentMin()).isEqualTo(350_000);
+    assertThat(payload.inquiryCard().monthlyRentMax()).isEqualTo(500_000);
+    assertThat(tenantEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
+    assertThat(landlordEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
+    verifyNoInteractions(sessionMessageSender);
+  }
+
   /** MySQL에서 이미 ID와 저장 시각을 받은 TEXT 정본 fixture다. */
   private static Message message() {
     return Message.builder()
@@ -248,6 +294,44 @@ class ChatRealtimeMessagePublisherTest {
         .bookingId(payload.bookingId())
         .payload(payload)
         .sentAt(Instant.parse("2026-08-21T10:16:30Z"))
+        .build();
+  }
+
+  /** 신규 문의서 실시간 발행에 사용하는 채팅방 fixture다. */
+  private static ChatRoom inquiryRoom() {
+    Instant now = Instant.parse("2026-08-21T10:14:30Z");
+    return ChatRoom.builder()
+        .id(10L)
+        .listingId("listing-1")
+        .tenantId(SENDER_ID)
+        .landlordId(RECIPIENT_ID)
+        .category(ChatCategory.LANDLORD)
+        .listingSnapshot(new ListingSnapshot("Hongdae Studio share", "Seogyo-dong, Mapo-gu"))
+        .lastMessageId(600L)
+        .lastMessageAt(now)
+        .createdAt(now)
+        .updatedAt(now)
+        .build();
+  }
+
+  /** MySQL에 저장이 끝난 서버 생성 INQUIRY_CARD fixture다. */
+  private static Message inquiryCardMessage() {
+    InquiryCardPayload payload =
+        new InquiryCardPayload(
+            "listing-1",
+            "https://cdn.kohere.com/inquiry.jpg",
+            "Hongdae Studio share",
+            "SEOUL",
+            "MAPO_GU",
+            "CO_LIVING",
+            350_000,
+            500_000);
+    return Message.builder()
+        .id(600L)
+        .chatRoomId(10L)
+        .type(MessageType.INQUIRY_CARD)
+        .inquiryPayload(payload)
+        .sentAt(Instant.parse("2026-08-21T10:14:30Z"))
         .build();
   }
 

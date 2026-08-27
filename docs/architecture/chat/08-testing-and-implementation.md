@@ -55,14 +55,19 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - translation 이벤트를 놓치면 다음 REST 메시지 이력의 저장된 번역본으로 복구한다.
 - 자동 번역 결과에는 Google 표시 요구사항에 맞는 출처 안내를 붙인다.
 
-### 1.5 신청 카드 표시
+### 1.5 서버 카드 표시
+
+- 메시지 `type=INQUIRY_CARD`이면 `inquiryCard` 데이터로 문의서 UI를 그린다.
+- 문의서의 대표 이미지가 null이면 앱의 이미지 없음 UI를 사용한다.
+- city·district·매물 유형은 서버 code를 앱의 `ko/en` label로 표시하고 최소·최대 월세는 KRW로 표시한다.
+- `View Detail`은 `inquiryCard.listingId`로 기존 매물 상세 화면을 연다.
 
 - 메시지 `type=BOOKING_CARD`이면 `bookingCard` 데이터로 신청 카드 UI를 그린다.
 - 채팅방 상세의 `myRole=TENANT`이면 임차인용 “신청이 접수되었습니다” 화면을 표시한다.
 - `myRole=LANDLORD`이면 임대인용 “새로운 입주 신청이 도착했습니다”와 신청자 상세 화면을 표시한다.
 - 이름·성별·국적·입주일 같은 값은 서버 응답을 사용하고, 고정 라벨은 앱이 `ko/en`으로 표시한다.
-- 카드에는 임시 말풍선이나 `clientMessageId`를 사용하지 않는다.
-- 카드 데이터는 Google 번역 결과와 합치지 않는다.
+- 두 서버 카드에는 임시 말풍선이나 `clientMessageId`를 사용하지 않는다.
+- 두 카드 데이터는 Google 번역 결과와 합치지 않는다.
 
 ### 1.6 삭제 UX
 
@@ -77,6 +82,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 삭제: 채팅방 DELETE가 `204`이면 해당 채팅방을 목록에서 제거한다. 응답 본문과 복원 UI는 없다.
 - 신고: 상세 사유 입력 없이 프런트가 `ko/en`으로 표시한 고정 사유 code 한 개를 room 신고 API로 보낸다.
 - 메시지: 새 전송마다 프런트엔드가 `clientMessageId` UUID를 만들고 같은 메시지 재시도에는 같은 값을 사용한다.
+- 문의서: 문의하기 API가 새 방을 만든 경우 REST 이력 또는 room topic의 `INQUIRY_CARD`를 표시한다. 프런트가 카드 payload를 보내거나 별도 카드 생성 API를 호출하지 않는다.
 - 신청 카드: 앱이 직접 카드 생성 API를 호출하거나 payload를 보내지 않는다. 기존 신청 API 성공 뒤 같은 채팅방을 열고, REST 이력 또는 room topic의 `BOOKING_CARD`를 역할별 UI로 표시한다.
 
 ## 2. 테스트 계획
@@ -85,6 +91,9 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 - 본인 매물 문의 거부
 - 같은 `(listingId, tenantId, landlordId)`가 같은 방 반환
+- 신규 문의 방에 대표 이미지·제목·city·district·매물 유형·활성 방 월세 범위의 INQUIRY_CARD 생성
+- 기존 방을 반환하는 문의 재호출과 신청 후 방 진입에는 INQUIRY_CARD 추가 없음
+- 문의 방·두 member·INQUIRY_CARD 중 하나가 실패하면 모두 rollback
 - 문의로 만든 기존 방에 신청해도 같은 roomId에 BOOKING_CARD 한 장 추가
 - 신청이 먼저여도 문의와 같은 기준의 방 생성
 - 기존 Booking 상세 조립 로직으로 임차인·임대인 카드 데이터 생성
@@ -102,10 +111,10 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 - Flyway 전체 적용과 JPA validate
 - 동시 방 생성 시 UNIQUE로 한 방
-- 방 생성과 두 member 저장의 원자성
+- 문의 방 생성과 두 member·INQUIRY_CARD 저장의 원자성
 - 동시 같은 메시지 재시도 시 한 메시지
 - `(chatRoomId, bookingId)` UNIQUE로 신청 카드 한 장
-- TEXT는 content/clientMessageId, BOOKING_CARD는 bookingId/payload만 저장
+- TEXT는 content/clientMessageId, INQUIRY_CARD는 inquiryPayload, BOOKING_CARD는 bookingId/payload만 저장
 - 과거 cursor와 forward `afterMessageId` 정렬·페이지
 - 사용자별 삭제 경계 적용
 - DELETE가 `204`와 빈 응답 본문을 반환
@@ -126,8 +135,9 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 허용하지 않은 destination deny-all
 - DB commit 이전 broadcast 0회
 - 발신 session은 저장 ACK를 받고 수신자는 원문·번역 결합 개인 이벤트 수신
+- 두 참여자가 신규 INQUIRY_CARD를 실시간 수신하고 기존 방 문의 재호출은 재발행하지 않음
 - 두 참여자가 서버 생성 BOOKING_CARD를 실시간 수신하고 제3자는 수신하지 못함
-- 클라이언트의 type·bookingId·bookingCard·payload 직접 SEND 거부
+- 클라이언트의 type·inquiryCard·bookingId·bookingCard·payload 직접 SEND 거부
 - 카드 실시간 이벤트를 놓쳐도 REST 이력에서 복구
 - 발신 session만 application send result 수신
 - 중복 retry는 결과만 받고 room broadcast 한 번
@@ -147,7 +157,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 빈 방 신고 거부
 - 동일 방 신고 재시도 200, 신규 201
 - 현재 보이는 메시지 범위만 신고 evidence로 사용
-- 최근 TEXT 최대 20개만 저장하고 BOOKING_CARD·번역문 제외
+- 최근 TEXT 최대 20개만 저장하고 INQUIRY_CARD·BOOKING_CARD·번역문 제외
 - 사용자용 사유 목록·신고 상태 조회 API가 노출되지 않음
 - 최초 evidence snapshot과 hash 유지
 
@@ -167,14 +177,14 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 같은 `clientMessageId` 재시도와 동시 worker 실행에도 번역 행 한 개
 - 번역 결과는 수신자만 받고 발신자·제3자는 받지 않음
 - 차단·비참여·길이 초과 본문은 Google 호출 0회
-- BOOKING_CARD는 번역 행과 Google 호출 0회
+- INQUIRY_CARD와 BOOKING_CARD는 번역 행과 Google 호출 0회
 - translation 이벤트 유실 후 REST 이력으로 복구
 - 수신자 이벤트 한 건에 원문과 최종 번역 상태가 함께 포함됨
 - 번역 완료가 방 재노출·마지막 메시지·삭제 경계를 변경하지 않음
 - 방을 숨겨도 원문과 번역 행은 물리 삭제되지 않음
 - 신고 evidence와 hash가 번역 여부와 관계없이 원문 기준
 - 원문·번역문의 markup을 plain text로 처리
-- 로그·APM에 원문, 번역문, BOOKING_CARD payload, provider payload가 없음
+- 로그·APM에 원문, 번역문, INQUIRY_CARD·BOOKING_CARD payload, provider payload가 없음
 
 ### 2.6 모듈·이벤트
 
@@ -215,7 +225,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 | --- | --- | --- |
 | 1 | 앱과 서버가 주고받을 내용 정하기 | 프런트엔드와 백엔드가 같은 규칙으로 개발할 수 있음 |
 | 2 | 저장 공간과 로그인 확인 기능 준비하기 | 채팅 데이터를 안전하게 저장하고 사용자 권한을 확인할 수 있음 |
-| 3 | 문의·신청과 채팅방 연결하기 | 같은 채팅방이 열리고 신청이면 카드가 한 번 표시됨 |
+| 3 | 문의·신청과 채팅방 연결하기 | 문의로 새 방이면 문의서, 신청이면 신청 카드가 같은 방에 표시됨 |
 | 4 | 삭제와 차단 만들기 | 삭제는 내 화면에만 적용되고 차단 후 새 메시지가 막힘 |
 | 5 | 메시지를 중복 없이 저장하기 | 네트워크 때문에 다시 보내도 메시지가 한 번만 저장됨 |
 | 6 | 실시간 채팅 연결하기 | 두 사용자가 바로 메시지를 주고받고 누락분도 보충함 |
@@ -227,6 +237,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 | 상황 | 누가 처리하는가 | 방식 |
 | --- | --- | --- |
+| 문의로 새 채팅방과 문의서 만들기 | 앱과 서버 | 앱은 listingId만 보내고 서버가 방·참여자·INQUIRY_CARD를 함께 저장 |
 | 신청 성공 후 즉시 채팅방 열기 | 앱 | 일반 HTTP API를 한 번 호출 |
 | 앱 종료 등으로 빠진 채팅방·신청 카드 보완 | 서버 | 저장된 신청 완료 이벤트를 자동 처리 |
 | 연결 중 빠진 메시지 보충 | 앱 | STOMP 연결·재연결 직후 REST API를 한 번 자동 호출 |
@@ -246,8 +257,9 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 | REST catch-up | 연결이 끊긴 동안 빠진 메시지를 MySQL에서 다시 가져오는 절차 |
 | Translation Worker | 저장된 번역 작업을 찾아 Google API 호출과 결과 저장을 관리하는 서버 기능 |
 | `PENDING` | 원문이 아니라 번역 작업이 아직 처리되기 전인 내부 상태 |
+| `INQUIRY_CARD` | 문의하기로 새 방을 만들 때 서버가 함께 저장하는 매물 문의서 카드 |
 | `BOOKING_CARD` | 신청 저장 후 서버가 같은 채팅방에 만드는 신청 정보 카드 |
-| `payload` | 신청 카드에 필요한 매물·신청자·입주 조건·금액을 묶은 JSON 데이터 |
+| 카드 payload | 문의서 또는 신청 카드의 화면 값을 저장하는 구조화 JSON 데이터 |
 
 ### 3.5 구현자용 상세 계획
 
@@ -262,7 +274,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 3. Markdown 계약에 `roomId`, cursor, `clientMessageId`의 역할과 예시를 작성한다. 실제 동작하는 REST endpoint는 각 구현 단계에서 REST Docs와 Swagger에 추가한다.
 4. 프런트엔드가 새 메시지마다 UUID `clientMessageId`를 만들고 재시도에는 같은 값을 사용한다는 책임을 명시한다.
 5. 기존 골격의 REST 메시지 전송, `/read`, `unreadCount`는 이번 API에서 비노출한다.
-6. 사용자 SEND는 TEXT 전용이고, `BOOKING_CARD`는 서버가 생성한다는 REST·STOMP 계약을 확정한다.
+6. 사용자 SEND는 TEXT 전용이고, `INQUIRY_CARD`와 `BOOKING_CARD`는 서버가 생성한다는 REST·STOMP 계약을 확정한다.
 7. 삭제는 `204 No Content`, 응답 본문 없음, 사용자 복원 없음으로 고정한다.
 8. 지원 언어는 `ko/en`, TEXT 자동 번역은 항상 활성화, 과거 메시지 일괄 번역은 하지 않는 것으로 고정한다.
 
@@ -316,6 +328,27 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 본인 매물 문의와 비참여자의 채팅방 조회가 거부된다.
 - 목록·단건·이력 REST Docs 테스트가 통과한다.
 
+#### 3단계 보완: 문의서 INQUIRY_CARD 추가하기
+
+쉽게 말하면 문의하기로 새 채팅방을 만들 때 매물 요약 문의서를 첫 메시지로 함께 저장한다. 신청으로 이미 만들어진 방이나 문의 API 재호출로 기존 방을 반환할 때는 문의서를 추가하지 않는다.
+
+1. listing 공개 뷰에 첫 대표 이미지, 매물 제목, city·district code, 매물 유형 code와 `ACTIVE` 방 상품의 최소·최대 월세를 추가한다.
+2. `INQUIRY_CARD` 메시지 타입과 `InquiryCardPayload`·REST/STOMP 응답 DTO를 추가한다.
+3. 최신 Flyway 번호 다음 migration에서 `inquiry_payload` JSON 컬럼, 허용 타입과 타입별 CHECK를 확장한다. 기존 TEXT·BOOKING_CARD 행은 변환하지 않는다.
+4. 문의로 새 방을 만드는 경우 방·두 member·INQUIRY_CARD·마지막 메시지 상태를 한 트랜잭션으로 저장한다.
+5. 방 UNIQUE 충돌로 기존 방에 수렴한 요청과 처음부터 기존 방을 찾은 요청은 문의서를 저장하거나 실시간 재발행하지 않는다.
+6. 메시지 이력에 `inquiryCard`를 추가하고 목록의 마지막 메시지 타입도 `INQUIRY_CARD`를 허용한다.
+7. 신규 문의서 commit 뒤 room topic으로 `MESSAGE_CREATED`, 두 참여자에게 `ROOM_CREATED` 목록 신호를 보낸다. 실시간 이벤트를 놓친 앱은 REST 이력으로 복구한다.
+8. Swagger와 프론트 가이드에 모든 필드·null 규칙·KRW 단위·code 현지화·`View Detail`의 listingId 사용법을 작성한다.
+
+완료 조건:
+
+- 새 문의 방의 첫 메시지가 `INQUIRY_CARD`이며 방·참여자·카드가 함께 commit 또는 rollback된다.
+- 대표 이미지가 없으면 null이고, 월세 범위는 `ACTIVE` 방 상품만 기준으로 계산된다.
+- 기존 방을 반환하는 문의 API는 메시지 수·마지막 포인터·broker 발행을 변경하지 않는다.
+- TEXT·INQUIRY_CARD·BOOKING_CARD가 같은 cursor와 시간축으로 조회된다.
+- 프런트는 `type`으로 카드 종류를 구분하고 `inquiryCard.listingId`로 기존 매물 상세 화면을 열 수 있다.
+
 #### 4단계: 사용자별 삭제와 차단 만들기
 
 쉽게 말하면 삭제는 요청한 사용자 화면에만 적용하고, 차단하면 두 사용자 사이의 새 채팅만 막는다.
@@ -365,6 +398,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. **구독 권한·누락 보충(완료)**: 정확한 개인 queue와 참여자의 보이는 room topic만 허용하고, PING/PONG 및 실제 broker 등록 뒤 `SUBSCRIPTION_READY`를 구현했다. 앱은 기존 REST `afterMessageId` 조회로 누락분을 자동 보충하며 주기 polling은 하지 않는다.
 3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문 commit 뒤 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장하거나 번역 작업을 만들지 않는다.
 4. **BOOKING_CARD 실시간 연결(완료)**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다. 새 방은 `ROOM_CREATED`, 기존 방은 `ROOM_UPDATED`, 숨긴 방이 실제 신청 활동으로 다시 표시되면 `ROOM_REOPENED` 목록 신호를 보낸다.
+5. **INQUIRY_CARD 실시간 연결(완료)**: 문의로 새 방과 함께 저장된 카드만 topic에 발행하고 `ROOM_CREATED` 목록 신호를 보낸다. 기존 방 문의 재호출은 재발행하지 않는다.
 
 1. 연결 단계에는 WebSocket 의존성을 추가한다. destination 권한은 JWT interceptor 뒤에 실행되는 채팅 전용 allowlist interceptor에서 정확한 경로와 DB 참여 상태로 검사한다. 현재 HTTP 보안과 충돌하는 기본 CONNECT CSRF를 켜지 않기 위해 `@EnableWebSocketSecurity`는 사용하지 않는다.
 2. `/ws/chat`, Spring Simple Broker, 64 KiB transport 제한과 heartbeat를 설정한다.
@@ -376,12 +410,12 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 8. STOMP handler는 5단계의 동일한 메시지 저장 유스케이스를 호출한다.
 9. MySQL commit 뒤에만 발신 session ACK와 방 목록 갱신 신호를 보낸다. 수신자 TEXT는 번역 최종 상태 뒤 개인 queue로 보낸다.
 10. control barrier, `SUBSCRIPTION_READY`, high-watermark와 REST catch-up을 구현한다.
-11. 서버 생성 `BOOKING_CARD`도 신규 커밋 뒤 room topic으로 전달하고 놓친 카드는 REST 이력으로 복구한다.
+11. 서버 생성 `INQUIRY_CARD`와 `BOOKING_CARD`도 신규 커밋 뒤 room topic으로 전달하고 놓친 카드는 REST 이력으로 복구한다.
 
 완료 조건:
 
 - 정상 발신자는 저장 ACK를 받고 수신자는 원문·번역 결합 메시지를 실시간 수신하며 제3자는 구독·전송하지 못한다.
-- 클라이언트는 BOOKING_CARD를 SEND하지 못하고 서버가 만든 카드만 두 참여자가 수신한다.
+- 클라이언트는 INQUIRY_CARD와 BOOKING_CARD를 SEND하지 못하고 서버가 만든 카드만 두 참여자가 수신한다.
 - 차단 관계에서 room broadcast는 0건이다.
 - Swagger 없이도 `WebSocketStompClient` 통합 테스트로 CONNECT·SUBSCRIBE·SEND를 자동 검증한다.
 - 간단한 수동 smoke test는 Postman raw WebSocket 또는 테스트 앱으로 확인한다.
@@ -392,7 +426,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 쉽게 말하면 원문은 먼저 정상 저장해 발신자에게 ACK를 보내고, 수신자에게는 Google 처리 뒤 원문과 최종 번역 결과를 한 이벤트로 함께 전달한다.
 
 1. `chat_message_translations`와 worker 조회 인덱스를 Flyway로 추가한다.
-2. 신규 TEXT 원문과 수신자별 `PENDING` 번역 작업을 같은 트랜잭션에 저장한다. BOOKING_CARD에는 번역 작업을 만들지 않는다.
+2. 신규 TEXT 원문과 수신자별 `PENDING` 번역 작업을 같은 트랜잭션에 저장한다. INQUIRY_CARD와 BOOKING_CARD에는 번역 작업을 만들지 않는다.
 3. provider 독립 `ChatTranslationClient`, Google Cloud Translation Advanced v3 adapter와 번역 비활성 환경용 구현을 둔다.
 4. 번역 대상은 수신자의 `users.lang`에서 정한다. `ko`는 한국어, 그 밖의 값이나 미설정 값은 현재 지원 범위의 `en`으로 정규화하고 원문 언어는 provider가 자동 감지한다.
 5. Translation Worker는 commit 직후 작업을 깨우고, 놓친 작업은 기본 60초의 설정 가능한 복구 조회로 다시 찾는다. 이 조회는 일반 번역 지연이나 재시도 시각을 만드는 polling이 아니라 신호 유실·재시작의 안전망이다.
@@ -418,7 +452,7 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 1. `V26`으로 `chat_reports`와 `chat_report_evidence`를 추가한다. 사유 문구는 프런트가 관리하므로 별도 label catalog는 만들지 않는다.
 2. 신고 body는 고정 `reason` 하나만 받고 자유 입력 `detail`은 받지 않는다.
 3. 서버가 인증 사용자, 채팅방의 상대 사용자와 현재 보이는 원문 증거 범위를 결정한다.
-4. 최소 한 개의 TEXT 원문이 있는 방만 신고할 수 있고 최근 최대 20개 TEXT 원문을 evidence로 저장한다. BOOKING_CARD payload와 번역문은 제외한다.
+4. 최소 한 개의 TEXT 원문이 있는 방만 신고할 수 있고 최근 최대 20개 TEXT 원문을 evidence로 저장한다. INQUIRY_CARD·BOOKING_CARD payload와 번역문은 제외한다.
 5. 신고·evidence를 한 트랜잭션으로 저장하고 접수 시각에서 UTC 달력 기준 1년 뒤의 보관 만료 시각도 기록한다.
 6. 신규 신고는 `201`, 같은 사용자의 같은 채팅방 재시도는 최초 사유·증거를 유지한 채 기존 신고를 `200`으로 반환한다.
 7. 앱은 POST 응답의 `reportId`로 성공을 확인한다. 사용자용 사유 목록과 신고 상태 조회 API는 만들지 않는다.
@@ -439,11 +473,11 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 쉽게 말하면 신청부터 실시간 메시지·번역·삭제·차단·신고까지 실제 앱 흐름대로 확인한 뒤 출시 여부를 결정한다.
 
 1. `./gradlew test`와 Modulith·Flyway·JPA 검증을 전체 실행한다.
-2. 두 사용자 기준 문의 → 신청 카드 → 구독 → TEXT 메시지 → 번역 → 삭제/차단 → 신고 E2E를 수행한다.
+2. 두 사용자 기준 문의서 → 신청 카드 → 구독 → TEXT 메시지 → 번역 → 삭제/차단 → 신고 E2E를 수행한다.
 3. 중복 전송, 번역 지연·실패, WebSocket 단절, 서버 재시작 시나리오를 검증한다.
 4. Swagger·REST Docs의 REST 예시와 별도 STOMP protocol 예시를 프런트엔드에 전달한다.
 5. 연결 수, 저장 지연, broker 실패, 재연결, 번역 backlog·실패 지표와 경보를 구성한다.
-6. JWT·원문·번역문·BOOKING_CARD payload·provider payload·신고 evidence가 로그에 남지 않는지 확인한다.
+6. JWT·원문·번역문·INQUIRY_CARD·BOOKING_CARD payload·provider payload·신고 evidence가 로그에 남지 않는지 확인한다.
 7. GCP credential, quota, 비용 경보와 Google 자동 번역 표시 요건을 확인한다.
 8. 단일 EC2·단일 JVM인지 확인하고 다중 인스턴스 전환 조건을 운영 문서에 남긴다.
 
@@ -486,6 +520,8 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 ## 6. 구현 완료 기준
 
 - 문의와 신청이 같은 비즈니스 키의 roomId로 수렴한다.
+- 문의로 새 방을 만들면 INQUIRY_CARD가 함께 한 번 저장되고 기존 방 재호출에는 추가되지 않는다.
+- INQUIRY_CARD는 대표 이미지·매물 제목·지역·유형·월세 범위와 상세 이동용 listingId를 제공한다.
 - 예약 직후 방·신청 카드 보장 실패를 client retry와 durable booking event가 보상한다.
 - 기존 Booking 상세 데이터 조립 로직을 재사용하며 bookingId당 BOOKING_CARD는 한 장만 저장된다.
 - 임차인과 임대인은 같은 카드 데이터를 역할에 맞는 UI로 표시한다.
@@ -507,7 +543,7 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 - 신고는 방·신고자·상대·사유·접수 시각·원문 증거를 갖는다.
 - 신고 UI와 API에 자유 입력 상세 사유가 없다.
 - 신고 사유 label은 프런트가 동일 code를 기준으로 `ko/en`으로 표시한다.
-- 읽음 기능, `LISTING_CARD`, `SYSTEM` 메시지, 그룹 채팅은 포함되지 않는다. `BOOKING_CARD`는 포함한다.
+- 읽음 기능, 일반 `LISTING_CARD`, `SYSTEM` 메시지, 그룹 채팅은 포함되지 않는다. 문의 전용 `INQUIRY_CARD`와 신청 전용 `BOOKING_CARD`는 포함한다.
 - 단일 EC2에서 Simple Broker로 동작하고 재연결 시 MySQL로 복구된다.
 
 ## 7. 참고 자료
