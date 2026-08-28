@@ -1,7 +1,6 @@
 package com.kohere.listing.application;
 
 import com.kohere.common.response.PageResponse;
-import com.kohere.listing.application.dto.AdminListingDetailResponse;
 import com.kohere.listing.application.dto.LandlordListingDetailResponse;
 import com.kohere.listing.application.dto.LandlordListingSummaryResponse;
 import com.kohere.listing.domain.LandlordOnlyListingException;
@@ -134,7 +133,6 @@ public class LandlordListingService {
         listing.getPreferredNationalities(),
         listing.getContractDifficulties(),
         listing.getServiceFeedback(),
-        AdminListingDetailResponse.ConsentsResponse.from(listing.getConsents()),
         keysOf(listing.getImageUrls()),
         listing.getRoomOffers().stream().map(this::toRoom).toList());
   }

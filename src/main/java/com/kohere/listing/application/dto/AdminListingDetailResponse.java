@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.kohere.listing.domain.ContractDifficulty;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.Nationality;
-import java.time.Instant;
 import java.util.Set;
 
 /**
@@ -20,7 +19,6 @@ import java.util.Set;
  * @param listing 세입자 상세와 동일한 구조. 표시 언어는 한국어 고정이다
  * @param landlordId 매물 소유 임대인 계정 id
  * @param businessRegistrationNumber 사업자등록번호 원문. 심사에서 진위를 수동 확인한다
- * @param consents 등록 시 받은 이용약관 동의. 등록 게이트가 강제하므로 항상 동의된 상태다
  * @param rejectionReason 반려 사유. {@code REJECTED}와, 고쳐서 재심사 중인 {@code PENDING}에 값이 있다. 승인되면 사라지므로 그
  *     외에는 키가 빠진다
  */
@@ -31,32 +29,7 @@ public record AdminListingDetailResponse(
     Set<Nationality> preferredNationalities,
     Set<ContractDifficulty> contractDifficulties,
     @JsonInclude(JsonInclude.Include.NON_NULL) String serviceFeedback,
-    @JsonInclude(JsonInclude.Include.NON_NULL) ConsentsResponse consents,
     @JsonInclude(JsonInclude.Include.NON_NULL) String rejectionReason) {
-
-  /**
-   * 매물 이용약관 동의다.
-   *
-   * <p>{@code null}일 수 있는 이유는 {@code 0120} 이전에 저장된 문서 때문이다 — validator는 기존 문서를 소급 검사하지 않으므로 동의가 없는
-   * 문서가 남아 있을 수 있고, 그 매물도 관리자가 조회해 정리할 수 있어야 한다.
-   */
-  public record ConsentsResponse(
-      boolean privacyPolicyAgreed,
-      boolean listingExposureAgreed,
-      String version,
-      Instant agreedAt) {
-
-    public static ConsentsResponse from(Listing.Consents consents) {
-      if (consents == null) {
-        return null;
-      }
-      return new ConsentsResponse(
-          consents.privacyPolicyAgreed(),
-          consents.listingExposureAgreed(),
-          consents.version(),
-          consents.agreedAt());
-    }
-  }
 
   /** 도메인 매물과 이미 만들어 둔 세입자 상세를 묶어 심사 응답을 만든다. */
   public static AdminListingDetailResponse of(Listing listing, ListingDetailResponse detail) {
@@ -67,7 +40,6 @@ public record AdminListingDetailResponse(
         listing.getPreferredNationalities(),
         listing.getContractDifficulties(),
         listing.getServiceFeedback(),
-        ConsentsResponse.from(listing.getConsents()),
         listing.getRejectionReason());
   }
 }

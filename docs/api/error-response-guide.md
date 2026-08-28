@@ -198,7 +198,6 @@
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
-| `LISTING_REQUIRED_AGREEMENT_MISSING` | 422 | 매물 등록·수정에 필요한 이용약관 동의 2종 중 하나 이상이 누락되거나 `false` |
 | `LISTING_IMAGE_REQUIRED` | 400 | 업로드에 파일이 없거나 비었음. 등록·수정에서는 사진 키 개수가 규칙을 벗어남 — 지점 1~5개, 방마다 2~5개(수정은 **병합 후 최종 배열** 기준) |
 | `LISTING_IMAGE_KEY_NOT_FOUND` | 400 | 등록·수정 요청의 사진 키가 남의 것이거나, 존재하지 않거나, 7일이 지나 만료됨. 수정에서는 **그 자리에 붙어 있지 않은 확정 키**도 이 코드다 |
 | `LISTING_IMAGE_TOO_LARGE` | 413 | 사진 한 장이 10MB를 넘음 |
@@ -212,7 +211,7 @@
 > - `LISTING_UNKNOWN_CATALOG_CODE`는 사용자가 오타를 낸 것이 아니라 **앱이 들고 있는 코드표가 서버 카탈로그와 어긋났다**는 신호라 `INVALID_INPUT`과 분리한다 — 사용자는 앱이 준 선택지에서 골랐을 뿐이라 입력 교정을 요구할 자리가 아니다(§7).
 > - **사진 4종을 별도 코드로 두는 이유.** 업로드(`POST /api/v2/listings/images`)의 셋(`REQUIRED`·`TOO_LARGE`·`UNSUPPORTED_TYPE`)은 위반 대상이 JSON 필드가 아니라 **파일 part**라 `INVALID_INPUT`의 `errors[]` 구조에 담기지 않고, 사용자에게 요구할 행동도 각각 다르다 — 파일을 고르거나, 줄이거나, 형식을 바꾸는 것이다. `LISTING_IMAGE_KEY_NOT_FOUND`는 등록과 수정에서만 나며 **남의 키·없는 키·만료된 키를 한 코드로 묶는다** — 구분해 알려주면 남의 키가 있는지 없는지가 새어 나간다. 클라이언트가 할 일은 셋 다 같다(사진을 다시 올린다). 수정은 여기에 **자리가 어긋난 확정 키**를 더한다 — 이미 저장된 `listings/…` 키를 그대로 다시 보낼 수 있지만 **원래 붙어 있던 자리(대표사진 또는 그 방)에서만** 통과하며, 방 사진을 대표사진 칸에 넣거나 다른 방으로 옮기면 같은 코드로 거절된다.
 > - **사진 저장소 실패는 공통 `UPSTREAM_ERROR`(502)** 다 — 외부 연동 실패라 매물 전용 코드를 두지 않는다. 등록 중 복사가 실패하면 매물은 저장되지 않고 이미 복사한 사진은 서버가 지우지만, **임시 사진은 그대로 남아** 사용자가 다시 제출할 수 있다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 수정도 같으며, 실패했을 때 되돌리는 것은 **이번에 복사한 사진뿐**이다 — 교체된 옛 사진은 저장이 성공한 뒤에 지우므로 어떤 실패 경로에서도 이미 저장돼 있던 사진이 사라지지 않는다.
-> - **`LISTING_NOT_EDITABLE`이 422인 이유.** 요청은 멀쩡한데 **매물이 아직 손댈 수 있는 상태가 아니다** — 심사가 끝나 `PUBLISHED`나 `REJECTED`가 되면 같은 요청이 그대로 성공한다. 이 저장소는 이런 「나중에는 성공하는 선행조건 위반」을 예외 없이 422로 쓴다(`AUTH_PHONE_NOT_VERIFIED`·`AUTH_TERMS_AGREEMENT_REQUIRED`·`LISTING_REQUIRED_AGREEMENT_MISSING`). 403이 아닌 것은 **권한이 아니라 시점의 문제**이고, 임대인은 자기 매물에 대한 권한을 잃은 적이 없기 때문이다(§3).
+> - **`LISTING_NOT_EDITABLE`이 422인 이유.** 요청은 멀쩡한데 **매물이 아직 손댈 수 있는 상태가 아니다** — 심사가 끝나 `PUBLISHED`나 `REJECTED`가 되면 같은 요청이 그대로 성공한다. 이 저장소는 이런 「나중에는 성공하는 선행조건 위반」을 예외 없이 422로 쓴다(`AUTH_PHONE_NOT_VERIFIED`·`AUTH_TERMS_AGREEMENT_REQUIRED`). 403이 아닌 것은 **권한이 아니라 시점의 문제**이고, 임대인은 자기 매물에 대한 권한을 잃은 적이 없기 때문이다(§3).
 > - **`LISTING_STATE_CHANGED`가 409인 이유.** 임대인이 수정 화면을 연 뒤 저장하기까지의 사이에 **관리자 심사가 끼어들어** 매물 상태가 달라졌다는 뜻이라, 부딪힌 상대가 있는 충돌이고 복구 행동은 **다시 읽어 재시도** 하나다(§3). 422가 아닌 것은 이 실패가 조건을 갖추길 기다려야 하는 상태가 아니라 **한 번 더 시도하면 그대로 통과할 수 있는** 실패이기 때문이다. 다만 **공통 `RESOURCE_CONFLICT`를 재사용하지는 않는다** — 그 코드는 전역 핸들러가 문서화된 **세 UNIQUE 제약**의 중복 위반만 번역한 결과라 매물 경로에 도달하지 않고, 「도메인이 미리 판정할 수 있는 충돌은 각자의 코드를 쓴다」는 위 주의 규칙에도 어긋난다.
 
 > **매물 등록에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다.
@@ -220,10 +219,10 @@
 > - **온보딩 미완료 토큰**: SecurityConfig가 `POST /api/v2/listings`에 `hasRole("USER")` 매처를 명시하므로 `ROLE_ONBOARDING` 토큰은 컨트롤러에 닿기 전에 `AUTH_ONBOARDING_REQUIRED`(403)로 막힌다(매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프 토큰이 그대로 통과한다). 토큰이 없거나 만료면 종전대로 `UNAUTHENTICATED`·`TOKEN_EXPIRED`(401)다.
 > - **필수값 누락·형식 위반**: `INVALID_INPUT`(400) + `errors[]`로 충분하다. 지점 운영층 `1~2`·이용 연령대 `20~35`의 형식 위반, `min ≤ max`, `usedFloorMax ≤ totalFloors`, `roomOffers` 최소 1개가 모두 여기에 해당한다. 문자열 길이 제한은 두지 않으므로 그에 대한 코드도 없다.
 > - **사업자등록번호**: 등록 API는 **형식만 보고 저장**하며 진위는 관리자 승인 심사에서 사람이 확인한다. `POST /api/v1/auth/business/verify`를 호출하지 않으므로 `AUTH_BUSINESS_NUMBER_VERIFICATION_FAILED`(422)는 이 경로에서 나오지 않고, 형식 위반은 `INVALID_INPUT`이다.
+> - **이용약관 동의**: 매물 등록·수정은 이용약관 동의를 받지 않는다. 게이트가 없으니 막을 것도 없어 매물 전용 422 코드를 두지 않는다. 회원가입 온보딩의 약관 동의는 별개 흐름이라 auth의 `AUTH_REQUIRED_AGREEMENT_MISSING`·`AUTH_TERMS_AGREEMENT_REQUIRED`(422)가 그대로 담당한다 — `AGREEMENT`로 훑으면 둘이 함께 걸리지만 매물 경로에서는 나오지 않는다.
 
 > **임대인 매물 수정·전용 조회에서 의도적으로 신설하지 않은 코드** — 리뷰어가 누락으로 오해하지 않도록 근거를 남긴다. 대상은 `PUT /api/v2/listings/{listingId}`와 `GET /api/v2/users/me/listings`·`/api/v2/users/me/listings/{listingId}`이며, 등록에서 정한 위 근거는 그대로 유효하다(임대인 아님은 `FORBIDDEN`, 온보딩 미완료는 `AUTH_ONBOARDING_REQUIRED`, 필수값 누락·형식 위반은 `INVALID_INPUT`).
 > - **남의 매물을 수정·조회**: **인가 전용 코드를 만들지 않고 `LISTING_NOT_FOUND`(404)** 를 쓴다. 소유자가 아니면 그 매물이 존재하는지조차 알려주지 않으며, `booking`(`BOOKING_NOT_FOUND`)·`chat`이 이미 같은 규약이다. 403으로 나누면 **한 API가 상태에 따라 403과 404를 오가면서 그 차이 자체가 존재를 누설한다.** 반대로 임대인이 아닌 사용자(`userType≠LANDLORD`)는 등록과 같은 공통 `FORBIDDEN`(403)이다 — 그건 리소스가 아니라 **역할**에 대한 판정이라 무엇의 존재도 드러내지 않는다.
-> - **수정 요청의 필수 약관 미동의**: 기존 `LISTING_REQUIRED_AGREEMENT_MISSING`(422)을 재사용한다. 수정 요청도 등록과 같은 동의 2종을 받고 게이트도 같으므로 코드를 나눌 이유가 없다. 저장되는 동의 값(버전·시각)은 **최초 등록 것을 승계**하지만, 그건 게이트가 아니라 저장 규칙이라 에러 계약과 무관하다.
 > - **서버가 소유한 값을 요청에 실은 경우**: 코드를 두지 않는다. `status`·`rejectionReason`·`favoriteCount`는 **수정 요청 DTO에 칸이 없어** 애초에 바인딩되지 않으며, 수정이 성공하면 `rejectionReason`은 서버가 무조건 지운다. 거절할 대상이 없으므로 알릴 것도 없다.
 > - **`INACTIVE`로 내리거나 되살리는 방**: 오류가 아니다. 방을 내리는 것은 요청에서 빼는 것이 아니라 `status=INACTIVE`로 보내는 것이고 되살리는 것도 같은 필드다. 다만 **저장 후 `ACTIVE` 방이 하나도 남지 않는 요청**과 **이 매물의 것이 아닌 `roomOfferId`** 는 `INVALID_INPUT`(400) + `errors[]`로 충분해 전용 코드를 두지 않는다.
 > - **심사 중이라 세입자에게 보이지 않는 매물**: 세입자 경로는 종전대로 `LISTING_NOT_FOUND`(404)이며 새 코드를 만들지 않는다. 세입자에게 `PENDING`·`REJECTED`·`UPDATE_PENDING`은 전부 **"지금 이 매물 페이지는 볼 수 없다" 하나**이고, 구분해 알려주면 앱이 매물 심사 도메인의 의미를 인코딩하게 되어 상태가 늘 때마다 앱 대응이 필요해진다. 승인되면 그대로 되살아난다.

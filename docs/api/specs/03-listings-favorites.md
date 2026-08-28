@@ -406,11 +406,7 @@ Request Body:
   ],
   "preferredNationalities": ["JAPAN", "CHINA"],
   "contractDifficulties": ["LANGUAGE", "PAYMENT"],
-  "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다.",
-  "consents": {
-    "privacyPolicyAgreed": true,
-    "listingExposureAgreed": true
-  }
+  "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다."
 }
 ```
 
@@ -464,14 +460,10 @@ Request Body:
 | `preferredNationalities` | `Nationality[]` | 선택 | 설문 — 선호하는 국적(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화하므로 **저장 문서에는 항상 키가 있다**. 세입자 응답에 포함하지 않는다 |
 | `contractDifficulties` | `ContractDifficulty[]` | 선택 | 설문 — 계약 과정에서 겪은 어려움(복수 선택). 키를 생략하거나 `null`·`[]`을 보내도 된다. 서버가 빈 배열로 정규화한다. 세입자 응답에 포함하지 않는다 |
 | `serviceFeedback` | string | 선택 | 설문 — Kohere에 전하고 싶은 말. 응답에 포함하지 않는다 |
-| `consents` | object | 필수 | 매물 이용약관 동의 2종. 객체 자체가 없으면 `400 INVALID_INPUT` |
-| `consents.privacyPolicyAgreed` | boolean | 필수 | 개인정보 수집·이용 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
-| `consents.listingExposureAgreed` | boolean | 필수 | 매물 정보 제공 및 노출 동의. `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING` |
 
 요청 주의사항:
 
-- **동의 2종은 모두 `true`여야 등록된다.** 하나라도 빠지거나 `false`면 `422 LISTING_REQUIRED_AGREEMENT_MISSING`이고 매물도 확정 사진도 만들어지지 않는다. 따라서 **저장된 매물은 예외 없이 동의를 마친 매물**이며, 심사 단계가 동의 여부를 판단 기준으로 다시 쓰지 않는다. 서버는 동의 여부와 함께 **약관 버전과 동의 시각**을 저장한다 — 동의 사실의 입증 책임이 사업자에게 있어 "코드가 막는다"는 주장만으로는 부족하기 때문이다. 이 버전은 회원 약관 버전(`users.terms_version`, [ADR-0012](../../adr/0012-terms-version-management.md))과 **별개 값**이다: 그쪽은 계정 단위로 가입 시 1회 기록되지만 매물 동의는 **매물마다 등록 시점**이라 같은 임대인의 매물이 서로 다른 버전을 가질 수 있다. 동의 3종은 **세입자 응답에 포함하지 않는다**(설문 3종·`businessRegistrationNumber`와 동일 취급).
-- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`) · `consents.version`(약관 버전 — 서버 설정값 `app.terms.listing-consent-version`) · `consents.agreedAt`(동의 시각)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다. **사진 URL(`imageUrls`·`roomOffers[].roomImageUrls`)도 마찬가지다** — 요청은 키만 보내고 서버가 확정 위치의 URL을 응답에 담아 준다.
+- **서버가 정하는 값은 요청 본문에 없다.** `listingId` · `roomOffers[].roomOfferId`(둘 다 ObjectId 발급) · `schemaVersion`(`4`) · `status`(`PENDING`) · `favoriteCount`(`0`) · `createdAt`/`updatedAt` · `rentalType`(`MONTHLY_RENT` 고정) · `roomOffers[].pricing.currency`(`KRW` 고정) · `roomOffers[].status`(`ACTIVE`)를 클라이언트가 정하지 않는다. `landlordId`도 요청이 아니라 access 토큰에서 읽는다. **사진 URL(`imageUrls`·`roomOffers[].roomImageUrls`)도 마찬가지다** — 요청은 키만 보내고 서버가 확정 위치의 URL을 응답에 담아 준다.
 - **사진은 미리 올려 둔다.** 먼저 `POST /api/v2/listings/images`로 한 장씩 올려 `key`를 받고, 그 키를 `imageKeys`(1~5개)와 `roomOffers[].roomImageKeys`(방마다 2~5개)에 담는다. 어느 사진이 어느 방 것인지는 **이 JSON 구조가 정한다** — 배열의 순서가 곧 표시 순서다.
 - **자기가 올린 키만 쓸 수 있다.** 키는 `uploads/{내 landlordId}/…` 형태이며, 남의 키나 존재하지 않는 키(오타·7일 만료)는 `400 LISTING_IMAGE_KEY_NOT_FOUND`다. 셋을 한 코드로 묶은 것은 구분해 알려주면 남의 키가 있는지 없는지가 새어 나가기 때문이다.
 - **등록에 성공하면 사진이 확정 위치로 옮겨 간다.** 업로드 때 받은 `uploads/…` URL은 무효가 되므로 **등록 응답의 URL을 쓴다.**
@@ -1332,12 +1324,11 @@ Request Body: 없음
 | `LISTING_INVALID_BBOX` | 400 | bbox 좌표 불완전/범위 위반/모순(`swLat>=neLat` 등) |
 | `LISTING_AREA_TOO_LARGE` | 400 | 지도 마커 결과가 너무 많아 한 번에 표시하기 어려움 |
 | `LISTING_UNKNOWN_CATALOG_CODE` | 400 | 요청에 실린 코드 값이 `listingCatalog`의 `(category, code)`에 없음 |
-| `LISTING_REQUIRED_AGREEMENT_MISSING` | 422 | 매물 등록·수정에 필요한 이용약관 동의 2종 중 하나 이상이 누락되거나 `false` |
 | `LISTING_NOT_EDITABLE` | 422 | 심사 대기(`PENDING`)·수정 심사 대기(`UPDATE_PENDING`) 상태라 임대인이 수정할 수 없음 |
 | `LISTING_STATE_CHANGED` | 409 | 조회 후 저장 사이에 매물 상태가 바뀜 — 다시 조회한 뒤 재시도한다 |
 
 > `LISTING_NOT_FOUND`는 04-booking-inquiry-chat 스펙에서도 참조한다. 카탈로그 중복 등록을 피하기 위해 해당 코드의 정본 정의는 본 listing 스펙에 둔다. **deprecated된 v1 상세·찜 토글 스텁도 이 코드를 쓴다** — 매물을 찾지 못해서가 아니라 조회하지 않기 때문이며, 새 코드를 만들지 않아 구버전 앱이 이미 처리하던 에러 그대로 받는다(위 [v1 스텁 동작](#v1-스텁-동작)).
-> `LISTING_UNKNOWN_CATALOG_CODE`·`LISTING_REQUIRED_AGREEMENT_MISSING`은 매물 등록(`POST /api/v2/listings`)과 매물 수정(`PUT /api/v2/listings/{listingId}`)이 함께 쓴다 — 수정도 같은 카탈로그 대조와 같은 동의 게이트를 그대로 통과해야 한다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
+> `LISTING_UNKNOWN_CATALOG_CODE`는 매물 등록(`POST /api/v2/listings`)과 매물 수정(`PUT /api/v2/listings/{listingId}`)이 함께 쓴다 — 수정도 같은 카탈로그 대조를 그대로 통과해야 한다. 임대인 아님(403 `FORBIDDEN`)·온보딩 미완료(403 `AUTH_ONBOARDING_REQUIRED`)·필수값 누락과 형식 위반(400 `INVALID_INPUT`)은 공통 코드를 그대로 쓰며 `LISTING_*` 코드를 신설하지 않는다([error-response-guide](../error-response-guide.md) §4).
 > **주소 검색(`GET /api/v1/listings/addresses`)도 전용 코드를 두지 않는다** — 키워드 검증은 `INVALID_INPUT`, 외부 연동 실패는 `UPSTREAM_ERROR`(502)이며 둘 다 공통 코드다. 지원하지 않는 지역이라고 거절하지 않는다 — 검색도 등록도 통과시키고, 행정구역만 `ETC`로 저장한다([ADR-0046](../../adr/0046-administrative-region-as-catalog-data.md)).
 > `LISTING_NOT_EDITABLE`·`LISTING_STATE_CHANGED`는 [임대인 매물 관리](#임대인-매물-관리)의 매물 수정 전용이다. **남의 매물을 수정하거나 조회하려 한 경우에는 인가 전용 코드를 두지 않고 `404 LISTING_NOT_FOUND`를 쓴다** — 한 API가 상태에 따라 403과 404를 오가면 그 차이가 매물의 존재를 누설한다.
 > 하트 토글은 이미 찜/미찜 상태여도 에러로 보지 않고 현재 하트 상태와 찜 수를 반환한다. 프론트는 응답 body의 `favorited`, `favoriteCount`만 보고 UI를 맞추면 된다.
@@ -1376,7 +1367,7 @@ Request Body: 없음
 
 ### 심사 응답의 노출 범위
 
-심사 상세·목록은 **매물 문서에 저장된 모든 필드**를 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·동의 3종(`consents`)·`rejectionReason`을 감추지 않는다. 표시 여부는 관리자 화면이 정한다.
+심사 상세·목록은 **매물 문서에 저장된 모든 필드**를 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·`rejectionReason`을 감추지 않는다. 표시 여부는 관리자 화면이 정한다.
 
 노출해도 되는 근거는 둘이다 — 매물 문서에는 **임대인 개인 연락처가 저장되지 않으므로**(`contact.phone`은 지점 대표 전화, [ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended) 마스킹 대상 PII가 이 응답에 없고, `businessRegistrationNumber`는 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이라 오히려 필수다([ADR-0033](../../adr/0033-business-registry-verification.md) 개정). 표시 언어는 임대인 화면과 같이 한국어 고정이다.
 
@@ -1487,8 +1478,6 @@ Request Body: **매물 등록(`POST /api/v2/listings`)의 요청 본문과 같�
 | " | `roomOffers[].status` | `ACTIVE` \| `INACTIVE` · 필수. 방을 내리는 것은 **요청에서 빼는 것이 아니라 `INACTIVE`로 보내는 것**이다 |
 | 사진 키에 기존 사진을 섞는다 | `imageKeys` · `roomOffers[].roomImageKeys` | 새로 올린 **임시 키**(`uploads/…`)와 그 자리에 이미 있던 **확정 키**(`listings/…`)를 섞어 보낸다(아래 사진 규칙) |
 
-`consents`도 등록과 똑같이 **요청에 담고 게이트도 그대로 걸린다** — 둘 다 `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING`이다. 다만 **저장되는 값은 최초 등록 때의 `version`·`agreedAt`을 승계**하며 이번 요청으로 덮어쓰지 않는다. 동의 시각은 "이 매물을 처음 올릴 때 동의한 시각"이라는 감사 기록이라 수정할 때마다 갱신하면 그 의미가 사라지기 때문이다.
-
 요청 주의사항:
 
 - **서버가 정하는 값은 여전히 요청 본문에 없다.** `status`·`rejectionReason`·`favoriteCount`·`createdAt`·`schemaVersion`·`landlordId`는 칸 자체가 없어 요청으로 바꿀 수 없다. 특히 **`rejectionReason`은 수정에 성공하면 서버가 무조건 비운다.**
@@ -1533,7 +1522,6 @@ Request Body: **매물 등록(`POST /api/v2/listings`)의 요청 본문과 같�
 | 404 | `LISTING_NOT_FOUND` | 없는 id · ObjectId 형식 아님 · **남의 매물** |
 | 409 | `LISTING_STATE_CHANGED` | 요청을 처리하는 사이에 관리자가 승인·반려해 상태가 바뀜. **다시 조회한 뒤 재시도**한다 |
 | 422 | `LISTING_NOT_EDITABLE` | 매물이 `PENDING`·`UPDATE_PENDING`이라 수정할 수 없음 |
-| 422 | `LISTING_REQUIRED_AGREEMENT_MISSING` | 동의 2종 중 하나 이상이 누락되거나 `false` |
 | 502 | `UPSTREAM_ERROR` | 사진 저장소 복사 실패. 매물은 바뀌지 않고 이번에 복사한 사진은 서버가 지운다. **기존 사진과 임시 사진은 그대로 남아** 다시 제출할 수 있다 |
 
 > `409 LISTING_STATE_CHANGED`는 임대인이 화면을 연 뒤 제출하기까지의 간격이 아니라 **서버가 매물을 읽고 저장하기까지의 간격**에서 난다(사진을 옮기는 동안 관리자가 심사를 끝낸 경우). 저장은 읽을 때의 상태가 그대로일 때만 이뤄지므로 관리자의 승인·반려가 임대인의 전체 교체에 조용히 덮이지 않는다. 클라이언트는 이 코드를 실패가 아니라 **재조회 신호**로 다룬다.
@@ -1564,7 +1552,7 @@ Request Body: 없음
 | `rejectionReason` | 반려 사유. `REJECTED`와, 고쳐서 재심사 중인 `PENDING`에 값이 있다. 승인되면 사라진다 |
 | `favoriteCount` | 찜 수. 심사 때문에 세입자 목록에서 빠져 있는 동안에도 **줄어들지 않는다** |
 
-- 목록 항목은 카드용이라 `businessRegistrationNumber`·설문 3종·`consents`·사진 키를 담지 않는다. 그 값들은 수정 폼이 쓰는 것이라 아래 상세가 준다.
+- 목록 항목은 카드용이라 `businessRegistrationNumber`·설문 3종·사진 키를 담지 않는다. 그 값들은 수정 폼이 쓰는 것이라 아래 상세가 준다.
 - `roomOffers[]`와 상위 `conditions`는 세입자 목록과 같은 기준이라 **`ACTIVE` 방만** 반영한다. 내린 방까지 보려면 상세를 쓴다.
 - 표시 언어는 임대인 계정의 표시 언어를 따르며, `status`는 관리 상태라 번역 없이 코드 문자열 그대로 내려간다.
 
@@ -1591,7 +1579,6 @@ Request Body: 없음
 | 사진 키 | `imageKeys` · `roomOffers[].roomImageKeys` | 유지할 사진을 그대로 되돌려 보내려면 URL이 아니라 **키**가 필요하다. 미리보기용 URL(`imageUrls`·`roomImageUrls`)도 함께 내려간다 |
 | 방 식별자·상태 | `roomOffers[].roomOfferId` · `roomOffers[].status` | 수정 요청이 요구하는 값이다. **`INACTIVE` 방도 포함해** 내려간다(세입자·관리자 응답은 `ACTIVE`만 준다) — 그래야 되살릴 수 있다 |
 | 읽기 전용 | `status` · `rejectionReason` | 같은 화면이 상태 배지와 반려 사유를 보여준다. 요청에는 칸이 없다 |
-| 참고값 | `consents` | 최초 동의 이력(`version`·`agreedAt`) 표시용이다. 수정 폼은 동의 체크박스를 **새로 받으므로** 프리필이 아니다 |
 
 - 요청에서 id가 빠져 안전망으로 내려간 방은 **이 응답에도 나오지 않는다.** 방을 내릴 때 요청에서 빼지 말고 `status=INACTIVE`로 보내야 하는 이유다.
 - 표시 언어는 임대인 계정의 표시 언어를 따른다. 등록·수정이 다국어 문구를 한국어 한 값으로만 받으므로 영어 문구도 같은 값일 수 있다.

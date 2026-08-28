@@ -137,14 +137,6 @@ public class Listing {
   private final String serviceFeedback;
 
   /**
-   * 등록 시점에 받은 매물 이용약관 동의다. 세입자 응답에 포함하지 않는다.
-   *
-   * <p>등록 게이트가 두 동의를 모두 {@code true}로 강제하므로 <b>저장된 매물은 예외 없이 동의를 마친 매물</b>이다 — 심사 단계가 동의 여부를 판단
-   * 기준으로 다시 쓰지 않는다.
-   */
-  private final Consents consents;
-
-  /**
    * 심사를 통과시켜 공개 상태로 만든다.
    *
    * <p><b>상태를 가리지 않는다.</b> 심사 대기 매물의 승인뿐 아니라 <b>잘못 반려한 매물을 되살리는</b> 경로({@code REJECTED →
@@ -354,26 +346,6 @@ public class Listing {
     /** 공용공간이 없다. <b>단독으로만</b> 보낼 수 있다. */
     NONE
   }
-
-  /**
-   * 매물 등록 시 받은 이용약관 동의다.
-   *
-   * <p>등록 게이트가 두 값을 모두 {@code true}로 강제하므로 저장된 값은 항상 {@code true}다. 그럼에도 함께 저장하는 이유는 <b>동의 사실의 입증
-   * 책임이 사업자에게 있어</b> "코드가 막는다"는 주장만으로는 부족하기 때문이다 — 실제 증빙은 {@code agreedAt}과 {@code version}이 진다.
-   *
-   * <p>{@code version}은 회원 약관 버전({@code users.terms_version})과 <b>별개 값</b>이다. 그쪽은 계정 단위로 가입 시 1회
-   * 기록되지만 매물 동의는 매물마다 등록 시점이라, 같은 임대인의 매물이 서로 다른 버전을 가질 수 있다.
-   *
-   * @param privacyPolicyAgreed 개인정보 수집·이용 동의
-   * @param listingExposureAgreed 매물 정보 제공 및 노출 동의
-   * @param version 동의한 약관 버전(서버 설정값)
-   * @param agreedAt 동의 시각
-   */
-  public record Consents(
-      boolean privacyPolicyAgreed,
-      boolean listingExposureAgreed,
-      String version,
-      Instant agreedAt) {}
 
   /**
    * 세입자가 매물 문의에 사용할 담당자 연락처다.

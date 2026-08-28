@@ -161,7 +161,6 @@ class AdminListingDocsTest {
         .andExpect(jsonPath("$.data.content[0].listing.status").value("PENDING"))
         // 세입자 응답이 감추는 값이 심사 응답에는 들어 있다.
         .andExpect(jsonPath("$.data.content[0].businessRegistrationNumber").isString())
-        .andExpect(jsonPath("$.data.content[0].consents.privacyPolicyAgreed").value(true))
         .andDo(
             document(
                 "admin-listing-list",
@@ -184,7 +183,6 @@ class AdminListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.landlordId").isNumber())
-        .andExpect(jsonPath("$.data.consents.version").isString())
         .andDo(
             document(
                 "admin-listing-detail",

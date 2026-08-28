@@ -928,24 +928,6 @@ public final class ListingDocsFields {
             update
                 ? "설문 — 서비스에 전하고 싶은 말. 임대인 상세 응답에 그대로 실린다"
                 : "설문 — 서비스에 전하고 싶은 말. 응답에는 나오지 않는다"));
-    fields.add(
-        field(
-            "consents",
-            JsonFieldType.OBJECT,
-            update
-                ? "매물 이용약관 동의 2종. 수정할 때도 새로 받으며 객체가 없으면 400."
-                    + " 저장된 version·agreedAt은 최초 등록 때의 값을 승계하고 이번 요청으로 덮지 않는다"
-                : "매물 이용약관 동의 2종. 객체가 없으면 400"));
-    fields.add(
-        field(
-            "consents.privacyPolicyAgreed",
-            JsonFieldType.BOOLEAN,
-            "개인정보 수집·이용 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
-    fields.add(
-        field(
-            "consents.listingExposureAgreed",
-            JsonFieldType.BOOLEAN,
-            "매물 정보 제공 및 노출 동의. true가 아니면 422 LISTING_REQUIRED_AGREEMENT_MISSING"));
     return List.copyOf(fields);
   }
 
@@ -1106,8 +1088,8 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
-      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
-      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
+      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
+      - `serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다.
       - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
       - `{code,label}`의 `label`은 **항상 한국어**다.
 
@@ -1135,9 +1117,9 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
-      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`consents`·`rejectionReason`.
+      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
       - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
-      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
+      - `serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
       - `listing.favorited`는 **항상 false**다.
       - `{code,label}`의 `label`은 **항상 한국어**다.
 
@@ -1275,15 +1257,6 @@ public final class ListingDocsFields {
     fields.add(
         optField(
             prefix + ".serviceFeedback", JsonFieldType.STRING, "등록 폼 설문 — 서비스 의견. 없으면 키가 빠진다"));
-    fields.add(field(prefix + ".consents", JsonFieldType.OBJECT, "등록 시 받은 이용약관 동의"));
-    fields.add(
-        field(prefix + ".consents.privacyPolicyAgreed", JsonFieldType.BOOLEAN, "개인정보 수집·이용 동의"));
-    fields.add(
-        field(
-            prefix + ".consents.listingExposureAgreed", JsonFieldType.BOOLEAN, "매물 정보 제공 및 노출 동의"));
-    fields.add(
-        field(prefix + ".consents.version", JsonFieldType.STRING, "동의한 약관 버전. 회원 약관 버전과 별개 값이다"));
-    fields.add(field(prefix + ".consents.agreedAt", JsonFieldType.STRING, "동의 시각(UTC ISO-8601)"));
     fields.add(
         optField(prefix + ".rejectionReason", JsonFieldType.STRING, "반려 사유. 반려 상태가 아니면 키가 빠진다"));
     return fields;
@@ -1314,7 +1287,7 @@ public final class ListingDocsFields {
       - `listing.status`는 `PENDING`·`PUBLISHED`·`REJECTED`·`UPDATE_PENDING` **넷 다** 나올 수 있다. 카드의 상태 배지에 그대로 쓴다.
       - `listing.favoriteCount`는 심사 때문에 세입자 목록에서 빠져 있는 동안에도 **줄어들지 않는다**.
       - `listing.roomOffers[]`와 `listing.conditions`는 세입자 목록과 같은 기준이라 **`ACTIVE` 방만** 반영한다. 내린 방까지 보려면 상세를 쓴다.
-      - 수정 폼이 쓰는 값(`businessRegistrationNumber`·설문 3종·`consents`·사진 키)은 카드에 없다. 아래 상세가 준다.
+      - 수정 폼이 쓰는 값(`businessRegistrationNumber`·설문 3종·사진 키)은 카드에 없다. 아래 상세가 준다.
       - `{code,label}`의 `label`은 임대인 계정의 표시 언어를 따르고, `status`는 관리 상태라 번역 없이 코드 문자열 그대로다.
 
       **에러 코드**
@@ -1344,8 +1317,7 @@ public final class ListingDocsFields {
       - 세입자에게 감추는 값이 함께 실린다 — `businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`). **전부 수정 요청 필드**다. 설문 3종은 선택이지만 **보내지 않으면 빈 값으로 덮이므로**, 유지하려면 이 응답이 준 값을 그대로 다시 실어야 한다.
       - 사진은 URL과 **키**를 함께 준다. 그대로 둘 사진은 `imageKeys`·`rooms[].roomImageKeys`의 확정 키를 수정 요청에 되돌려 보낸다. **URL에서 키를 역산하지 않는다** — 주소 형식에 묶이면 CDN을 바꿀 때 같이 깨진다.
       - `rooms[]`는 **`INACTIVE` 방까지** 담는다(`listing.roomOffers[]`는 `ACTIVE`만 담는다). 내렸던 방을 되살리려면 이 배열이 필요하다.
-      - `serviceFeedback`·`rejectionReason`·`consents`는 값이 null이 아니라 **필드 자체가 생략**된다.
-      - `consents`는 최초 동의 이력(`version`·`agreedAt`)의 **표시용 참고값**이다. 수정 폼은 동의를 새로 받으므로 프리필이 아니다.
+      - `serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다.
       - `status`·`rejectionReason`은 읽기 전용이다. 수정 요청에는 칸이 없다.
       - 표시 언어는 임대인 계정의 표시 언어를 따른다. 등록·수정이 다국어 문구를 한국어 한 값으로만 받으므로 영어 문구도 같은 값일 수 있다.
 
@@ -1398,7 +1370,6 @@ public final class ListingDocsFields {
       - **방은 하드 삭제하지 않는다.** 예약·채팅이 `roomOfferId`를 참조하므로 내린 방도 문서에 남고, 같은 id를 `ACTIVE`로 다시 보내면 사진까지 되살아난다. **요청 배열의 순서가 곧 저장 순서**이며 `ACTIVE`와 `INACTIVE`가 섞여 있어도 그대로 둔다.
       - **요청에서 id가 통째로 빠진 기존 방**은 삭제가 아니라 안전망으로 `INACTIVE`가 되어 배열 맨 뒤로 밀린다. 방을 내릴 때는 반드시 `status=INACTIVE`로 보낸다.
       - **저장 결과에 `ACTIVE` 방이 하나도 없으면 `400 INVALID_INPUT`이다.** 상태만 공개인 채 목록·상세 어디에도 나오지 않는 매물이 만들어지기 때문이다.
-      - `consents`는 등록과 똑같이 담고 게이트도 같다 — 둘 다 `true`가 아니면 `422 LISTING_REQUIRED_AGREEMENT_MISSING`이다. 다만 저장되는 `version`·`agreedAt`은 **최초 등록 때의 값을 승계**한다. 최초 동의의 증빙이라 수정할 때마다 덮으면 기록이 사라진다.
       - **서버가 정하는 값에는 칸이 없다** — `status`·`rejectionReason`·`favoriteCount`·`createdAt`·`schemaVersion`·`landlordId`. 특히 `rejectionReason`은 수정에 성공하면 서버가 **무조건 비운다**.
 
       **응답 주의사항**
@@ -1423,7 +1394,6 @@ public final class ListingDocsFields {
       | 404 | `LISTING_NOT_FOUND` | 없는 `listingId`, 24자리 hex 형식이 아님, **남의 매물** |
       | 409 | `LISTING_STATE_CHANGED` | 서버가 매물을 읽고 저장하기까지의 사이에 관리자가 승인·반려해 상태가 바뀜. 실패가 아니라 **재조회 신호**다 |
       | 422 | `LISTING_NOT_EDITABLE` | 매물이 `PENDING`·`UPDATE_PENDING`이라 수정할 수 없음 |
-      | 422 | `LISTING_REQUIRED_AGREEMENT_MISSING` | 동의 2종 중 하나 이상이 누락되거나 `false` |
       | 502 | `UPSTREAM_ERROR` | 사진 저장소 복사 실패. 매물은 바뀌지 않고 이번에 복사한 사진은 서버가 지운다. 기존 사진과 임시 사진은 그대로 남아 다시 제출할 수 있다 |
       """;
 
@@ -1446,9 +1416,7 @@ public final class ListingDocsFields {
   public static final String[] LISTING_UPDATE_403 = {"FORBIDDEN", "AUTH_ONBOARDING_REQUIRED"};
   public static final String[] LISTING_UPDATE_404 = {"LISTING_NOT_FOUND"};
   public static final String[] LISTING_UPDATE_409 = {"LISTING_STATE_CHANGED"};
-  public static final String[] LISTING_UPDATE_422 = {
-    "LISTING_NOT_EDITABLE", "LISTING_REQUIRED_AGREEMENT_MISSING"
-  };
+  public static final String[] LISTING_UPDATE_422 = {"LISTING_NOT_EDITABLE"};
 
   /**
    * 임대인 상세 200 응답 필드다. 수정({@code PUT /api/v2/listings/{listingId}})의 성공 응답도 같은 타입이라 이 한 벌을 함께 쓴다.
@@ -1489,29 +1457,6 @@ public final class ListingDocsFields {
             "data.serviceFeedback",
             JsonFieldType.STRING,
             "등록 폼 설문 — 서비스 의견. 수정 요청 필드이며 값이 없으면 키가 빠진다"));
-    fields.add(
-        optField(
-            "data.consents",
-            JsonFieldType.OBJECT,
-            "최초 동의 이력. 표시용 참고값이라 프리필이 아니며, 수정 폼은 동의를 새로 받는다."
-                + " 동의를 받기 전에 저장된 문서에는 없어 필드 자체가 빠진다"));
-    fields.add(
-        optField(
-            "data.consents.privacyPolicyAgreed",
-            JsonFieldType.BOOLEAN,
-            "개인정보 수집·이용 동의. consents가 없으면 함께 빠진다"));
-    fields.add(
-        optField(
-            "data.consents.listingExposureAgreed",
-            JsonFieldType.BOOLEAN,
-            "매물 정보 제공 및 노출 동의. consents가 없으면 함께 빠진다"));
-    fields.add(
-        optField("data.consents.version", JsonFieldType.STRING, "동의한 약관 버전. 수정해도 최초 등록 때 값 그대로다"));
-    fields.add(
-        optField(
-            "data.consents.agreedAt",
-            JsonFieldType.STRING,
-            "최초 동의 시각(UTC ISO-8601). 수정할 때마다 갱신하지 않는다"));
     fields.add(
         field(
             "data.imageKeys",

@@ -53,7 +53,7 @@ sequenceDiagram
     else 존재
         DB-->>LIST: Listing
         LIST-->>W: 200 전 필드
-        Note over LIST: landlordId · businessRegistrationNumber ·<br/>설문 3종 · consents · rejectionReason 포함<br/>세입자 응답이 감추는 값을 감추지 않는다
+        Note over LIST: landlordId · businessRegistrationNumber ·<br/>설문 3종 · rejectionReason 포함<br/>세입자 응답이 감추는 값을 감추지 않는다
     end
 
     Note over A,DB: ③ 승인 또는 반려 — 상태를 바꾸는 두 액션

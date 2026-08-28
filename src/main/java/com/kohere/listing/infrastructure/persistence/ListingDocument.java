@@ -71,7 +71,6 @@ class ListingDocument {
   private final Set<Nationality> preferredNationalities;
   private final Set<ContractDifficulty> contractDifficulties;
   private final String serviceFeedback;
-  private final ConsentsDocument consents;
 
   /** MongoDB에 공통으로 저장되는 {@code {ko, en}} 다국어 문구 하위 문서다. */
   record LocalizedTextDocument(String ko, String en) {}
@@ -81,13 +80,6 @@ class ListingDocument {
    * Amended · changeUnit {@code 0119}).
    */
   record ContactDocument(String managerName, String phone) {}
-
-  /** 매물 등록 시 받은 이용약관 동의다. changeUnit {@code 0120}이 스키마 {@code required}에 넣었다. */
-  record ConsentsDocument(
-      boolean privacyPolicyAgreed,
-      boolean listingExposureAgreed,
-      String version,
-      Instant agreedAt) {}
 
   /** MongoDB에 저장되는 주소 하위 문서다. 검색 코드는 enum, 표시 주소는 다국어 문서로 보관한다. */
   record AddressDocument(

@@ -560,11 +560,6 @@
 | `preferredNationalities` | string[] | 임대인 설문 — 선호 국적 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
 | `contractDifficulties` | string[] | 임대인 설문 — 계약 시 겪은 어려움 · 응답 비노출(아래 註). **요청에서는 선택**이지만 저장은 항상 배열이다(값이 없으면 `[]`) |
 | `serviceFeedback` | string | nullable · 임대인 설문 — 서비스 개선 의견 · 응답 비노출(아래 註) |
-| `consents` | object | **필수** · 매물 이용약관 동의(changeUnit `0120`) |
-| `consents.privacyPolicyAgreed` | bool | 필수 · 개인정보 수집·이용 동의 |
-| `consents.listingExposureAgreed` | bool | 필수 · 매물 정보 제공 및 노출 동의 |
-| `consents.version` | string | 필수 · 동의한 약관 버전(서버 설정값 `app.terms.listing-consent-version`) |
-| `consents.agreedAt` | date | 필수 · 동의 시각 |
 
 > `monthlyRent`·`deposit`은 Listing 루트가 아니라 `roomOffers[].pricing`의 단일값이다. 앱의 `minBudget`/`maxBudget`은 조회 조건일 뿐 DB에 범위로 저장하지 않는다. `featureSummary`는 DB에 저장하지 않고, 상세 응답을 만들 때 활성 `roomOffers[].filterTags`의 합집합으로 계산한다. 필터는 반드시 같은 `roomOffers[]` 원소가 가격·옵션을 동시에 만족하는지 `$elemMatch`로 검사한다 — `MOVE_IN_NOW`도 `filterTags`의 태그 하나일 뿐이라 별도 재고 조건을 보지 않는다.
 
@@ -601,7 +596,7 @@
 
 - 주변 시설은 자유 텍스트가 아니라 `nearbyFacilities`의 `NearbyFacility` 코드 배열이다. API 응답에서도 `nearbyFacilities`로 내려주며 다른 공통 코드와 같이 카탈로그 label과 조합한다.
 - 고유 문구는 `listings` 안의 `{ko,en}`에서 사용자 언어 하나를 선택한다. `type`·시설·`filterTags` 같은 공통 코드는 원문 code를 유지하고 `listingCatalog`의 label과 조합해 `{code,label}`로 응답한다. 필터 요청은 계속 code를 보낸다.
-- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. 이어 `0116 listing-location-required`가 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. `0118 listing-university-collection`이 `universities` validator를 세우고([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)), `0119 listing-contact-sms-drop`이 담당자 연락처에서 `sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제) — **다섯 다 스키마만 다루고 문서를 넣지 않는다**. 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
+- **listing 마이그레이션 체인은 v4 baseline으로 리셋됐다.** `0099`~`0114`를 삭제하고 `0115 listing-v4-baseline` 하나가 **스키마만**(v4 validator + 옛 인덱스 2건 삭제) 담당한다. 이어 `0116 listing-location-required`가 `location`을 필수로 조인다([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `0100`(`searchPlaces` 시드)은 [ADR-0043](../adr/0043-remove-seeded-poi-keyword-search.md)으로 삭제됐고, 그 컬렉션은 `0117 listing-search-place-drop`이 드롭한다. `0118 listing-university-collection`이 `universities` validator를 세우고([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)), `0119 listing-contact-sms-drop`이 담당자 연락처에서 `sms`를 뺀다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended — `contact.required`에서 `sms`를 지우고 `properties.contact.sms`를 삭제) — **다섯 다 스키마만 다루고 문서를 넣지 않는다**. 이어 `0120 listing-consents`가 매물 이용약관 동의를 넣고, `0121 listing-status-enum-shrink`·`0122 listing-status-enum-expand`가 `status` enum을 3종으로 조였다가 `UPDATE_PENDING`을 더해 4종으로 넓힌다. `0123 listing-consents-drop`은 validator에서 `consents`를 빼고 이미 저장된 문서의 값을 `$unset`으로 지운다 — 제거 방향이라 `collMod`가 `$unset`보다 먼저다(`required`가 남은 채로는 strict validator가 update를 거부한다). 절차와 근거는 [migration-policy §8-2](./migration-policy.md#8-2-listing-마이그레이션-체인) · [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md).
 - **시드(`listings` 2건 · `listingCatalog` 112건 · `universities` 14건)는 운영자가 정본 JSON으로 주입**한다([migration-policy §8-1](./migration-policy.md#8-1-시드-주입-절차)). **`--drop`을 쓰지 않는다** — 컬렉션을 지우면 validator가 함께 사라지고 `0115`·`0118`은 1회성이라 복구되지 않는다. `deleteMany({})` 후 `mongoimport`한다. 신규 환경은 시드 전까지 카탈로그가 비어 라벨 자리에 코드값이 노출되고 **등록되는 매물의 `nearbyUniversityCodes`가 빈 배열로 남아 진단 추천에서 빠지므로**, 배포 절차에 시드 단계를 포함한다.
 - seed의 고정 ObjectId는 반복 적재 시 중복 생성을 막기 위한 값이며 운영 ID 생성 규칙이 아니다. MongoDB 저장 예시는 [`listing-seed-example.json`](examples/listing-seed-example.json)에 둔다.
 

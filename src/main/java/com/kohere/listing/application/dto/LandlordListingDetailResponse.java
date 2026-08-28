@@ -24,7 +24,6 @@ import java.util.Set;
  * @param preferredNationalities 등록 폼 설문. 수정 요청 필드다
  * @param contractDifficulties 등록 폼 설문. 수정 요청 필드다
  * @param serviceFeedback 등록 폼 설문. 값이 없으면 키가 빠진다
- * @param consents 최초 동의 이력. 표시용 참고값이며 수정 폼은 동의를 새로 받는다
  * @param imageKeys 대표사진의 저장 키. 그대로 둘 사진을 되돌려 보낼 때 쓴다
  * @param rooms <b>비활성 방까지 포함한</b> 전 방. 되살리려면 응답에 보여야 한다
  */
@@ -36,7 +35,6 @@ public record LandlordListingDetailResponse(
     Set<Nationality> preferredNationalities,
     Set<ContractDifficulty> contractDifficulties,
     @JsonInclude(JsonInclude.Include.NON_NULL) String serviceFeedback,
-    @JsonInclude(JsonInclude.Include.NON_NULL) AdminListingDetailResponse.ConsentsResponse consents,
     List<String> imageKeys,
     List<LandlordRoomResponse> rooms) {
 

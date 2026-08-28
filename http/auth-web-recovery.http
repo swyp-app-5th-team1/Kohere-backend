@@ -68,7 +68,7 @@
 #
 # ─────────────────────────── 재실행 · 데이터 유일성 ───────────────────────────
 # 3번(가입)은 auth-web-landlord.http 3번과 같은 게이트를 지난다 — 유일해야 하는 값이 둘이다:
-#   · @email  → local_accounts.email UNIQUE (중복 시 409 AUTH_EMAIL_ALREADY_REGISTERED)
+#   · @email  → local_accounts.email UNIQUE (중복 시 409 AUTH_EMAIL_ALREADY_REGISTERED — 3번이 아니라 2-1 에서 먼저 걸린다)
 #   · @phone  → users.phone_number UNIQUE (같은 번호에 이미 웹 계정이 있으면 409 AUTH_WEB_ACCOUNT_ALREADY_EXISTS)
 # 그래서 이 파일의 기본값은 auth-web-landlord.http 와 **다른 번호·다른 이메일**이다 — 두 파일을 이어서 돌려도 부딪히지 않는다.
 # 다시 돌릴 때는 둘 다 새 값으로 바꾸거나 로컬 DB 를 비운다(docker compose down -v 후 재기동).
@@ -119,6 +119,30 @@ Content-Type: application/json
 {
   "phoneNumber": "{{phone}}",
   "code": "{{signupCode}}"
+}
+
+### 2-1. (선행) 가입용 이메일 인증번호 발송 — MailHog(http://localhost:8025)에서 6자리를 @signupEmailCode 에 입력
+#    이메일 키 챌린지(signup-email:code:{정규화이메일}) — 위 signup-phone:* 와도, 4번의 find-email:* 와도 다른 키스페이스다.
+#    가입은 연락처·이메일 **두 게이트를 모두** 통과해야 3번이 지나간다.
+#    ★ 이미 가입된 주소면 메일을 보내지 않고 409 AUTH_EMAIL_ALREADY_REGISTERED 다 — 3번에서 나던 그 409 를 여기서 먼저 만난다.
+#      재실행은 위 「재실행 · 데이터 유일성」 대로 @email·@phone 을 새 값으로 바꾼다.
+POST {{baseUrl}}/api/v1/auth/email/signup/verification-code
+Content-Type: application/json
+
+{
+  "email": "{{email}}"
+}
+
+### --- MailHog(http://localhost:8025)에서 받은 인증번호로 교체 (MAIL_ENABLED=false 면 앱 콘솔 [DEV MAIL]) ---
+@signupEmailCode = 000000
+
+### 2-2. (선행) 가입용 이메일 인증번호 확인 — 성공 시 검증 마커(TTL 30분) 저장. 그 안에 3번을 제출한다
+POST {{baseUrl}}/api/v1/auth/email/signup/verify
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "code": "{{signupEmailCode}}"
 }
 
 ### 3. (선행) 회원가입 — 한 트랜잭션으로 ACTIVE 까지 완주. refresh 는 본문이 아니라 Set-Cookie 로 온다(ADR-0048)

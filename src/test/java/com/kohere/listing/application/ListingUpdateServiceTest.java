@@ -240,8 +240,7 @@ class ListingUpdateServiceTest {
                 List.of(ROOM_KEY, ROOM_KEY_2))),
         Set.of(com.kohere.listing.domain.Nationality.JAPAN),
         Set.of(com.kohere.listing.domain.ContractDifficulty.LANGUAGE),
-        null,
-        new ListingRegisterRequest.ConsentsRequest(true, true));
+        null);
   }
 
   private static Listing listing(Listing.ListingStatus status) {
@@ -263,7 +262,6 @@ class ListingUpdateServiceTest {
                     new Listing.Pricing(500000, 1000000, 50000, Listing.Currency.KRW),
                     Set.of(ConditionTag.MOVE_IN_NOW),
                     List.of(ROOM_URL, ROOM_URL_2))))
-        .consents(new Listing.Consents(true, true, "v1.0", Instant.parse("2026-06-01T00:00:00Z")))
         .createdAt(Instant.parse("2026-06-01T00:00:00Z"))
         .updatedAt(Instant.parse("2026-06-01T00:00:00Z"))
         .build();

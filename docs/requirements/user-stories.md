@@ -1548,14 +1548,13 @@
 **So that** 관리자 승인을 거쳐 내 매물이 세입자 탐색·검색에 노출되고 문의를 받을 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 보안(임대인 전용 인가·매물 문서에 저장되는 PII), 입력 검증(카탈로그 대조·교차 필드 검증)
-- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`)·`consents.version`(서버 설정값)·`consents.agreedAt`. `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
+- 데이터 관점: 매물 v2의 **첫 엔드포인트** `POST /api/v2/listings`로 처리한다(조회 계열도 뒤이어 v2로 이관됐다 — 위 **매물 API 버전 경계** 참고). 저장 스키마는 v4([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md))를 그대로 쓰고, 요청 본문은 등록 폼이 실제로 받는 값만 담는다. **서버가 채우는 값은 요청 본문에 없다** — `_id`·`roomOffers[].roomOfferId`(ObjectId 발급)·`schemaVersion`(4)·`status`(`PENDING`)·`favoriteCount`(0)·`createdAt`/`updatedAt`·`rentalType`(`MONTHLY_RENT` 고정)·`pricing.currency`(`KRW` 고정)·`roomOffers[].status`(`ACTIVE`). `landlordId`도 본문이 아니라 **토큰(SecurityContext)** 에서 얻는다.
 - 주소 관점: 주소 칸은 자유 입력이 아니라 **검색으로 채운다**([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)). `GET /api/v1/listings/addresses`(임대인 전용)가 NCP Geocoding으로 표준 도로명 주소·좌표를 돌려주고, 임대인이 고른 후보의 `roadAddress`·`lat`·`lng`를 등록 요청의 `address.fullAddress`·`address.lat`·`address.lng`에 그대로 담는다. **후보를 거르지 않는다** — 등록도 전국을 받고, 카탈로그(`CITY`·`DISTRICT`)가 모르는 지역이면 행정구역을 `ETC`로 저장한다([ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). 서버는 등록 시점에 지오코딩을 다시 하지 않는다 — 등록마다 외부 왕복과 502 경로가 늘기 때문이며, 좌표 위조는 `PENDING` + 관리자 승인 심사가 흡수한다.
 - 사진 관점: **두 단계**다([ADR-0041](../adr/0041-listing-image-upload-to-s3.md)). 먼저 `POST /api/v2/listings/images`로 사진을 **한 장씩** 올려 `{ key, url }`을 받고, 등록 요청(`application/json`)에 그 키를 `imageKeys`(1~5개)·`roomOffers[].roomImageKeys`(방마다 2~5개)로 담는다. 요청을 파일마다 가르는 이유는 브라우저가 **요청 단위로만 진행률을 주기 때문**이다 — 한 요청에 몰아 실으면 파일별 진행률·속도를 만들 수 없고 실패한 파일만 다시 올릴 수도 없다. 사진과 방의 짝은 **JSON 구조**가 표현한다(배열 순서가 곧 표시 순서). 임시 사진은 `uploads/{landlordId}/{uuid}.{ext}`에 놓이고, 등록이 확정될 때 `listings/{listingId}/cover/…`·`listings/{listingId}/rooms/{roomOfferId}/…`로 복사된다 — 키가 식별자를 포함하므로 ObjectId를 저장 전에 발급한다. 응답의 URL은 **확정 위치 기준**이라 업로드 때 받은 미리보기 URL과 다르다.
 - 정합성 관점: 사진이 매물보다 **먼저** 저장되므로 폼을 버리면 임시 사진이 남는다 — `uploads/` prefix에만 **7일 만료**를 걸어 자동 정리한다. prefix가 갈리므로 만료 규칙이 살아 있는 매물 사진(`listings/`)을 건드릴 수 없다. 등록은 **키 검사 → 복사 → 문서 저장 → 임시본 삭제** 순이고, 복사나 저장이 실패하면 **복사본만** 걷어낸다 — 임시본은 남겨서 사용자가 그대로 다시 제출할 수 있게 한다.
 - 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `POST /api/v2/listings`와 `POST /api/v2/listings/images`를 한 매처로 묶어 **`hasRole("USER")` 명시 매처**로 둔다 — 매처를 두지 않고 `anyRequest().authenticated()`에 맡기면 온보딩 스코프(`ROLE_ONBOARDING`) 토큰이 컨트롤러까지 도달한다(진단 v2가 `permitAll` 매처를 갖는 것과 달리 등록은 열지 않는다). 임대인 여부(`userType=LANDLORD`)는 매처로 표현할 수 없으므로 **두 엔드포인트 모두 서비스에서 재검사**해 세입자면 `403` + `FORBIDDEN`이다. 주소 검색(`GET /api/v1/listings/addresses`)도 같은 이중 인가를 쓰되, 매처를 **공개 조회 매처(`GET /api/v1/listings/*` `permitAll`)보다 먼저** 선언해야 한다 — 먼저 매칭된 규칙이 이기므로 뒤에 두면 인증 규칙이 무시되고 공개 API가 된다.
 - 파생·미구현 관점: 폼 한 칸이 스키마 두 필드로 갈라지는 값은 서버가 파싱한다 — 지점 운영층 `1~2` → `building.usedFloorMin`·`usedFloorMax`, 이용 연령대 `20~35` → `ageMin`·`ageMax`. `min ≤ max`와 `usedFloorMax ≤ totalFloors`를 함께 검증한다. 주소는 `address.fullAddress`에 **받은 값 그대로**(정규화 없음) 저장하고, `address.city`·`district`는 도로명 주소를 공백으로 끊어 카탈로그(`CITY`·`DISTRICT`) 한국어 라벨과 완전히 같은 토큰을 찾아 그 코드로 채운다 — 못 찾으면 `ETC`이고 등록은 성공한다(지원 지역 판단은 관리자 승인 심사, [ADR-0046](../adr/0046-administrative-region-as-catalog-data.md)). **`location`(좌표)은 요청의 `address.lat`·`lng`로 채운다**([ADR-0042](../adr/0042-road-address-search-with-ncp-geocoding.md)) — 저장 계약에서도 **필수**이며 도메인 검증과 MongoDB validator가 함께 막는다(changeUnit `0116`). **`nearbyUniversityCodes`는 그 좌표에서 파생한다** — 서버가 대학 좌표 원장(`universities`, 14건)과 대조해 **반경 2km 안의 개별 대학 코드를 모두** 담는다(요청에 대학 칸은 없다). 대학가 밖이면 빈 배열이고 원장이 비어 있어도 등록은 성공한다([ADR-0045](../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)).
 - 검증 관점: 코드 필드는 `listingCatalog`의 `(category, code)`에 존재해야 한다([ADR-0037](../adr/0037-listing-localization-and-code-catalog.md)) — 없는 코드는 `400` + `LISTING_UNKNOWN_CATALOG_CODE`다(사용자 오타가 아니라 앱 코드표와 서버 카탈로그의 불일치라 `INVALID_INPUT`과 분리한다 — [error-response-guide](../api/error-response-guide.md)). `roomOffers`는 최소 1개다. **문자열 길이 상한은 두지 않는다**(매물 테이블 정의서에서 길이 컬럼을 삭제한 결정과 일관). 사진은 전용 코드를 쓴다 — 업로드에서 빈 파일은 `400` + `LISTING_IMAGE_REQUIRED`, 10MB 초과는 `413` + `LISTING_IMAGE_TOO_LARGE`, 허용 형식(JPEG·PNG·WebP·HEIC) 밖은 `415` + `LISTING_IMAGE_UNSUPPORTED_TYPE`이다. 등록에서 키 개수 위반은 `400` + `LISTING_IMAGE_REQUIRED`, 남의 키·없는 키·만료된 키는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`(셋을 구분해 알려주면 남의 키 존재 여부가 새어 나간다)다.
-- 동의 관점: 등록 폼은 **이용약관 동의 2종**(개인정보 수집·이용 / 매물 정보 제공 및 노출)을 `consents`로 받으며 **둘 다 필수**다. 하나라도 빠지거나 `false`면 `422` + `LISTING_REQUIRED_AGREEMENT_MISSING`으로 등록 자체가 성립하지 않는다 — 따라서 **저장된 매물은 예외 없이 동의를 마친 매물**이고, 심사 단계가 동의 여부를 판단 기준으로 다시 쓰지 않는다. 서버는 동의 여부와 함께 **약관 버전**(설정값 `app.terms.listing-consent-version`)과 **동의 시각**을 매물 문서에 저장한다 — 동의 사실의 입증 책임이 사업자에게 있어 "코드가 막는다"는 주장만으로는 부족하기 때문이다. 회원 약관 버전(`users.terms_version`)과는 **별개 값**이다: 그쪽은 계정 단위로 가입 시 1회 기록되지만 매물 동의는 **매물마다 등록 시점**이라, 한 임대인이 서로 다른 시기에 올린 매물이 다른 약관 버전을 가질 수 있다. 동의 3종은 세입자 응답에 포함하지 않는다(설문 3종·사업자등록번호와 동일 취급).
 - 사업자등록번호 관점: 등록 API는 사업자등록번호를 **형식(숫자 10자리)만 검증해 원문 저장**하고 **진위를 자동 검증하지 않는다** — 무상태 검증 API `POST /api/v1/auth/business/verify`(US-1-8)를 **호출하지 않으며**, 진위 확인은 **관리자가 승인 심사에서 수동으로** 한다(해당 엔드포인트 자체는 임대인이 직접 확인용으로 호출하도록 그대로 둔다). 원문은 매물 문서에만 저장하고 `user.businessRegistrationNumberHash`에는 쓰지 않는다(US-1-9와 일관, [ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) §3, [ADR-0033](../adr/0033-business-registry-verification.md)의 매물 문서 한정 개정).
 - 연락처 관점: 등록 폼이 받는 담당자 연락처는 **`contact`(담당자명·지점 대표 전화) 둘뿐**이다. 문자문의 칸은 받지 않는다 — 임대인이 거기 적게 되는 값은 온보딩에서 인증한 개인 번호(`users.phone_number`)라 [ADR-0034](../adr/0034-landlord-phone-sms-verification.md)의 마스킹 대상 PII가 매물 응답으로 평문 공개되고, 계정 단위 값이 매물마다 복제되며, 임대인 웹 로그인이 그 번호를 계정 매칭 키로 쓰기 시작하면(US-1-11·[ADR-0047](../adr/0047-web-local-credentials-and-phone-based-account-linking.md)) 사본이 늘수록 위험만 커진다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended). **임대인 개인 연락처는 매물 문서에 복사하지 않는다** — 필요해지면 저장이 아니라 조회 시점에 `user` 모듈에서 가져오고(booking이 신청자 프로필을 실시간 조인하는 방식), 가져온 번호는 여전히 마스킹 대상이라 세입자에게 평문으로 나가지 않는다.
 - 응답 관점: `201 Created` + 생성된 매물의 **상세 응답 구조(v4)** 를 반환한다. `contact`(담당자명·지점 대표 전화)는 세입자에게도 공개하므로 포함하고, `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 US-3-4와 동일하게 **응답에서 제외**한다. `status`는 카탈로그 번역 대상이 아니라 **코드 문자열 그대로**(`"PENDING"`) 내려간다.
@@ -1698,15 +1697,6 @@
   When `POST /api/v2/listings`를 호출하면
   Then `400 Bad Request`, `error.code=INVALID_INPUT`이고 `errors[]`에 `nearestTransit.walkMinutes`가 실린다(예전에는 조용히 `0`이 저장됐다)
 
-- 시나리오: 이용약관 동의 2종이 모두 있어야 등록된다
-  Given 온보딩을 마친 임대인이 등록 폼에서 개인정보 수집·이용 동의와 매물 정보 제공 및 노출 동의를 모두 체크했고
-  When `consents.privacyPolicyAgreed=true`·`consents.listingExposureAgreed=true`로 `POST /api/v2/listings`를 호출하면
-  Then `201 Created`이고 매물 문서에 동의 여부와 함께 **약관 버전**(설정값)·**동의 시각**이 저장된다
-- 시나리오: 동의가 빠지면 등록이 거절된다
-  Given 임대인이 두 동의 중 하나를 체크하지 않았거나 `consents` 자체를 보내지 않았고
-  When `POST /api/v2/listings`를 호출하면
-  Then `422 Unprocessable Entity`, `error.code=LISTING_REQUIRED_AGREEMENT_MISSING`을 반환하고 매물도 확정 사진도 만들어지지 않는다
-
 ### US-3-7 — 관리자 매물 심사(승인·반려)
 
 **As a** 관리자 계정(`userType=ADMIN`, `ACTIVE`)
@@ -1719,7 +1709,7 @@
 - 인가 관점: [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 `/api/v1/admin/**`를 **`hasRole("USER")` 명시 매처**로 둔다 — 매처가 없으면 `anyRequest().authenticated()`로 떨어져 온보딩 스코프 토큰이 컨트롤러까지 도달한다. 관리자 여부(`userType=ADMIN`)는 매처로 표현할 수 없으므로 **서비스에서 재검사**해 `403` + `FORBIDDEN`이다. 임대인 게이트와 같은 이중 인가이며, 토큰에는 관리자 여부를 담지 않아 **권한 부여·회수가 즉시 반영**된다.
 - 상태 관점: 매물 상태는 `PENDING`(심사 대기) · `PUBLISHED`(승인·공개) · `REJECTED`(반려) · `UPDATE_PENDING`(공개 중인 매물을 임대인이 고쳐 올린 수정 심사 대기 — US-3-9) **4종**이고, **승인·반려 모두 어느 상태에서든** 할 수 있다. **`UPDATE_PENDING`도 예외가 아니다** — 승인하면 `PUBLISHED`로 돌아가 다시 노출되고, 반려하면 `REJECTED`가 된다(수정본을 따로 보관하지 않으므로 반려해도 직전 공개본으로 되돌아가지는 않는다). 전이에 제약을 두지 않는 이유는 **관리자의 오판을 되돌릴 수단이 서버에 있어야** 하기 때문이다 — 잘못 반려한 매물을 되살리는 **재승인**, 공개 후 문제가 발견된 매물을 내리는 **사후 반려**, 이미 반려한 매물의 **사유 정정**이 모두 정상 경로다. 제약을 걸었다면 임대인 수정 API(US-3-9)가 나오기 전까지 잘못 처리된 매물이 서버에서 손댈 수 없는 상태로 묶였을 것이다. 다만 **이미 공개 중인 매물의 재승인은 아무 일도 하지 않는다** — 같은 값으로 저장해도 결과는 같지만 `updatedAt`이 바뀌면 목록 기본 정렬에서 그 매물만 위로 올라가기 때문이다.
 - 조회 관점: 목록은 **모든 상태**를 대상으로 하며 `status` 쿼리 파라미터로 상태별 필터가 가능하다(다중 값 허용, 생략하면 전체). 세입자 조회 3종은 저장소에서 `PUBLISHED`를 고정하고 있으므로 재사용하지 않고 **심사 전용 조회 경로**를 따로 둔다 — 세입자 경로의 안전장치를 풀지 않기 위해서다. 기본 정렬은 등록 최신순이다.
-- 노출 관점: 심사 응답은 **매물 문서에 저장된 모든 필드**를 담는다 — `landlordId`·`businessRegistrationNumber`·설문 3종·동의 3종·`rejectionReason`까지 세입자 응답이 감추는 값을 감추지 않는다. 표시 여부는 관리자 화면이 정한다. 노출해도 되는 근거는 매물 문서에 **임대인 개인 연락처가 저장되지 않기 때문**이고([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended), `businessRegistrationNumber`는 오히려 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이다([ADR-0033](../adr/0033-business-registry-verification.md) 개정). 표시 언어는 임대인 화면과 같이 한국어 고정이다.
+- 노출 관점: 심사 응답은 **매물 문서에 저장된 모든 필드**를 담는다 — `landlordId`·`businessRegistrationNumber`·설문 3종·`rejectionReason`까지 세입자 응답이 감추는 값을 감추지 않는다. 표시 여부는 관리자 화면이 정한다. 노출해도 되는 근거는 매물 문서에 **임대인 개인 연락처가 저장되지 않기 때문**이고([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md) Amended), `businessRegistrationNumber`는 오히려 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이다([ADR-0033](../adr/0033-business-registry-verification.md) 개정). 표시 언어는 임대인 화면과 같이 한국어 고정이다.
 - 반려 관점: 반려는 **사유가 필수**다(1~500자). 상태를 가리지 않으므로 같은 매물을 여러 번 반려해 사유를 고쳐 쓸 수 있다. 승인과 반려를 하나의 상태 변경 API로 묶지 않고 **액션 두 개로 나눈다** — 그래야 "반려에는 사유가 필요하다"를 요청 타입으로 강제할 수 있고, 승인 요청에 사유가 실려 오는 경우가 구조적으로 생기지 않는다. 사유는 임대인만 읽는 값이라 번역하지 않는다. 승인 시에는 이전 반려 사유를 지운다 — 수정을 거쳐 다시 올라온 매물이 지난 사유를 달고 공개되지 않게 하기 위해서다.
 - 감사 관점: 승인·반려는 **누가 어느 매물을 어떻게 처리했는지 로그로 남긴다**. 심사 이력 테이블은 이번 범위가 아니다(후속).
 - 후속(이번 범위 아님): 승인·반려 시 임대인 알림(도메인 이벤트) · 심사 이력 테이블 · 관리자 웹 프론트.
@@ -1738,7 +1728,7 @@
 - 시나리오: 심사 상세는 저장된 전 필드를 준다
   Given 관리자가 심사 대기 매물 하나를 골랐고
   When `GET /api/v1/admin/listings/{listingId}`를 호출하면
-  Then `200 OK`로 `landlordId`·`businessRegistrationNumber`·설문 3종·동의 3종·`rejectionReason`을 포함한 전 필드를 반환한다(세입자 상세와 달리 감추지 않는다)
+  Then `200 OK`로 `landlordId`·`businessRegistrationNumber`·설문 3종·`rejectionReason`을 포함한 전 필드를 반환한다(세입자 상세와 달리 감추지 않는다)
 - 시나리오: 승인하면 세입자에게 보인다
   Given `PENDING` 매물이 있고
   When 관리자가 `POST /api/v1/admin/listings/{listingId}/approval`을 호출하면
@@ -1800,8 +1790,8 @@
 - 소유권 관점: 상세는 매물의 `landlordId`가 요청자와 같은지 확인하고, 다르면 **`403`이 아니라 `404` + `LISTING_NOT_FOUND`** 다. 존재를 숨기는 booking·chat·매물 조회의 기존 관용구와 같으며, 한 API가 상황에 따라 `403`과 `404`를 오가면 그 차이 자체가 남의 매물이 존재한다는 사실을 누설한다.
 - 조회 범위 관점: 세입자 조회와 달리 **상태를 가리지 않는다** — `PENDING`·`PUBLISHED`·`REJECTED`·`UPDATE_PENDING`이 모두 나온다. 세입자 조회 3종은 저장소에서 `PUBLISHED`를 고정하고 있으므로 재사용하지 않고 **임대인 전용 조회 경로를 따로 둔다** — 심사 전용 조회를 따로 둔 US-3-7과 같은 이유로, 세입자 경로의 안전장치를 풀지 않기 위해서다.
 - 필터·정렬 관점: `status` 쿼리 파라미터로 상태별 필터가 가능하다(관리자와 같은 다중 값 계약, 생략하면 전체). 정렬은 **`updatedAt` 내림차순 고정**이고 `sort` 파라미터를 열지 않는다 — 상태 필터가 붙어야 임대인·상태·수정시각 복합 인덱스의 중간 키가 묶여 정렬까지 인덱스로 받쳐지고, 지금 정렬 파라미터를 열면 세입자 목록의 `LISTING_INVALID_SORT_PARAM` 계약과 어긋나는 계약이 하나 더 생긴다(나중에 여는 것은 하위 호환을 깨지 않는다).
-- 노출 관점(목록): 목록 항목은 **세입자 목록 카드와 같은 무게에 `rejectionReason` 하나만 더한 것**이다(상태는 카드가 이미 갖는다). 관리자 목록처럼 항목마다 상세 전체를 담지 않는다 — 임대인이 자기 목록 화면에서 자기 사업자등록번호·설문·동의 시각을 다시 볼 이유가 없고, 그 값들은 수정 폼이 쓰는 값이라 상세가 준다.
-- 노출 관점(상세): 상세의 계약은 **"수정 요청에 실을 수 있는 전 필드 + 읽기 전용 표시값"** 이다 — 수정이 전체 교체(US-3-9)라 화면이 **등록 폼 전 필드를 프리필**해야 하므로 편집 가능한 값이 하나도 빠지면 안 된다. 세입자 상세가 감추는 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)을 포함하고, 라운드트립에 필요한 `roomOffers[].roomOfferId`와 **사진 키**(`imageKeys`·`roomOffers[].roomImageKeys`)를 URL과 함께 내려준다. 읽기 전용으로 `status`·`rejectionReason`을 더하고, `consents`는 **최초 동의 이력 표시용**으로 싣는다 — 수정 요청에서 체크박스를 새로 받으므로(US-3-9) 프리필이 아니라 참고값이다. **`INACTIVE` 방 상품도 이 응답에만 보인다** — 세입자·관리자 응답은 `ACTIVE` 방만 노출하므로, 내려둔 방을 다시 살리려면 임대인이 그 방을 볼 수 있어야 한다.
+- 노출 관점(목록): 목록 항목은 **세입자 목록 카드와 같은 무게에 `rejectionReason` 하나만 더한 것**이다(상태는 카드가 이미 갖는다). 관리자 목록처럼 항목마다 상세 전체를 담지 않는다 — 임대인이 자기 목록 화면에서 자기 사업자등록번호·설문을 다시 볼 이유가 없고, 그 값들은 수정 폼이 쓰는 값이라 상세가 준다.
+- 노출 관점(상세): 상세의 계약은 **"수정 요청에 실을 수 있는 전 필드 + 읽기 전용 표시값"** 이다 — 수정이 전체 교체(US-3-9)라 화면이 **등록 폼 전 필드를 프리필**해야 하므로 편집 가능한 값이 하나도 빠지면 안 된다. 세입자 상세가 감추는 `businessRegistrationNumber`와 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)을 포함하고, 라운드트립에 필요한 `roomOffers[].roomOfferId`와 **사진 키**(`imageKeys`·`roomOffers[].roomImageKeys`)를 URL과 함께 내려준다. 읽기 전용으로 `status`·`rejectionReason`을 더한다. **`INACTIVE` 방 상품도 이 응답에만 보인다** — 세입자·관리자 응답은 `ACTIVE` 방만 노출하므로, 내려둔 방을 다시 살리려면 임대인이 그 방을 볼 수 있어야 한다.
 - 언어 관점: 표시 언어는 계정에서 선택한 언어(`users.lang`)를 따른다 — 관리자 심사 응답이 한국어 고정인 것과 다르다. 카탈로그 번역 컨텍스트는 목록 항목마다가 아니라 **한 번만** 만든다.
 - 후속(이번 범위 아님): 임대인 매물 삭제 · 수정 신청 취소 · 정렬 파라미터 개방 · 심사 이력 조회.
 - 시퀀스: [US-3-8 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-8-landlord-listing-query.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
@@ -1827,7 +1817,7 @@
 - 시나리오: 상세는 수정 폼이 필요한 값을 모두 준다
   Given 임대인이 자기 매물 하나를 골랐고
   When `GET /api/v2/users/me/listings/{listingId}`를 호출하면
-  Then `200 OK`로 등록 요청에 실었던 전 필드(지점·건물·공용시설·주변시설·객실·설문 3종·`businessRegistrationNumber`)와 `roomOffers[].roomOfferId`·사진 키(`imageKeys`·`roomOffers[].roomImageKeys`)·사진 URL을 반환하고, 읽기 전용으로 `status`·`rejectionReason`, 참고값으로 `consents`(약관 버전·최초 동의 시각)를 함께 반환한다
+  Then `200 OK`로 등록 요청에 실었던 전 필드(지점·건물·공용시설·주변시설·객실·설문 3종·`businessRegistrationNumber`)와 `roomOffers[].roomOfferId`·사진 키(`imageKeys`·`roomOffers[].roomImageKeys`)·사진 URL을 반환하고, 읽기 전용으로 `status`·`rejectionReason`을 함께 반환한다
 - 시나리오: 내려둔 방 상품도 임대인에게는 보인다
   Given 매물에 `status=INACTIVE`인 방 상품이 있고
   When 임대인 상세를 조회하면
@@ -1873,11 +1863,10 @@
 - 상태 전이 관점: 수정할 수 있는 상태는 둘뿐이다 — **`REJECTED` + 수정 → `PENDING`**(재심사) · **`PUBLISHED` + 수정 → `UPDATE_PENDING`**(수정 심사 대기). **`PENDING`·`UPDATE_PENDING`에서는 수정할 수 없고** `422` + `LISTING_NOT_EDITABLE`이다 — 심사 중인 본문이 심사자가 보고 있는 화면 아래에서 바뀌지 않게 하기 위해서다. 어느 경로든 수정이 성공하면 서버가 **원래 상태와 무관하게 `rejectionReason`을 비운다** — 수정을 거쳐 다시 올라온 매물이 지난 사유를 달고 다니지 않게 하려는 것이고, 승인이 사유를 지우는 것(US-3-7)과 같은 규칙이다. 관리자 심사는 `UPDATE_PENDING`에서도 그대로 작동한다(승인 → `PUBLISHED`, 반려 → `REJECTED`).
 - 노출 관점: **공개 중인 매물을 수정하면 심사가 끝날 때까지 세입자 노출에서 빠진다 — 의도된 동작이다.** 심사를 거치지 않은 내용이 세입자에게 도달하지 않는다는 심사 제도 자체의 요구이며, 오타 하나를 고쳐도 같다. 세입자 조회 경로는 모두 "상태가 정확히 `PUBLISHED`인가"를 묻고 있어 상태 한 값만 바뀌면 목록·지도·상세·진단 추천·찜 목록·최근 본 목록에서 **동시에** 사라지고, 승인되면 `favoriteCount`·찜 문서·최근 본 기록이 **그대로 복구**된다. 임대인 화면은 제출 전에 이 사실을 고지한다. 되돌릴 수 없는 것은 하나뿐이다 — **수정이 반려되면 직전에 승인됐던 본문은 서버에 남지 않는다**(수정본을 따로 보관하지 않고 문서를 제자리에서 덮어쓰기 때문이며, 교체된 사진도 함께 사라진다).
 - 예약·문의 관점: 노출 차단은 **표시와 생성을 가른다**. 이미 신청된 예약의 카드에 실리는 매물명·사진·금액은 매물 상태와 방 상태를 **보지 않는 표시 전용 조회**로 읽으므로 심사 중에도 정상 렌더된다 — 그러지 않으면 세입자·임대인 양쪽의 예약 목록·상세 4개 화면에서 제목이 비고 금액이 `0`으로 찍힌다. 반면 **신규 예약 생성과 매물 문의(채팅 개설)는 계속 막히고**, 이미 열린 채팅방은 매물 스냅샷을 들고 있어 영향이 없다.
-- 동의 관점: `consents`(개인정보 수집·이용 / 매물 정보 제공 및 노출)는 **수정 요청에도 그대로 있고 게이트도 그대로다** — 하나라도 빠지거나 `false`면 등록과 같은 `422` + `LISTING_REQUIRED_AGREEMENT_MISSING`이다. **다만 저장 값은 승계한다** — 매물 문서의 **약관 버전과 동의 시각은 최초 등록 시점 값 그대로**이고 수정이 덮어쓰지 않는다. 그 값은 "등록 시점 동의"라는 감사 기록이라 수정할 때마다 갱신하면 최초 동의 시각이 사라진다. 결과적으로 **게이트는 매번 작동하지만 문서에 실제로 가해지는 변경은 없다.** 약관 개정에 따른 재동의는 매물 단건 수정이 아니라 전 매물 대상 별도 흐름의 문제다.
 - 방(객실) 관점: `roomOffers`는 **순서 있는 전량 제출**이다. `roomOfferId`가 없으면 신규 방이고 서버가 ObjectId를 새로 발급한다. **방을 내리는 것은 요청에서 빼는 게 아니라 `status=INACTIVE`로 보내는 것**이다 — 하드 삭제하면 예약·채팅이 들고 있는 `roomOfferId` 참조가 영구히 끊기고, 명시 필드라야 내린 방을 나중에 다시 `ACTIVE`로 되살릴 수 있다. 요청에서 **id 자체가 빠진** 방은 클라이언트 결함일 수도 삭제 의도일 수도 있으므로 안전망으로 `INACTIVE`로 바꿔 배열 맨 뒤에 원래 상대순서로 남긴다(어느 경우에도 하드 삭제하지 않는다). 문서에 없는 `roomOfferId`를 보내면 `400` + `INVALID_INPUT`이고, **저장 후 `ACTIVE` 방이 하나도 남지 않아도 `400` + `INVALID_INPUT`** 이다 — 상태는 `PUBLISHED`인데 세입자 목록·상세에는 잡히지 않는 유령 매물이 만들어지기 때문이다. 배열 순서는 요청이 정본이라 **요청 = 저장 = 응답** 순서가 그대로 선다.
 - 사진 관점: 업로드 API(`POST /api/v2/listings/images`)는 그대로다. 수정 요청의 `imageKeys`·`roomOffers[].roomImageKeys`에는 **새로 올린 임시 키(`uploads/…`)와 이미 확정된 키(`listings/…`)를 섞어** 담고, 병합이 끝난 최종 배열이 곧 표시 순서다. 확정 키는 **그 자리에 원래 있던 것만** 허용한다 — 대표사진 자리에는 그 매물의 대표사진 키만, 방 사진 자리에는 **그 방의** 사진 키만 올 수 있고 커버↔방·방↔방 교차 참조는 `400` + `LISTING_IMAGE_KEY_NOT_FOUND`다. 확정 키의 경로가 역할(`cover/`·`rooms/{roomOfferId}/`)을 이미 담고 있어 자리를 옮기면 저장 경로가 역할을 거짓말하게 되기 때문이며, **방 사진을 대표사진으로 올리려면 다시 업로드해야 한다.** 남의 매물 키·문서에 없는 키도 같은 코드로 거절되므로 이 대조가 **소유권 검사를 겸한다**. `roomOfferId`가 없는 **신규 방에는 임시 키만** 담을 수 있다(확정 키는 아직 발급되지 않은 id를 포함해야 하므로 존재할 수 없다). 장수 규칙(대표 1~5장·방마다 2~5장)은 최종 배열 기준이다. **교체돼 참조를 잃은 옛 사진은 저장이 성공한 뒤에 지운다** — 저장 *전에* 지우면 검증·경합 실패 시 공개 중인 매물의 사진이 사라진다. `INACTIVE`로 내린 방과 안전망으로 뒤로 밀린 방의 사진은 문서에 그대로 남으므로 지워지지 않고, 그 방을 되살리면 사진도 함께 살아난다.
 - 동시성 관점: 저장은 **읽은 시점의 상태가 그대로일 때만** 성공한다. 매물을 읽고 저장하기까지 사진 확정 복사(네트워크·다수 객체)가 끼어 간격이 짧지 않은데, 그 사이 관리자가 승인·반려하면 문서 전체 교체가 심사 결과를 지우거나 임대인의 수정이 통째로 사라진다 — **둘 다 아무 신호 없이** 일어난다. 상태가 바뀐 것을 감지하면 `409` + `LISTING_STATE_CHANGED`로 거절하고 아무것도 저장·삭제하지 않으며, 클라이언트는 **다시 조회한 뒤 재시도**한다. 같은 보호를 관리자 심사(US-3-7) 저장에도 건다.
-- 파생·승계 관점: 주소를 바꾸면 등록과 똑같이 `address.city`·`district`를 **다시 파싱**하고(카탈로그에 없으면 `ETC`), `nearbyUniversityCodes`를 좌표에서 **다시 파생**한다(반경 2km). 대학가 밖으로 옮기면 빈 집합이 되어 진단 추천에서 빠지지만 수정 자체는 성공한다 — 등록과 같은 정책이다. `_id`·`landlordId`·`schemaVersion`·`createdAt`·`favoriteCount`·`consents`·`rentalType`은 **승계**하고, `status`·`rejectionReason`·`updatedAt`은 **전이가 정한다**.
+- 파생·승계 관점: 주소를 바꾸면 등록과 똑같이 `address.city`·`district`를 **다시 파싱**하고(카탈로그에 없으면 `ETC`), `nearbyUniversityCodes`를 좌표에서 **다시 파생**한다(반경 2km). 대학가 밖으로 옮기면 빈 집합이 되어 진단 추천에서 빠지지만 수정 자체는 성공한다 — 등록과 같은 정책이다. `_id`·`landlordId`·`schemaVersion`·`createdAt`·`favoriteCount`·`rentalType`은 **승계**하고, `status`·`rejectionReason`·`updatedAt`은 **전이가 정한다**.
 - 감수 관점: `PENDING`·`UPDATE_PENDING`에서는 수정도 **수정 신청 취소도 할 수 없다** — 제자리 덮어쓰기라 되돌릴 구본이 없다. 또 `REJECTED`를 고쳐 올리면 최초 등록과 같은 `PENDING`이 되어 상태만으로는 재제출을 구분할 수 없다(관리자는 `createdAt`으로 안다). 둘 다 심사 이력(후속)이 근본 해결이다.
 - 후속(이번 범위 아님): 임대인 매물 삭제 · 수정 신청 취소 · 심사 이력 테이블 · 승인·반려 알림(도메인 이벤트) · 고아 사진 정리 배치 · 예약 생성 시점 매물 스냅샷.
 - 시퀀스: [US-3-9 다이어그램](../architecture/sequence-diagrams/03-listings-favorites/us-3-9-landlord-listing-update.md), API: [03-listings-favorites](../api/specs/03-listings-favorites.md).
@@ -1920,14 +1909,6 @@
   Given 없는 `listingId`이거나 ObjectId 형식이 아니고
   When 수정을 호출하면
   Then `404 Not Found`, `error.code=LISTING_NOT_FOUND`다
-- 시나리오: 동의가 빠지면 수정이 거절된다
-  Given 임대인이 두 동의 중 하나를 체크하지 않았거나 `consents` 자체를 보내지 않았고
-  When 수정을 호출하면
-  Then `422 Unprocessable Entity`, `error.code=LISTING_REQUIRED_AGREEMENT_MISSING`을 반환하고 본문도 확정 사진도 바뀌지 않는다
-- 시나리오: 동의를 다시 받아도 최초 동의 이력은 그대로다
-  Given 매물 문서에 등록 시점의 약관 버전과 동의 시각이 저장돼 있고
-  When 임대인이 두 동의를 모두 `true`로 담아 수정에 성공하면
-  Then `200 OK`이고 **약관 버전과 동의 시각은 등록 시점 값 그대로**다(수정 시각으로 갱신되지 않는다)
 - 시나리오: 방 상품을 내리고 다시 살린다
   Given 매물에 `ACTIVE` 방 상품이 2개 있고
   When 한 방을 `roomOfferId`와 함께 `status="INACTIVE"`로 보내 수정하면

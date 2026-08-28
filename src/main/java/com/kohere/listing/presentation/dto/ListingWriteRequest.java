@@ -17,9 +17,6 @@ import java.util.Set;
  *
  * <p>{@code roomOffers}와 사진 키는 여기 없다. 수정 요청의 방에는 {@code roomOfferId}·{@code status}가 더 있고 사진 키는 임시
  * 키와 확정 키가 섞여 오므로, 두 경로가 실제로 다르게 다뤄야 하는 유일한 부분이다.
- *
- * <p>{@code consents}는 <b>있다</b>. 동의는 수정할 때도 다시 받으며 게이트도 그대로다. 다만 저장 값({@code version}·{@code
- * agreedAt})은 등록 시점 것을 승계하고 덮어쓰지 않는다 — 그 판단은 조립이 아니라 각 서비스가 한다.
  */
 public interface ListingWriteRequest {
 
@@ -62,6 +59,4 @@ public interface ListingWriteRequest {
   Set<ContractDifficulty> contractDifficulties();
 
   String serviceFeedback();
-
-  ListingRegisterRequest.ConsentsRequest consents();
 }

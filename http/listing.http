@@ -39,8 +39,6 @@
 #   - 등록한 매물은 `status=PENDING`이라 **조회·검색·상세 어디에도 나오지 않는다**(14·15에서 확인).
 #     노출은 관리자 승인이 있어야 시작된다 — 승인·반려 흐름은 admin-listing-review.http 를 본다.
 #     등록한 매물을 임대인이 고치거나 상태별로 조회하는 흐름은 landlord-listing.http 를 본다.
-#   - 등록 요청에는 **이용약관 동의 2종(`consents`)이 필수**다. 빠지면 422 LISTING_REQUIRED_AGREEMENT_MISSING 이라
-#     아래 에러 케이스들도 원래 재현하려던 에러가 아니라 동의 누락으로 먼저 걸린다 — 그래서 전 바디에 넣어 두었다.
 #
 # ─────────────────────────── 주소·역 검색 · 사진 업로드 (12-0 ~ 13) ───────────────────────────
 # 주소는 **먼저 검색한다**(12-0, ADR-0042). NCP Geocoding이 표준 도로명 주소·좌표·supported를 주고,
@@ -332,8 +330,7 @@ Content-Type: application/json
       ]
     }
   ],
-  "serviceFeedback": "등록 절차가 더 간단해지면 좋겠습니다.",
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": "등록 절차가 더 간단해지면 좋겠습니다."
 }
 
 ### 14. 등록 직후 상세 조회 → **404 LISTING_NOT_FOUND**. PENDING이라 승인 전에는 어디에도 노출되지 않는다
@@ -435,8 +432,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["CHINA"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 ### 28. 400 INVALID_INPUT — 필수 필드 누락(title·roomOffers 등). error.errors[]에 필드별 사유가 담긴다
@@ -494,8 +490,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["CHINA"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 ### 29-b. 400 INVALID_INPUT — listingCatalog에 없는 코드
@@ -544,8 +539,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["CHINA"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 ### 29-c. 400 LISTING_IMAGE_REQUIRED — 방 사진 키가 2개 미만
@@ -590,8 +584,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["CHINA"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 ### 29-d. 400 LISTING_IMAGE_KEY_NOT_FOUND — 남의 키를 가리킨다
@@ -637,8 +630,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["CHINA"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 ### 29-e. 413 LISTING_IMAGE_TOO_LARGE — 장당 10MB 초과

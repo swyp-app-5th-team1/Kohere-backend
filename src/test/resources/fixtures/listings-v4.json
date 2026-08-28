@@ -199,15 +199,7 @@
       "LANGUAGE",
       "PAYMENT"
     ],
-    "serviceFeedback": "외국인 임차인과의 계약서 번역 지원이 있으면 좋겠습니다.",
-    "consents": {
-      "privacyPolicyAgreed": true,
-      "listingExposureAgreed": true,
-      "version": "v1.0",
-      "agreedAt": {
-        "$date": "2026-08-01T00:00:00.000Z"
-      }
-    }
+    "serviceFeedback": "외국인 임차인과의 계약서 번역 지원이 있으면 좋겠습니다."
   },
   {
     "_id": {
@@ -386,14 +378,6 @@
       "CULTURE",
       "IDENTITY",
       "COMMUNICATION_CHANNEL"
-    ],
-    "consents": {
-      "privacyPolicyAgreed": true,
-      "listingExposureAgreed": true,
-      "version": "v1.0",
-      "agreedAt": {
-        "$date": "2026-08-05T00:00:00.000Z"
-      }
-    }
+    ]
   }
 ]

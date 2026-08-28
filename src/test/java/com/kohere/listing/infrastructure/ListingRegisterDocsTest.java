@@ -182,11 +182,7 @@ class ListingRegisterDocsTest {
         ],
         "preferredNationalities": ["JAPAN", "CHINA"],
         "contractDifficulties": ["LANGUAGE", "PAYMENT"],
-        "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다.",
-        "consents": {
-          "privacyPolicyAgreed": true,
-          "listingExposureAgreed": true
-        }
+        "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다."
       }
       """;
 

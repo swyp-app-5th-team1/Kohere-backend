@@ -15,13 +15,12 @@ import org.junit.jupiter.params.provider.EnumSource;
  * 임대인 수정의 상태 전이와 승계 불변식을 검증한다(US-3-9).
  *
  * <p>여기서 지키는 것은 두 가지다 — <b>심사 중에는 손댈 수 없다</b>는 게이트와, 수정이 <b>건드리면 안 되는 값</b>이 그대로 남는다는 계약이다. 후자가 깨지면
- * 임대인이 매물을 고칠 때마다 찜 수가 초기화되거나 최초 동의 시각이 덮이는데, 어느 쪽도 응답만 봐서는 드러나지 않는다.
+ * 임대인이 매물을 고칠 때마다 찜 수가 초기화되는데, 응답만 봐서는 드러나지 않는다.
  */
 class ListingEditTransitionTest {
 
   private static final Instant NOW = Instant.parse("2026-08-23T10:00:00Z");
   private static final Instant CREATED = Instant.parse("2026-06-01T00:00:00Z");
-  private static final Instant AGREED = Instant.parse("2026-06-01T00:00:00Z");
 
   @Test
   @DisplayName("반려된 매물을 수정하면 심사 대기로 돌아간다")
@@ -85,10 +84,10 @@ class ListingEditTransitionTest {
   }
 
   @Test
-  @DisplayName("수정은 소유자·생성 시각·찜 수·동의를 그대로 승계한다")
+  @DisplayName("수정은 소유자·생성 시각·찜 수를 그대로 승계한다")
   void editPreservesInheritedValues() {
     // 요청 DTO에 칸이 없는 값들이다. 조립 헬퍼가 이 값을 만들게 하면
-    // 수정할 때마다 최초 동의 시각이 덮이고 찜 수가 초기화된다.
+    // 수정할 때마다 찜 수가 초기화된다.
     Listing before = listing(Listing.ListingStatus.PUBLISHED);
 
     Listing after = before.afterEdit(before.toBuilder(), NOW);
@@ -98,8 +97,6 @@ class ListingEditTransitionTest {
     assertThat(after.getSchemaVersion()).isEqualTo(before.getSchemaVersion());
     assertThat(after.getCreatedAt()).isEqualTo(CREATED);
     assertThat(after.getFavoriteCount()).isEqualTo(7);
-    assertThat(after.getConsents()).isEqualTo(before.getConsents());
-    assertThat(after.getConsents().agreedAt()).isEqualTo(AGREED);
   }
 
   @Test
@@ -122,7 +119,6 @@ class ListingEditTransitionTest {
         .imageUrls(List.of("https://cdn.example.com/listings/68e0000000000000000000a1/cover/a.jpg"))
         .nearbyUniversityCodes(Set.of())
         .roomOffers(List.of())
-        .consents(new Listing.Consents(true, true, "v1.0", AGREED))
         .createdAt(CREATED)
         .updatedAt(CREATED)
         .build();

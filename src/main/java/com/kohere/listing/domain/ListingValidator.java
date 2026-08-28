@@ -54,21 +54,6 @@ public final class ListingValidator {
     validateRoomOffers(listing.getRoomOffers());
     requireCollection(listing.getPreferredNationalities(), "preferredNationalities");
     requireCollection(listing.getContractDifficulties(), "contractDifficulties");
-    validateConsents(listing.getConsents());
-  }
-
-  /**
-   * 등록 시 받은 이용약관 동의가 저장 계약을 만족하는지 본다.
-   *
-   * <p>MongoDB validator가 {@code consents}를 {@code required}로 걸어 두었는데 <b>여기서는 보지 않고 있었다</b> — 매퍼가
-   * {@code null}을 조용히 통과시키고 테스트 프로파일은 {@code mongock.enabled: false}라 validator가 걸리지 않아, 값을 승계하지 못한
-   * 저장 경로가 생기면 <b>테스트는 통과하고 dev에서 {@code MongoWriteException}이 나는</b> 조합이 된다. 수정 경로가 동의를 승계하므로(요청은
-   * 다시 받되 저장 값은 유지) 앱 계층에서 먼저 막는다.
-   */
-  private static void validateConsents(Listing.Consents consents) {
-    requireNonNull(consents, "consents가 필요합니다.");
-    requireText(consents.version(), "consents.version이 필요합니다.");
-    requireNonNull(consents.agreedAt(), "consents.agreedAt이 필요합니다.");
   }
 
   private static void validateContact(Listing.Contact contact) {

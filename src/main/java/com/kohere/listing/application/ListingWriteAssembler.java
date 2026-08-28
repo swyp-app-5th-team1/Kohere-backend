@@ -3,7 +3,6 @@ package com.kohere.listing.application;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
-import com.kohere.listing.domain.ListingRequiredAgreementMissingException;
 import com.kohere.listing.domain.ListingUnknownCatalogCodeException;
 import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
@@ -26,8 +25,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>여기서 하지 않는 것</b>이 계약의 절반이다 — {@code status}·{@code rejectionReason}·{@code updatedAt}은 전이가
  * 정하고({@link Listing#afterEdit}), {@code id}·{@code landlordId}·{@code schemaVersion}·{@code
- * createdAt}·{@code favoriteCount}·{@code consents}는 등록이 만들거나 수정이 승계한다. 특히 {@code consents}의 저장 값을
- * 여기서 만들면 수정할 때마다 최초 동의 시각을 덮어써 증빙이 사라진다.
+ * createdAt}·{@code favoriteCount}는 등록이 만들거나 수정이 승계한다.
  */
 @Slf4j
 @Component
@@ -54,8 +52,6 @@ class ListingWriteAssembler {
   /**
    * 요청이 정하는 값을 빌더에 채운다. 등록은 빈 빌더로, 수정은 {@code toBuilder()}로 부른다.
    *
-   * <p>동의 게이트가 <b>여기</b> 있는 이유는 등록·수정 어느 경로도 빠뜨리지 못하게 하기 위해서다. 저장되는 동의 값 자체는 각 서비스가 정한다.
-   *
    * @param builder 채울 빌더
    * @param request 등록·수정이 공유하는 요청 필드
    * @param roomFilterTags 방마다의 조건 태그. 카탈로그 대조에만 쓴다
@@ -68,7 +64,6 @@ class ListingWriteAssembler {
       ListingCatalogCodes catalog) {
     requireNoneIsExclusive(request);
     requireCatalogCodes(request, roomFilterTags, catalog);
-    requireConsents(request.consents());
 
     RangeInput usedFloor =
         RangeInput.parse("building.usedFloorRange", request.building().usedFloorRange());
@@ -119,19 +114,6 @@ class ListingWriteAssembler {
         .preferredNationalities(orEmpty(request.preferredNationalities()))
         .contractDifficulties(orEmpty(request.contractDifficulties()))
         .serviceFeedback(request.serviceFeedback());
-  }
-
-  /**
-   * 이용약관 동의 2종이 모두 {@code true}인지 확인한다.
-   *
-   * <p>이 게이트 덕분에 <b>저장된 매물은 예외 없이 동의를 마친 매물</b>이 된다 — 심사 단계가 동의 여부를 판단 기준으로 다시 쓰지 않는 근거다. 수정할 때도 다시
-   * 받고 다시 확인한다.
-   */
-  private static void requireConsents(ListingRegisterRequest.ConsentsRequest consents) {
-    if (!Boolean.TRUE.equals(consents.privacyPolicyAgreed())
-        || !Boolean.TRUE.equals(consents.listingExposureAgreed())) {
-      throw new ListingRequiredAgreementMissingException();
-    }
   }
 
   /**

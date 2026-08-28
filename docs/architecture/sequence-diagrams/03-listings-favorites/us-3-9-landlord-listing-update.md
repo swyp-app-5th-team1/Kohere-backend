@@ -32,7 +32,7 @@ sequenceDiagram
     Note over L,DB: ② 수정 제출 — 폼 전체를 1회<br/>제출 전에 「공개 중인 매물은 심사 동안 내려간다」를 경고 모달로 고지한다
 
     L->>W: 수정 제출
-    W->>SEC: PUT /api/v2/listings/{listingId} (application/json)<br/>{ 등록과 같은 전 필드, consents,<br/>imageKeys[](임시+확정 혼합), roomOffers[](roomOfferId · status 포함) }
+    W->>SEC: PUT /api/v2/listings/{listingId} (application/json)<br/>{ 등록과 같은 전 필드,<br/>imageKeys[](임시+확정 혼합), roomOffers[](roomOfferId · status 포함) }
     Note over SEC: PUT /api/v2/listings/* 명시 매처 → hasRole("USER")<br/>같은 경로의 GET은 permitAll이라 method로 갈린다<br/>없으면 anyRequest().authenticated()로 떨어져 ROLE_ONBOARDING 토큰이 컨트롤러까지 닿는다
 
     alt 토큰 없음/만료/위조
@@ -67,10 +67,7 @@ sequenceDiagram
                     LIST->>DB: listingCatalog 코드 대조 · universities 반경 2km 재파생
                     DB-->>LIST: 카탈로그 · 인근 대학 코드
 
-                    alt 동의 2종이 모두 true가 아님
-                        LIST-->>W: 422 LISTING_REQUIRED_AGREEMENT_MISSING
-                        Note over LIST: 등록과 같은 게이트·같은 코드다<br/>다만 저장 값은 승계한다 — version·agreedAt을 덮어쓰면<br/>최초 동의 시각이라는 감사 기록이 사라진다
-                    else 입력 검증 실패
+                    alt 입력 검증 실패
                         LIST-->>W: 400 INVALID_INPUT · LISTING_IMAGE_KEY_NOT_FOUND<br/>LISTING_IMAGE_REQUIRED · LISTING_UNKNOWN_CATALOG_CODE
                         Note over LIST: 저장 후 ACTIVE 방이 0이 되는 요청도 400이다<br/>상태만 PUBLISHED인데 목록·상세엔 안 보이는 유령 매물을 막는다
                         Note over L,DB: ↑ 복사도 저장도 없다 — 공개 중인 매물이 그대로 남는다
@@ -84,7 +81,7 @@ sequenceDiagram
                             LIST-->>W: 400 LISTING_IMAGE_KEY_NOT_FOUND · 502 UPSTREAM_ERROR
                             Note over L,S3: 옛 확정본은 건드리지 않는다 — 공개 중인 사진이 사라지면 안 된다
                         else 복사 성공
-                            Note over LIST: 승계 — id · landlordId · schemaVersion · createdAt · favoriteCount · consents · rentalType<br/>재파생 — location · address.city/district · nearbyUniversityCodes · imageUrls · 다국어 8종<br/>전이가 정함 — status · rejectionReason(무조건 null) · updatedAt
+                            Note over LIST: 승계 — id · landlordId · schemaVersion · createdAt · favoriteCount · rentalType<br/>재파생 — location · address.city/district · nearbyUniversityCodes · imageUrls · 다국어 8종<br/>전이가 정함 — status · rejectionReason(무조건 null) · updatedAt
                             Note over LIST: rejectionReason 은 건드리지 않는다<br/>재심사 대기 중에도 임대인·관리자가 이전 반려 맥락을 본다<br/>지우는 것은 승인뿐
                             LIST->>DB: saveIfStatus(listing, 읽은 시점의 status) — CAS
 
@@ -130,7 +127,6 @@ sequenceDiagram
 - **방을 하드 삭제하지 않는 이유.** `roomOfferId`는 예약·채팅이 참조하는 식별자라 지우면 그 참조가 영구히 끊긴다. 대신 `status=INACTIVE`로 내리고, 명시 필드라 **되살릴 수도 있다**. 요청에서 id가 통째로 빠지는 것은 클라이언트 결함이거나 삭제 의도인데 둘 다 하드 삭제로 처리하면 안 되므로, 안전망으로 `INACTIVE` 전환 후 배열 맨 뒤로 밀어 보존만 한다. 다만 전 방을 `INACTIVE`로 보낼 수 있게 되었으므로 **저장 후 `ACTIVE` 방이 0이면 `400`** 으로 막는다 — 그러지 않으면 상태만 `PUBLISHED`인데 어떤 목록에도 나오지 않는 유령 매물이 만들어진다.
 - **사진 키를 섞어 받는 이유.** 유지할 사진까지 다시 올리게 하면 같은 파일이 저장소에 두 벌 생기고 임대인은 매번 전량 업로드를 기다린다. 그래서 상세가 준 확정 키를 그대로 되돌려 받되 **그 자리에서 온 키만** 허용한다 — 확정 키의 경로(`cover/` 대 `rooms/{roomOfferId}/`)가 이미 역할을 담고 있어 다른 자리에 넣으면 저장 경로가 역할을 거짓말하게 된다. 방 사진을 대표사진으로 승격하려면 다시 업로드해야 하고 그 비용은 감수한다. 신규 방은 `roomOfferId`가 아직 없어 확정 키가 존재할 수 없으므로 임시 키만 받는다.
 - **교체된 사진을 저장 성공 뒤에 지우는 이유.** 그 시점에는 옛 키를 아무도 참조하지 않아 삭제가 안전하다. 반대로 저장 **전에** 지우면 CAS 실패나 검증 실패 때 공개 중인 매물의 사진이 사라진다 — 등록이 "복사 → 저장 → 실패 시 되돌리기"를 계약으로 못박은 것과 같은 이유다. 아예 안 지우는 안은 코드가 0줄이지만 만료 규칙이 `uploads/` 전용이라 `listings/` 아래 고아를 줄일 장치가 없고, 승인 시점에 지우는 안은 심사 API가 사진 수명주기를 알게 되어 결합이 늘어난다.
-- **`consents`를 요청에서 다시 받되 저장은 승계하는 이유.** 동의는 수정 시에도 받아야 하는 값이라 요청 계약에서 뺄 수 없고, 게이트도 등록과 같은 코드로 다시 건다. 반면 문서의 동의 값은 "**등록 시점** 동의"로 계약돼 있어 `agreedAt`을 갱신하면 최초 동의 시각이라는 감사 기록이 사라진다. 결과적으로 게이트는 매번 작동하지만 문서에 실제로 가해지는 변경은 없다.
 - **`rejectionReason`을 수정이 건드리지 않는 이유.** 반려 사유는 **수정으로 지워지지 않는다.** 고쳐서 다시 올린 매물이 사유를 그대로 들고 `PENDING`으로 간다 — 임대인은 심사를 기다리는 동안 무엇을 고치라고 했는지 다시 볼 수 있고, 재심사하는 관리자는 이 매물이 전에 왜 반려됐는지 안다. 「지금 고쳐야 한다(`REJECTED`)」와 「고쳐서 재심사 중(`PENDING`)」은 **상태가 이미 구분**하므로 값이 남아도 혼동되지 않는다. 지우는 것은 **승인 시점 하나뿐**이다. 임대인이 요청으로 이 값을 바꿀 수는 없다(요청 본문에 칸이 없다).
 - **전체 교체로 받는 이유.** 주소를 바꾸면 좌표·행정구역·인근 대학 코드가 함께 재파생되어야 하는데, 부분 전송을 허용하면 그 파생값이 요청에 없는 채로 남아 문서가 모순 상태가 된다. 전체 교체라 등록 폼에 필드가 늘면 수정 폼에도 넣어야 하고 빠뜨리면 그 필드가 지워진다는 비용이 따르지만, 중첩 요청 타입을 등록과 공유해 그 위험을 좁힌다.
 - **진행 중인 예약 카드만 예외로 살려 둔 이유.** 예약 카드의 매물명·사진·금액은 예약 자체에 저장돼 있지 않고 매번 매물에 물어본다. 그 조회가 빈 값이면 카드가 오류도 `404`도 아닌 **조용한 빈 칸**이 되고, 그런 화면이 세입자·임대인 양쪽에 걸쳐 있다. 그래서 표시 전용 조회를 따로 두어 매물 상태와 방 상태를 둘 다 보지 않게 하되, **신규 예약 생성은 기존 `PUBLISHED` 고정 조회를 그대로 쓴다** — 같은 메서드를 넓히면 심사 중인 매물에 새 예약이 들어온다. 이 조회는 매물을 찾는 데 쓸 수 없다. 매물과 방 식별자를 이미 쥐고 있어야 하고 그 출처는 요청자에게 스코프된 예약 행뿐이라, 돌려주는 값도 그 사람이 예약할 때 이미 본 값이다.

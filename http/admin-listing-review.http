@@ -1,7 +1,7 @@
 # Kohere — 관리자 매물 심사 로컬 수동 테스트 — #265
 # 흐름: 관리자 계정 만들기(웹 가입 → DB 승격 → 웹 로그인) → 임대인 매물 등록 → 심사 목록·상세 → 승인/반려 → 경계 확인
 # 스펙: docs/api/specs/03-listings-favorites.md 「관리자 매물 심사」
-# 유저스토리: US-3-7(관리자 매물 심사) · US-3-6(임대인 매물 등록 — 동의 2종)
+# 유저스토리: US-3-7(관리자 매물 심사) · US-3-6(임대인 매물 등록)
 #
 # 사용법 (VS Code "REST Client" 확장 — humao.rest-client):
 #   1) 인프라:  docker compose up -d mysql mongo redis minio minio-init
@@ -9,10 +9,8 @@
 #   3) 시드:    아래 「시드」를 먼저 읽는다. 앱은 매물·카탈로그를 하나도 넣지 않는다.
 #   4) 0번부터 순서대로 "Send Request" — 토큰과 사진 키는 이름붙은 응답으로 자동 전달된다.
 #
-# 사진은 **한 장씩** 올린다(ADR-0041). 6-a~f 로 여섯 장을 올리는데, 앞의 셋(6-a~c)은 7번 정상 등록용이고
-# 뒤의 셋(6-d~f)은 8번 동의 누락 케이스용이다 — 등록이 성공하면 그 키들은 확정 위치로 옮겨지고 임시본이
-# 지워지므로, 8번이 같은 키를 재사용하면 400 LISTING_IMAGE_KEY_NOT_FOUND 가 나 정작 보려던 422 를 못 본다.
-# 방 하나는 사진이 2~5장이어야 해서(v4 저장 불변식) 방 사진만 케이스당 두 장이다.
+# 사진은 **한 장씩** 올린다(ADR-0041). 6-a~c 로 세 장을 올려 7번 정상 등록에 쓴다.
+# 방 하나는 사진이 2~5장이어야 해서(v4 저장 불변식) 방 사진만 두 장이다.
 #
 # ─────────────────────────── 관리자 계정 만들기 (필수 · 1회) ───────────────────────────
 # ★ 관리자는 가입 경로가 없다. 임대인 웹 가입으로 계정을 만든 뒤 DB에서 직접 승격한다.
@@ -37,10 +35,10 @@
 #   mongoimport --uri mongodb://localhost:27017/kohere --collection listingCatalog --jsonArray --file kohere.listingCatalog.seed.json
 #   mongoimport --uri mongodb://localhost:27017/kohere --collection listings       --jsonArray --file kohere.listings.seed.json
 #
-#   · **`--drop` 을 붙이지 않는다.** 컬렉션을 드롭하면 changeUnit 0115~0121 이 건 $jsonSchema validator 까지
+#   · **`--drop` 을 붙이지 않는다.** 컬렉션을 드롭하면 changeUnit 0115~0123 이 건 $jsonSchema validator 까지
 #     함께 사라지고, Mongock 은 이미 실행된 것으로 기록돼 있어 다시 만들어 주지 않는다.
 #     다시 넣을 때는 mongosh 에서 db.listings.deleteMany({}) 로 문서만 비우고 import 한다.
-#   · 시드 매물 2건은 PUBLISHED 라 심사 대상이 아니다. 심사할 PENDING 매물은 12번 등록으로 만든다.
+#   · 시드 매물 2건은 PUBLISHED 라 심사 대상이 아니다. 심사할 PENDING 매물은 7번 등록으로 만든다.
 #
 @baseUrl = http://localhost:8080
 
@@ -53,6 +51,9 @@
 
 # ↓ 1번 발송 후 앱 콘솔의 [DEV SMS] 줄에서 6자리를 읽어 채운다
 @code = 000000
+
+# ↓ 2-1번 발송 후 MailHog(http://localhost:8025)에서 6자리를 읽어 채운다. MAIL_ENABLED=false 면 앱 콘솔 [DEV MAIL]
+@adminEmailCode = 000000
 
 ### 0. 헬스 체크
 GET {{baseUrl}}/actuator/health
@@ -68,6 +69,20 @@ POST {{baseUrl}}/api/v1/auth/phone/signup/verify
 Content-Type: application/json
 
 { "phoneNumber": "{{adminPhone}}", "code": "{{code}}" }
+
+### 2-1. 관리자 계정 — 가입용 이메일 인증번호 발송
+#    연락처 인증과 별개 게이트다. 둘 다 통과해야 3번이 지나간다 — 키스페이스가 갈려 있어 서로를 대신하지 못한다.
+#    ★ 이미 가입된 주소면 메일을 보내지 않고 409 다(남의 메일함으로 인증번호가 날아가는 것을 막는다).
+POST {{baseUrl}}/api/v1/auth/email/signup/verification-code
+Content-Type: application/json
+
+{ "email": "{{adminEmail}}" }
+
+### 2-2. 관리자 계정 — 이메일 인증번호 확인. 성공 시 검증 마커(TTL 30분) 안에 3번을 제출한다
+POST {{baseUrl}}/api/v1/auth/email/signup/verify
+Content-Type: application/json
+
+{ "email": "{{adminEmail}}", "code": "{{adminEmailCode}}" }
 
 ### 3. 관리자 계정 — 웹 회원가입 → user_type=LANDLORD · ACTIVE 로 생성된다
 #    여기까지는 임대인 가입과 완전히 같다. 관리자로 만드는 것은 위 ② 의 UPDATE 다.
@@ -147,54 +162,12 @@ Content-Type: image/jpeg
 < ./images/room-a-2.jpg
 --KohereBoundary--
 
-### 6-d. 사진 업로드 ④ 8번(동의 누락)용 대표 사진
-#     7번 등록이 성공하면 그 키들은 확정 위치로 옮겨지고 임시본이 지워진다. 8번이 같은 키를 다시 쓰면
-#     400 LISTING_IMAGE_KEY_NOT_FOUND 가 나 정작 검증하려던 422 를 못 본다 — 그래서 따로 올린다.
-# @name coverImageForConsentCase
-POST {{baseUrl}}/api/v2/listings/images
-Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: multipart/form-data; boundary=KohereBoundary
-
---KohereBoundary
-Content-Disposition: form-data; name="file"; filename="branch-2.jpg"
-Content-Type: image/jpeg
-
-< ./images/branch-2.jpg
---KohereBoundary--
-
-### 6-e. 사진 업로드 ⑤ 8번용 방 사진 1
-# @name roomImage1ForConsentCase
-POST {{baseUrl}}/api/v2/listings/images
-Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: multipart/form-data; boundary=KohereBoundary
-
---KohereBoundary
-Content-Disposition: form-data; name="file"; filename="room-a-1.jpg"
-Content-Type: image/jpeg
-
-< ./images/room-a-1.jpg
---KohereBoundary--
-
-### 6-f. 사진 업로드 ⑥ 8번용 방 사진 2
-# @name roomImage2ForConsentCase
-POST {{baseUrl}}/api/v2/listings/images
-Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: multipart/form-data; boundary=KohereBoundary
-
---KohereBoundary
-Content-Disposition: form-data; name="file"; filename="room-a-2.jpg"
-Content-Type: image/jpeg
-
-< ./images/room-a-2.jpg
---KohereBoundary--
-
 ### 7. 매물 등록 (임대인) → status=PENDING. 이 매물이 심사 대상이다
 #    ※ 시설 8종에 해당하는 것이 없으면 ["NONE"] 하나만 보낸다(다른 코드와 같이 보내면 400).
 #      저장 결과는 11번 심사 상세에서 확인한다 — 등록 응답이 아니라 그쪽이 저장된 전 필드를 보여 준다.
 #    ※ 설문 2종(preferredNationalities · contractDifficulties)은 **선택**이다 — 아래에서 두 줄을 지우고 보내도 201 이고,
 #      11번 심사 상세에서 두 필드가 [] 로 저장된 것을 볼 수 있다(키는 항상 있다).
 #      응대 가능 언어·선호 국적·계약 어려움에서 OTHER 는 없어졌다 — 보내면 400 MALFORMED_REQUEST 다.
-#    ★ consents 2종이 없으면 422 LISTING_REQUIRED_AGREEMENT_MISSING 이다(아래 8번에서 확인).
 #    본문 전체 예시는 listing.http 13번과 같은 구조다.
 # @name register
 POST {{baseUrl}}/api/v2/listings
@@ -252,69 +225,7 @@ Content-Type: application/json
     }
   ],
   "preferredNationalities": ["JAPAN"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
-}
-
-### 8. 동의 없이 등록 → **422 LISTING_REQUIRED_AGREEMENT_MISSING**
-#    저장된 매물이 예외 없이 동의를 마친 매물임을 보장하는 게이트다.
-POST {{baseUrl}}/api/v2/listings
-Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: application/json
-
-{
-  "title": "동의 없는 매물",
-  "type": "GOSHIWON",
-  "contact": { "managerName": "김운영", "phone": "+82) 10-1234-5678" },
-  "businessRegistrationNumber": "1234567890",
-  "address": {
-    "fullAddress": "서울특별시 서대문구 신촌로 12",
-    "detail": "3층 305호",
-    "lat": 37.5559918,
-    "lng": 126.9368647
-  },
-  "building": {
-    "type": "VILLA",
-    "totalFloors": 4,
-    "usedFloorRange": "1~2",
-    "parkingAvailable": true,
-    "elevatorAvailable": true
-  },
-  "genderPolicy": "FEMALE_ONLY",
-  "languagesSupported": ["ENGLISH"],
-  "ageRange": "20~35",
-  "arcRequired": "NOT_REQUIRED",
-  "facilities": {
-    "heatingSystem": ["CENTRAL"],
-    "kitchen": ["SHARED_REFRIGERATOR"],
-    "laundry": ["WASHER"],
-    "livingAmenities": ["WIFI"],
-    "securityFeatures": ["CCTV"],
-    "commonSpaces": ["SHARED_TOILET"],
-    "providedSupplies": ["BEDDING"]
-  },
-  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 5 },
-  "nearbyFacilities": ["CONVENIENCE_STORE"],
-  "description": "동의를 빠뜨린 요청입니다.",
-  "extraNotes": "특이사항 없음",
-  "refundPolicy": "입주 7일 전 전액 환불",
-  "imageKeys": ["{{coverImageForConsentCase.response.body.$.data.key}}"],
-  "roomOffers": [
-    {
-      "name": "스탠다드 1인실",
-      "status": "ACTIVE",
-      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 380000, "deposit": 300000, "maintenanceFee": 0 },
-      "filterTags": ["FEMALE_ONLY"],
-      "roomImageKeys": [
-        "{{roomImage1ForConsentCase.response.body.$.data.key}}",
-        "{{roomImage2ForConsentCase.response.body.$.data.key}}"
-      ]
-    }
-  ],
-  "preferredNationalities": ["JAPAN"],
-  "contractDifficulties": ["LANGUAGE"],
-  "consents": { "privacyPolicyAgreed": false, "listingExposureAgreed": true }
+  "contractDifficulties": ["LANGUAGE"]
 }
 
 # ─────────────────────────────── 심사 ───────────────────────────────
@@ -328,7 +239,7 @@ GET {{baseUrl}}/api/v1/admin/listings?status=PENDING&page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
 ### 11. 심사 상세 — **저장된 전 필드**를 확인한다
-#     세입자 상세가 감추는 landlordId · businessRegistrationNumber · 설문 3종 · consents 가 보여야 한다.
+#     세입자 상세가 감추는 landlordId · businessRegistrationNumber · 설문 3종이 보여야 한다.
 GET {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 

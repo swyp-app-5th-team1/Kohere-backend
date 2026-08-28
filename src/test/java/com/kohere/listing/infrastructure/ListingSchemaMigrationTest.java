@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kohere.listing.infrastructure.migration.ContactSmsDropChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingConsentsChangeUnit;
+import com.kohere.listing.infrastructure.migration.ListingConsentsDropChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingLocationRequiredChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingStatusEnumExpandChangeUnit;
 import com.kohere.listing.infrastructure.migration.ListingStatusEnumShrinkChangeUnit;
@@ -13,6 +14,8 @@ import com.kohere.listing.infrastructure.migration.ListingV4BaselineChangeUnit;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import java.time.Instant;
+import java.util.Date;
 import org.bson.Document;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -80,17 +83,45 @@ class ListingSchemaMigrationTest {
     assertThat(mongoTemplate.getCollection(LISTINGS_COLLECTION).countDocuments()).isEqualTo(2);
   }
 
+  /**
+   * {@code 0123}이 {@code required}에서 {@code consents}를 실제로 풀었는지 고정한다.
+   *
+   * <p>같은 문서를 {@code 0122} validator에 넣으면 거부된다 — 이 테스트가 초록불이라는 사실 자체가 마지막 {@code collMod}가 제약을 풀었다는
+   * 증거다. 정본 픽스처에 더는 {@code consents}가 없으므로 문서를 손보지 않고 그대로 넣는다.
+   */
   @Test
-  @DisplayName("동의(consents)가 없으면 저장이 거부된다")
-  void rejectsListingWithoutConsents() {
+  @DisplayName("동의(consents)가 없어도 저장된다")
+  void acceptsListingWithoutConsents() {
     applyChangeUnitChain();
 
     Document withoutConsents = ListingTestSeeds.listingDocuments().getFirst();
-    withoutConsents.remove("consents");
 
-    assertThatThrownBy(
-            () -> mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(withoutConsents))
-        .isInstanceOf(MongoWriteException.class);
+    assertThatNoException()
+        .isThrownBy(
+            () -> mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(withoutConsents));
+  }
+
+  /**
+   * {@code 0123}의 {@code $unset}이 <b>이미 저장된 문서</b>의 동의 이력까지 지우는지 검증한다.
+   *
+   * <p>이 저장소 최초의 데이터 이행 배치다 — 검증이 없으면 {@code collMod}만 돌고 {@code $unset}이 빠져도 초록불이다. {@code
+   * consents}가 아직 필수인 validator 위에 문서를 넣어야 하므로 체인을 {@code 0122}까지만 돌린 뒤 {@code 0123}을 따로 실행한다. 기존
+   * 문서가 운영에서 겪는 순서 그대로다.
+   */
+  @Test
+  @DisplayName("0123은 이미 저장된 문서의 동의(consents)도 지운다")
+  void dropsConsentsFromStoredDocuments() {
+    applyChainThrough0122();
+
+    Document withConsents = ListingTestSeeds.listingDocuments().getFirst();
+    withConsents.put("consents", legacyConsents());
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(withConsents);
+
+    new ListingConsentsDropChangeUnit().execution(mongoTemplate);
+
+    Document stored = mongoTemplate.getCollection(LISTINGS_COLLECTION).find().first();
+    assertThat(stored).isNotNull();
+    assertThat(stored.containsKey("consents")).isFalse();
   }
 
   @Test
@@ -154,11 +185,28 @@ class ListingSchemaMigrationTest {
 
   /** 운영과 같은 순서로 스키마를 세운다. 마지막 유닛의 collMod가 최종 validator다. */
   private void applyChangeUnitChain() {
+    applyChainThrough0122();
+    new ListingConsentsDropChangeUnit().execution(mongoTemplate);
+  }
+
+  /**
+   * {@code 0123} 직전까지의 체인이다. {@code consents}가 아직 필수인 validator를 밟아야 하는 테스트만 여기서 멈춘다 — 그 밖에는 항상
+   * {@link #applyChangeUnitChain()}을 쓴다.
+   */
+  private void applyChainThrough0122() {
     new ListingV4BaselineChangeUnit().execution(mongoTemplate);
     new ListingLocationRequiredChangeUnit().execution(mongoTemplate);
     new ContactSmsDropChangeUnit().execution(mongoTemplate);
     new ListingConsentsChangeUnit().execution(mongoTemplate);
     new ListingStatusEnumShrinkChangeUnit().execution(mongoTemplate);
     new ListingStatusEnumExpandChangeUnit().execution(mongoTemplate);
+  }
+
+  /** {@code 0122} validator가 요구하는 동의 4필드다. 이 모양이라야 {@code 0123} 이전 문서로 저장된다. */
+  private static Document legacyConsents() {
+    return new Document("privacyPolicyAgreed", true)
+        .append("listingExposureAgreed", true)
+        .append("version", "v1.0")
+        .append("agreedAt", Date.from(Instant.parse("2025-01-01T00:00:00Z")));
   }
 }

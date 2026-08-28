@@ -30,9 +30,6 @@ import java.util.Set;
  *   <li>사진 키에 <b>이미 확정된 키</b>를 섞어 보낼 수 있다. 그대로 둘 사진은 확정 키로, 새로 올린 사진은 임시 키로 가리킨다.
  * </ul>
  *
- * <p>{@code consents}는 등록과 똑같이 받고 게이트도 같다 — 둘 다 {@code true}가 아니면 {@code 422}다. 다만 저장된 동의 버전과 시각은
- * <b>등록 시점 것을 그대로 둔다</b>. 그 값이 최초 동의의 증빙이라 수정할 때마다 덮어쓰면 기록이 사라진다.
- *
  * <p>요청에 없는 값은 서버가 정한다 — {@code status}(전이가 정한다) · {@code rejectionReason}(항상 지운다) · {@code
  * favoriteCount}·{@code createdAt}·{@code landlordId}·{@code schemaVersion}(모두 승계) · {@code
  * updatedAt}. 애초에 칸이 없으므로 클라이언트가 보낼 수도 없다.
@@ -61,8 +58,7 @@ public record ListingUpdateRequest(
     @NotEmpty @Valid List<RoomOfferUpdateRequest> roomOffers,
     Set<Nationality> preferredNationalities,
     Set<ContractDifficulty> contractDifficulties,
-    String serviceFeedback,
-    @NotNull @Valid ListingRegisterRequest.ConsentsRequest consents)
+    String serviceFeedback)
     implements ListingWriteRequest {
 
   /**

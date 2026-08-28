@@ -71,7 +71,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * 매물 수정({@code PUT /api/v2/listings/{listingId}})의 REST Docs 스니펫 생성 테스트다(US-3-9).
  *
  * <p>등록({@link ListingRegisterDocsTest})과 파일을 나눈 이유는 계약이 갈리기 때문이다 — 요청 본문은 거의 같지만 성공 응답이 세입자 상세가
- * 아니라 <b>임대인 상세</b>이고, 상태 전이·사진 자리 검사·조건부 저장에서만 나오는 실패 코드가 넷(422 둘 · 409 · 400 하나) 더 있다.
+ * 아니라 <b>임대인 상세</b>이고, 상태 전이·사진 자리 검사·조건부 저장에서만 나오는 실패 코드가 셋(422 하나 · 409 · 400 하나) 더 있다.
  *
  * <p>문구·필드 기술자는 {@code ListingDocsFields}에 한 벌만 두고 여기서는 흐름만 만든다 — 성공·에러 스니펫이 같은 오퍼레이션으로 병합되므로
  * summary·description은 상수 하나를, 같은 status의 에러 스니펫은 같은 코드 배열을 써야 한다(ADR-0017).
@@ -266,11 +266,7 @@ class ListingUpdateDocsTest {
         ],
         "preferredNationalities": ["JAPAN", "CHINA"],
         "contractDifficulties": ["LANGUAGE", "PAYMENT"],
-        "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다.",
-        "consents": {
-          "privacyPolicyAgreed": true,
-          "listingExposureAgreed": true
-        }
+        "serviceFeedback": "외국인 세입자용 계약서 번역 템플릿이 있으면 좋겠습니다."
       }
       """;
 
@@ -331,8 +327,6 @@ class ListingUpdateDocsTest {
         // 세입자에게 감추는 값이 임대인 응답에는 그대로 실린다. 전부 수정 요청 필드다.
         .andExpect(jsonPath("$.data.businessRegistrationNumber").value("1234567890"))
         .andExpect(jsonPath("$.data.serviceFeedback").isString())
-        // 최초 동의 이력은 이번 요청으로 덮지 않는다.
-        .andExpect(jsonPath("$.data.consents.version").value("v1.0"))
         // 그대로 둔 확정 키는 그 자리에 남고, 새로 올린 임시 키는 파일명을 유지한 채 확정 위치로 승격된다.
         .andExpect(jsonPath("$.data.imageKeys[0]").value(KEPT_COVER_KEY))
         .andExpect(jsonPath("$.data.imageKeys[1]").value(PROMOTED_COVER_KEY))
@@ -393,25 +387,6 @@ class ListingUpdateDocsTest {
         .perform(update(landlordToken(), LISTING_ID, UPDATE_BODY))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.error.code").value("LISTING_NOT_EDITABLE"));
-  }
-
-  /**
-   * 동의 2종은 수정할 때도 다시 받고 다시 확인한다.
-   *
-   * <p>{@code false}로 보내야 이 코드가 나온다 — 키를 빼면 {@code @NotNull}에 먼저 걸려 {@code 400 INVALID_INPUT}이다. 그
-   * 구분을 위해 요청 DTO가 원시 {@code boolean}이 아니라 {@code Boolean}으로 받는다.
-   */
-  @Test
-  void 문서스니펫생성_동의누락_422() throws Exception {
-    performError(
-        update(
-            landlordToken(),
-            LISTING_ID,
-            bodyReplacing("\"privacyPolicyAgreed\": true", "\"privacyPolicyAgreed\": false")),
-        status().isUnprocessableEntity(),
-        "LISTING_REQUIRED_AGREEMENT_MISSING",
-        "listing-update-agreement-missing",
-        LISTING_UPDATE_422);
   }
 
   /**

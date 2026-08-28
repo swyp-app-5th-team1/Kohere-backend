@@ -230,7 +230,6 @@ class LandlordListingDocsTest {
         .andExpect(jsonPath("$.data.rejectionReason").doesNotExist())
         // 세입자에게 감추는 값이 수정 폼 프리필로는 그대로 실린다.
         .andExpect(jsonPath("$.data.businessRegistrationNumber").isString())
-        .andExpect(jsonPath("$.data.consents.version").isString())
         // 중첩된 세입자 상세는 활성 방만, 바깥 rooms[]는 내린 방까지 준다 — 되살리려면 응답에 보여야 한다.
         .andExpect(jsonPath("$.data.listing.roomOffers.length()").value(1))
         .andExpect(jsonPath("$.data.rooms.length()").value(2))

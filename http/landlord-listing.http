@@ -21,7 +21,7 @@
 # ⚠️ **수정할 때마다 상세를 먼저 다시 읽는다.** 수정이 성공하면 사진 확정 키가 바뀌므로, 옛 응답을
 #    참조하면 400 LISTING_IMAGE_KEY_NOT_FOUND 가 난다. 이 파일은 그래서 수정 직전마다 상세를
 #    새 이름으로 읽는다 — 5번(myListing) → 7번 수정, 11번(publishedListing) → 12번 수정,
-#    18번(latest) → 19~21·28번 경계 케이스.
+#    18번(latest) → 20·21·28번 경계 케이스.
 
 @host = http://localhost:8080
 # 임대인은 마스터 계정을 쓴다 — admin-listing-review.http 와 같은 계정이라 그 파일이 만든
@@ -158,8 +158,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 8. 수정 직후 상태 확인 — status 가 PENDING 이다
@@ -210,8 +209,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 10. 관리자 승인 → PUBLISHED
@@ -288,8 +286,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 13. 세입자 조회에서 사라졌는지 — 404 LISTING_NOT_FOUND (토큰 없이 호출한다)
@@ -318,51 +315,6 @@ GET {{host}}/api/v2/listings/{{publishedListing.response.body.$.data.listing.lis
 # @name latest
 GET {{host}}/api/v2/users/me/listings/{{publishedListing.response.body.$.data.listing.listingId}}
 Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-
-### 19. 동의 누락 — 422 LISTING_REQUIRED_AGREEMENT_MISSING
-# 수정에도 등록과 같은 게이트가 그대로 걸린다. 나머지 본문은 유효하다.
-PUT {{host}}/api/v2/listings/{{latest.response.body.$.data.listing.listingId}}
-Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
-Content-Type: application/json
-
-{
-  "title": "동의 없이 수정",
-  "type": "GOSHIWON",
-  "contact": { "managerName": "김담당", "phone": "02-1234-5678" },
-  "businessRegistrationNumber": "{{latest.response.body.$.data.businessRegistrationNumber}}",
-  "blogUrl": null,
-  "address": { "fullAddress": "서울특별시 서대문구 신촌로 1", "detail": "3층", "lat": 37.5595, "lng": 126.9425 },
-  "building": { "type": "COMMERCIAL_BUILDING", "totalFloors": 8, "usedFloorRange": "3~5", "parkingAvailable": false, "elevatorAvailable": true },
-  "genderPolicy": "ANY",
-  "languagesSupported": ["ENGLISH"],
-  "ageRange": "20~35",
-  "arcRequired": "NOT_REQUIRED",
-  "facilities": { "heatingSystem": ["INDIVIDUAL"], "kitchen": ["INDUCTION"], "laundry": ["WASHER"], "livingAmenities": ["WIFI"], "securityFeatures": ["CCTV"], "commonSpaces": ["SHARED_KITCHEN"], "providedSupplies": ["BEDDING"] },
-  "nearestTransit": { "type": "SUBWAY", "name": "신촌역", "walkMinutes": 7 },
-  "nearbyFacilities": ["CONVENIENCE_STORE"],
-  "description": "역세권 고시원입니다.",
-  "extraNotes": "취사는 공용 주방만 가능합니다.",
-  "refundPolicy": "입주 7일 전까지 전액 환불",
-  "imageKeys": ["{{latest.response.body.$.data.imageKeys[0]}}"],
-  "roomOffers": [
-    {
-      "roomOfferId": "{{latest.response.body.$.data.rooms[0].roomOfferId}}",
-      "status": "ACTIVE",
-      "name": "스탠다드 1인실",
-      "contract": { "minStayMonths": 1, "maxStayMonths": 12 },
-      "pricing": { "monthlyRent": 500000, "deposit": 1000000, "maintenanceFee": 50000 },
-      "filterTags": ["MOVE_IN_NOW"],
-      "roomImageKeys": [
-        "{{latest.response.body.$.data.rooms[0].roomImageKeys[0]}}",
-        "{{latest.response.body.$.data.rooms[0].roomImageKeys[1]}}"
-      ]
-    }
-  ],
-  "preferredNationalities": ["JAPAN"],
-  "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": false, "listingExposureAgreed": true }
-}
 
 ### 20. 방 사진 키를 커버 자리에 — 400 LISTING_IMAGE_KEY_NOT_FOUND
 # 문서에 **실재하는** 키지만 그 자리의 것이 아니다. 대표사진으로 쓰려면 다시 업로드해야 한다.
@@ -405,8 +357,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 21. 모든 방을 INACTIVE 로 — 400
@@ -450,8 +401,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 22. 남의 매물 수정 — 404 LISTING_NOT_FOUND (403 이 아니다)
@@ -495,8 +445,7 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }
 
 ### 23. 남의 매물 조회 — 404 LISTING_NOT_FOUND
@@ -566,6 +515,5 @@ Content-Type: application/json
   ],
   "preferredNationalities": ["JAPAN"],
   "contractDifficulties": ["LANGUAGE"],
-  "serviceFeedback": null,
-  "consents": { "privacyPolicyAgreed": true, "listingExposureAgreed": true }
+  "serviceFeedback": null
 }

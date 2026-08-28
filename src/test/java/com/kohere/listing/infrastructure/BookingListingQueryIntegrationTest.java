@@ -161,7 +161,6 @@ class BookingListingQueryIntegrationTest {
         .landlordId(1L)
         .contact(new Listing.Contact("김담당", "+82) 10-1111-2222"))
         .businessRegistrationNumber("1112233344")
-        .consents(new Listing.Consents(true, true, "v1.0", Instant.parse("2026-06-24T00:00:00Z")))
         .blogUrl(null)
         .ageMin(20)
         .ageMax(35)

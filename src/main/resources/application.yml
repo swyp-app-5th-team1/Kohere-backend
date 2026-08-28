@@ -187,9 +187,6 @@ app:
     base-url: ""
   terms:
     version: v1.0 # 회원 약관 버전 정본 — 약관 동의 시 서버가 기록 (ADR-0012)
-    # 매물 등록 동의 버전 — 회원 약관과 독립적으로 개정한다. 매물 약관만 고쳐도 회원 약관 버전은 그대로여야 하고,
-    # 같은 임대인의 매물이 등록 시점에 따라 서로 다른 버전을 가질 수 있다(계정 단위 1회인 위 값과 다른 지점).
-    listing-consent-version: v1.0
   mail:
     # 인증번호 메일 발송 채널(#285). true 면 SMTP 실발송, false 면 LoggingVerificationEmailSender 폴백
     # (인증번호가 메일 대신 앱 로그로 나간다). app.solapi.enabled 의 이메일판이지만 기본값이 반대다 —

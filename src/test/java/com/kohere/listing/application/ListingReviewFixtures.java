@@ -93,7 +93,6 @@ final class ListingReviewFixtures {
         .preferredNationalities(Set.of(Nationality.JAPAN))
         .contractDifficulties(Set.of(ContractDifficulty.LANGUAGE))
         .serviceFeedback(null)
-        .consents(new Listing.Consents(true, true, "v1.0", Instant.parse("2026-06-24T00:00:00Z")))
         .build();
   }
 

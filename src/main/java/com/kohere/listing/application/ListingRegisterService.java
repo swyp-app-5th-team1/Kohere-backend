@@ -13,8 +13,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class ListingRegisterService {
 
   /** {@code user::api}가 문자열로 주는 임대인 구분값이다. */
@@ -40,27 +41,6 @@ public class ListingRegisterService {
   private final ListingImageConfirmer listingImageConfirmer;
   private final ListingLocalizationService listingLocalizationService;
   private final UserAccountService userAccountService;
-
-  /**
-   * 매물 등록 동의가 참조하는 약관 버전이다. 회원 약관 버전({@code app.terms.version})과 <b>독립적으로 개정</b>된다 — 매물 약관만 고쳐도 회원
-   * 약관 버전은 그대로여야 한다.
-   */
-  private final String consentVersion;
-
-  public ListingRegisterService(
-      ListingRepository listingRepository,
-      ListingWriteAssembler listingWriteAssembler,
-      ListingImageConfirmer listingImageConfirmer,
-      ListingLocalizationService listingLocalizationService,
-      UserAccountService userAccountService,
-      @Value("${app.terms.listing-consent-version}") String consentVersion) {
-    this.listingRepository = listingRepository;
-    this.listingWriteAssembler = listingWriteAssembler;
-    this.listingImageConfirmer = listingImageConfirmer;
-    this.listingLocalizationService = listingLocalizationService;
-    this.userAccountService = userAccountService;
-    this.consentVersion = consentVersion;
-  }
 
   /**
    * 등록 요청을 저장하고 생성된 매물을 상세 응답 구조로 돌려준다.
@@ -145,10 +125,7 @@ public class ListingRegisterService {
    * 등록 요청을 매물로 조립한다.
    *
    * <p>요청이 정하는 값은 {@link ListingWriteAssembler}가 채운다 — 수정도 같은 조립을 쓰므로 두 경로가 갈라지지 않는다. 여기서는 <b>등록만
-   * 정하는 값</b>을 얹는다: 스키마 버전·소유자·최초 상태·찜 수·생성 시각, 그리고 동의의 저장 값이다.
-   *
-   * <p>{@code consents}의 {@code version}·{@code agreedAt}을 <b>등록에서만</b> 만드는 것이 계약이다. 수정은 이 값을 승계하며,
-   * 조립 헬퍼가 만들게 하면 매물을 고칠 때마다 최초 동의 시각이 덮여 증빙이 사라진다.
+   * 정하는 값</b>을 얹는다: 스키마 버전·소유자·최초 상태·찜 수·생성 시각이다.
    */
   private Listing toListing(
       long landlordId, ListingRegisterRequest request, ListingCatalogCodes catalog) {
@@ -163,7 +140,6 @@ public class ListingRegisterService {
         .createdAt(now)
         .updatedAt(now)
         .roomOffers(request.roomOffers().stream().map(ListingRegisterService::toRoomOffer).toList())
-        .consents(new Listing.Consents(true, true, consentVersion, now))
         .build();
   }
 
