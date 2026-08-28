@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.kohere.chat.application.BookingCardService;
 import com.kohere.chat.application.BookingCardWriter;
+import com.kohere.chat.application.InquiryCardProcessResult;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatCategory;
@@ -219,7 +220,7 @@ class ChatRealtimeMessagePublisherTest {
     ChatRoom room = inquiryRoom();
     Message card = inquiryCardMessage();
 
-    publisher.publishNewInquiryCard(room, card);
+    publisher.publishNewInquiryCard(InquiryCardProcessResult.forNewRoom(room, card));
 
     ArgumentCaptor<ChatMessageCreatedPayload> roomPayload =
         ArgumentCaptor.forClass(ChatMessageCreatedPayload.class);
@@ -252,6 +253,60 @@ class ChatRealtimeMessagePublisherTest {
     assertThat(tenantEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
     assertThat(landlordEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_CREATED);
     verifyNoInteractions(sessionMessageSender);
+  }
+
+  /** 보이는 기존 방에 재문의서가 저장되면 목록 항목의 마지막 메시지를 바꾸는 ROOM_UPDATED를 보낸다. */
+  @Test
+  @DisplayName("기존 방의 재문의서는 ROOM_UPDATED를 발행한다")
+  void publishesRoomUpdatedForRepeatedInquiry() {
+    ChatRoom room = inquiryRoom();
+    Message card = inquiryCardMessage();
+    InquiryCardProcessResult result =
+        new InquiryCardProcessResult(
+            room,
+            card,
+            false,
+            List.of(
+                new InquiryCardProcessResult.MemberActivity(SENDER_ID, true, false),
+                new InquiryCardProcessResult.MemberActivity(RECIPIENT_ID, true, false)));
+
+    publisher.publishNewInquiryCard(result);
+
+    ArgumentCaptor<ChatRoomEventPayload> tenantEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(SENDER_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            tenantEvent.capture());
+    assertThat(tenantEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_UPDATED);
+  }
+
+  /** 삭제했던 기존 방이 재문의로 다시 보이면 프런트가 목록에 항목을 복원하도록 ROOM_REOPENED를 보낸다. */
+  @Test
+  @DisplayName("숨긴 방의 재문의서는 ROOM_REOPENED를 발행한다")
+  void publishesRoomReopenedForHiddenConversation() {
+    ChatRoom room = inquiryRoom();
+    Message card = inquiryCardMessage();
+    InquiryCardProcessResult result =
+        new InquiryCardProcessResult(
+            room,
+            card,
+            false,
+            List.of(
+                new InquiryCardProcessResult.MemberActivity(SENDER_ID, true, true),
+                new InquiryCardProcessResult.MemberActivity(RECIPIENT_ID, true, false)));
+
+    publisher.publishNewInquiryCard(result);
+
+    ArgumentCaptor<ChatRoomEventPayload> tenantEvent =
+        ArgumentCaptor.forClass(ChatRoomEventPayload.class);
+    verify(messagingTemplate)
+        .convertAndSendToUser(
+            eq(String.valueOf(SENDER_ID)),
+            eq(ChatStompDestinations.ROOM_EVENT_USER_DESTINATION),
+            tenantEvent.capture());
+    assertThat(tenantEvent.getValue().eventType()).isEqualTo(ChatStompEventType.ROOM_REOPENED);
   }
 
   /** MySQL에서 이미 ID와 저장 시각을 받은 TEXT 정본 fixture다. */

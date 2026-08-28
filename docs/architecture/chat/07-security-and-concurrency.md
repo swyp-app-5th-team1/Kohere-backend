@@ -64,8 +64,8 @@ interceptor 검사만으로 service 검사를 생략하지 않는다. 구독 뒤
 1. 비즈니스 키로 기존 방 조회
 2. 없으면 MySQL native atomic insert/upsert로 roomId 확보
 3. 신규 방이면 같은 transaction에서 tenant·landlord member 두 행 생성
-4. 문의로 신규 방을 만드는 경로는 서버가 조회한 매물 요약으로 `INQUIRY_CARD`도 같은 transaction에 저장
-5. 기존 방이면 두 member 불변식만 확인하고 문의서를 추가하지 않음
+4. 문의 경로는 방을 잠근 뒤 최근 문의서·마지막 메시지·요청자의 숨김 경계로 `INQUIRY_CARD` 저장 필요 여부 판단
+5. 필요하면 서버가 조회한 매물 요약으로 `INQUIRY_CARD`를 저장하고, 필요하지 않으면 기존 상태 유지
 6. 동시 요청 모두 같은 roomId 반환
 
 필수 DB 방어:
@@ -110,11 +110,12 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 1. Listing 공개 API에서 공개 상태, 실제 임대인과 문의서용 매물 요약을 조회한다.
 2. 본인 매물과 양방향 차단을 검사한다.
 3. 기존 방을 먼저 찾고 없으면 새 방 생성을 시도한다.
-4. 새 방·두 member·`INQUIRY_CARD`·방 마지막 메시지 상태를 한 트랜잭션으로 저장한다.
-5. 방 UNIQUE 충돌 transaction이 끝난 뒤 기존 방을 다시 읽고, 충돌한 요청에서는 문의서를 별도로 추가하지 않는다.
-6. 신규 transaction이 커밋된 뒤에만 room topic과 방 목록 queue로 이벤트를 발행한다.
+4. 새 방이면 방·두 member·첫 `INQUIRY_CARD`·방 마지막 메시지 상태를 한 트랜잭션으로 저장한다.
+5. 기존 방 또는 방 UNIQUE 충돌로 기존 방에 수렴한 요청은 방 lock을 얻은 뒤 최근 문의서·마지막 메시지·요청자의 숨김 경계를 다시 읽는다.
+6. 문의서가 없거나 최근 문의서 뒤에 다른 메시지가 있거나 요청자가 최근 문의서를 볼 수 없을 때만 새 문의서를 저장한다.
+7. 신규 문의서 transaction이 커밋된 뒤에만 room topic과 방 목록 queue로 이벤트를 발행한다.
 
-따라서 방만 남고 문의서가 빠지는 중간 상태와 동시 문의로 카드가 두 장 생기는 상태를 만들지 않는다. 기존 방을 반환하는 문의 재시도와 신청 후 방 진입은 메시지·마지막 포인터·broadcast를 변경하지 않는다.
+따라서 방만 남고 첫 문의서가 빠지는 중간 상태와 동시 문의로 카드가 두 장 생기는 상태를 만들지 않는다. 요청자에게 보이는 문의서가 이미 마지막 메시지인 재시도는 메시지·마지막 포인터·broadcast를 변경하지 않는다. 반대로 신청 카드나 TEXT 뒤의 문의, 또는 삭제로 최근 문의서를 볼 수 없는 사용자의 문의는 기존 방에도 새 카드를 저장한다.
 
 ### 서버 BOOKING_CARD
 
@@ -152,7 +153,7 @@ UNIQUE (chat_room_id, sender_id, client_message_id)
 chat_room → chat_room_members(ID 오름차순) → 필요한 message/report row
 ```
 
-TEXT SEND, 문의 방·INQUIRY_CARD 생성, room ensure, BOOKING_CARD 저장, DELETE, 신고 snapshot이 같은 순서를 따른다. 후속 물리 삭제 batch도 이 순서를 유지해야 하며 상세는 [후속 보존 설계](future/02-retention-and-physical-deletion.md)를 따른다.
+TEXT SEND, 문의 방 보장·INQUIRY_CARD 판단/저장, BOOKING_CARD 저장, DELETE, 신고 snapshot이 같은 순서를 따른다. 후속 물리 삭제 batch도 이 순서를 유지해야 하며 상세는 [후속 보존 설계](future/02-retention-and-physical-deletion.md)를 따른다.
 
 ## 8. 커밋과 broker 발행
 

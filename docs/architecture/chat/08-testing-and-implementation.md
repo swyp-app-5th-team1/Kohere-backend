@@ -82,7 +82,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 삭제: 채팅방 DELETE가 `204`이면 해당 채팅방을 목록에서 제거한다. 응답 본문과 복원 UI는 없다.
 - 신고: 상세 사유 입력 없이 프런트가 `ko/en`으로 표시한 고정 사유 code 한 개를 room 신고 API로 보낸다.
 - 메시지: 새 전송마다 프런트엔드가 `clientMessageId` UUID를 만들고 같은 메시지 재시도에는 같은 값을 사용한다.
-- 문의서: 문의하기 API가 새 방을 만든 경우 REST 이력 또는 room topic의 `INQUIRY_CARD`를 표시한다. 프런트가 카드 payload를 보내거나 별도 카드 생성 API를 호출하지 않는다.
+- 문의서: 문의하기 API가 대화 흐름상 새 문의서를 저장한 경우 REST 이력 또는 room topic의 `INQUIRY_CARD`를 표시한다. 프런트가 카드 payload를 보내거나 별도 카드 생성 API를 호출하지 않는다.
 - 신청 카드: 앱이 직접 카드 생성 API를 호출하거나 payload를 보내지 않는다. 기존 신청 API 성공 뒤 같은 채팅방을 열고, REST 이력 또는 room topic의 `BOOKING_CARD`를 역할별 UI로 표시한다.
 
 ## 2. 테스트 계획
@@ -92,7 +92,8 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 본인 매물 문의 거부
 - 같은 `(listingId, tenantId, landlordId)`가 같은 방 반환
 - 신규 문의 방에 대표 이미지·제목·city·district·매물 유형·활성 방 월세 범위의 INQUIRY_CARD 생성
-- 기존 방을 반환하는 문의 재호출과 신청 후 방 진입에는 INQUIRY_CARD 추가 없음
+- 신청으로 먼저 만든 방, 최근 문의서 뒤에 TEXT·BOOKING_CARD가 있는 방, 요청자가 최근 문의서를 볼 수 없는 방에 INQUIRY_CARD 추가
+- 요청자에게 보이는 최근 문의서가 마지막 메시지인 문의 재호출에는 INQUIRY_CARD 추가 없음
 - 문의 방·두 member·INQUIRY_CARD 중 하나가 실패하면 모두 rollback
 - 문의로 만든 기존 방에 신청해도 같은 roomId에 BOOKING_CARD 한 장 추가
 - 신청이 먼저여도 문의와 같은 기준의 방 생성
@@ -135,7 +136,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 - 허용하지 않은 destination deny-all
 - DB commit 이전 broadcast 0회
 - 발신 session은 저장 ACK를 받고 수신자는 원문·번역 결합 개인 이벤트 수신
-- 두 참여자가 신규 INQUIRY_CARD를 실시간 수신하고 기존 방 문의 재호출은 재발행하지 않음
+- 두 참여자가 신규 INQUIRY_CARD를 실시간 수신하고 카드가 저장되지 않은 문의 재호출은 재발행하지 않음
 - 두 참여자가 서버 생성 BOOKING_CARD를 실시간 수신하고 제3자는 수신하지 못함
 - 클라이언트의 type·inquiryCard·bookingId·bookingCard·payload 직접 SEND 거부
 - 카드 실시간 이벤트를 놓쳐도 REST 이력에서 복구
@@ -225,7 +226,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 | --- | --- | --- |
 | 1 | 앱과 서버가 주고받을 내용 정하기 | 프런트엔드와 백엔드가 같은 규칙으로 개발할 수 있음 |
 | 2 | 저장 공간과 로그인 확인 기능 준비하기 | 채팅 데이터를 안전하게 저장하고 사용자 권한을 확인할 수 있음 |
-| 3 | 문의·신청과 채팅방 연결하기 | 문의로 새 방이면 문의서, 신청이면 신청 카드가 같은 방에 표시됨 |
+| 3 | 문의·신청과 채팅방 연결하기 | 같은 방에 대화 순서대로 문의서와 신청 카드가 표시됨 |
 | 4 | 삭제와 차단 만들기 | 삭제는 내 화면에만 적용되고 차단 후 새 메시지가 막힘 |
 | 5 | 메시지를 중복 없이 저장하기 | 네트워크 때문에 다시 보내도 메시지가 한 번만 저장됨 |
 | 6 | 실시간 채팅 연결하기 | 두 사용자가 바로 메시지를 주고받고 누락분도 보충함 |
@@ -237,7 +238,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 | 상황 | 누가 처리하는가 | 방식 |
 | --- | --- | --- |
-| 문의로 새 채팅방과 문의서 만들기 | 앱과 서버 | 앱은 listingId만 보내고 서버가 방·참여자·INQUIRY_CARD를 함께 저장 |
+| 문의 채팅방과 문의서 보장하기 | 앱과 서버 | 앱은 listingId만 보내고 서버가 같은 방을 보장한 뒤 필요한 INQUIRY_CARD 저장 |
 | 신청 성공 후 즉시 채팅방 열기 | 앱 | 일반 HTTP API를 한 번 호출 |
 | 앱 종료 등으로 빠진 채팅방·신청 카드 보완 | 서버 | 저장된 신청 완료 이벤트를 자동 처리 |
 | 연결 중 빠진 메시지 보충 | 앱 | STOMP 연결·재연결 직후 REST API를 한 번 자동 호출 |
@@ -257,7 +258,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 | REST catch-up | 연결이 끊긴 동안 빠진 메시지를 MySQL에서 다시 가져오는 절차 |
 | Translation Worker | 저장된 번역 작업을 찾아 Google API 호출과 결과 저장을 관리하는 서버 기능 |
 | `PENDING` | 원문이 아니라 번역 작업이 아직 처리되기 전인 내부 상태 |
-| `INQUIRY_CARD` | 문의하기로 새 방을 만들 때 서버가 함께 저장하는 매물 문의서 카드 |
+| `INQUIRY_CARD` | 문의하기로 새 문의 흐름을 시작할 때 서버가 저장하는 매물 문의서 카드 |
 | `BOOKING_CARD` | 신청 저장 후 서버가 같은 채팅방에 만드는 신청 정보 카드 |
 | 카드 payload | 문의서 또는 신청 카드의 화면 값을 저장하는 구조화 JSON 데이터 |
 
@@ -315,7 +316,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 6. Booking Service가 예약 생성 때 이미 조회한 `RoomOfferBookingView`·`ApplicantProfileView`와 상세 조회와 같은 금액 공식을 `BookingCreatedEventFactory`에서 재사용한다.
 7. `BookingCreatedEvent`에 멱등 event ID, bookingId, 발생 시각, 참여자와 신청 시점 카드 사본을 포함하고 예약 저장 뒤 실제로 발행한다.
 8. `spring-modulith-starter-jpa`와 V25 `event_publication`으로 MySQL-backed publication을 저장하고 미완료 이벤트의 재기동 재전달을 구성한다.
-9. 신청 성공 뒤 앱이 같은 문의 API로 채팅방에 진입하도록 하고, event handler는 같은 방에 `(chatRoomId, bookingId)` 기준으로 카드를 한 번 저장한다.
+9. 신청 성공 뒤 event handler가 같은 방에 `(chatRoomId, bookingId)` 기준으로 카드를 한 번 저장하고 방 목록 갱신 신호를 보낸다. 앱은 문의 API를 roomId 조회용으로 대신 호출하지 않는다.
 10. 신규 카드만 마지막 메시지·방 재표시를 만들고 동일 bookingId 재처리는 아무 상태도 변경하지 않는다. 실시간 발행은 STOMP 단계에서 commit 이후로 연결한다.
 11. 사용자 탈퇴·익명화 이벤트가 오면 저장된 BOOKING_CARD의 신청자 PII도 ADR-0014에 맞게 익명화한다.
 
@@ -330,22 +331,24 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 
 #### 3단계 보완: 문의서 INQUIRY_CARD 추가하기
 
-쉽게 말하면 문의하기로 새 채팅방을 만들 때 매물 요약 문의서를 첫 메시지로 함께 저장한다. 신청으로 이미 만들어진 방이나 문의 API 재호출로 기존 방을 반환할 때는 문의서를 추가하지 않는다.
+쉽게 말하면 문의하기를 누를 때 매물 요약 문의서를 필요한 위치에 저장한다. 새 채팅방에는 첫 메시지로 저장하고, 신청으로 이미 만들어진 방에도 저장한다. 같은 문의서 바로 다음에 또 문의하기를 누른 경우만 연속 중복 저장하지 않는다.
 
 1. listing 공개 뷰에 첫 대표 이미지, 매물 제목, city·district code, 매물 유형 code와 `ACTIVE` 방 상품의 최소·최대 월세를 추가한다.
 2. `INQUIRY_CARD` 메시지 타입과 `InquiryCardPayload`·REST/STOMP 응답 DTO를 추가한다.
 3. 최신 Flyway 번호 다음 migration에서 `inquiry_payload` JSON 컬럼, 허용 타입과 타입별 CHECK를 확장한다. 기존 TEXT·BOOKING_CARD 행은 변환하지 않는다.
 4. 문의로 새 방을 만드는 경우 방·두 member·INQUIRY_CARD·마지막 메시지 상태를 한 트랜잭션으로 저장한다.
-5. 방 UNIQUE 충돌로 기존 방에 수렴한 요청과 처음부터 기존 방을 찾은 요청은 문의서를 저장하거나 실시간 재발행하지 않는다.
-6. 메시지 이력에 `inquiryCard`를 추가하고 목록의 마지막 메시지 타입도 `INQUIRY_CARD`를 허용한다.
-7. 신규 문의서 commit 뒤 room topic으로 `MESSAGE_CREATED`, 두 참여자에게 `ROOM_CREATED` 목록 신호를 보낸다. 실시간 이벤트를 놓친 앱은 REST 이력으로 복구한다.
-8. Swagger와 프론트 가이드에 모든 필드·null 규칙·KRW 단위·code 현지화·`View Detail`의 listingId 사용법을 작성한다.
+5. 기존 방에서는 최근 INQUIRY_CARD, 방의 마지막 메시지, 요청자의 숨김 경계를 조회해 새 문의서가 필요한지 판단한다.
+6. 문의서가 없거나 최근 문의서 뒤에 TEXT·BOOKING_CARD가 있거나 요청자가 최근 문의서를 볼 수 없을 때만 새 문의서를 저장한다.
+7. 메시지 이력에 `inquiryCard`를 추가하고 목록의 마지막 메시지 타입도 `INQUIRY_CARD`를 허용한다.
+8. 신규 문의서 commit 뒤 room topic으로 `MESSAGE_CREATED`, 두 참여자에게 방 상태에 맞는 목록 갱신 신호를 보낸다. 실시간 이벤트를 놓친 앱은 REST 이력으로 복구한다.
+9. Swagger와 프론트 가이드에 모든 필드·null 규칙·KRW 단위·code 현지화·`View Detail`의 listingId 사용법을 작성한다.
 
 완료 조건:
 
 - 새 문의 방의 첫 메시지가 `INQUIRY_CARD`이며 방·참여자·카드가 함께 commit 또는 rollback된다.
 - 대표 이미지가 없으면 null이고, 월세 범위는 `ACTIVE` 방 상품만 기준으로 계산된다.
-- 기존 방을 반환하는 문의 API는 메시지 수·마지막 포인터·broker 발행을 변경하지 않는다.
+- 같은 문의서가 마지막으로 보이는 방의 문의 재호출은 메시지 수·마지막 포인터·broker 발행을 변경하지 않는다.
+- 문의서가 없는 기존 방, 최근 문의서 뒤에 다른 메시지가 있는 방, 요청자가 최근 문의서를 볼 수 없는 방에는 문의서를 한 장만 추가한다.
 - TEXT·INQUIRY_CARD·BOOKING_CARD가 같은 cursor와 시간축으로 조회된다.
 - 프런트는 `type`으로 카드 종류를 구분하고 `inquiryCard.listingId`로 기존 매물 상세 화면을 열 수 있다.
 
@@ -398,7 +401,7 @@ topic에서 받은 최대 messageId와 연속 DB sync checkpoint는 다르다. b
 2. **구독 권한·누락 보충(완료)**: 정확한 개인 queue와 참여자의 보이는 room topic만 허용하고, PING/PONG 및 실제 broker 등록 뒤 `SUBSCRIPTION_READY`를 구현했다. 앱은 기존 REST `afterMessageId` 조회로 누락분을 자동 보충하며 주기 polling은 하지 않는다.
 3. **TEXT 실시간 저장·전송(완료)**: 기존 MySQL 저장 유스케이스를 STOMP handler에 연결했다. 신규 원문 commit 뒤 발신 session에는 ACK를 보낸다. 같은 UUID·같은 본문 재시도는 기존 결과 ACK만 보내며 다시 저장하거나 번역 작업을 만들지 않는다.
 4. **BOOKING_CARD 실시간 연결(완료)**: 새 카드 commit만 topic에 발행하고 중복 event는 재발행하지 않는다. 새 방은 `ROOM_CREATED`, 기존 방은 `ROOM_UPDATED`, 숨긴 방이 실제 신청 활동으로 다시 표시되면 `ROOM_REOPENED` 목록 신호를 보낸다.
-5. **INQUIRY_CARD 실시간 연결(완료)**: 문의로 새 방과 함께 저장된 카드만 topic에 발행하고 `ROOM_CREATED` 목록 신호를 보낸다. 기존 방 문의 재호출은 재발행하지 않는다.
+5. **INQUIRY_CARD 실시간 연결(보완)**: 새 방과 기존 방에서 실제로 저장된 카드만 topic에 발행한다. 방 상태에 맞춰 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 목록 신호를 보내며 카드가 저장되지 않은 재호출은 재발행하지 않는다.
 
 1. 연결 단계에는 WebSocket 의존성을 추가한다. destination 권한은 JWT interceptor 뒤에 실행되는 채팅 전용 allowlist interceptor에서 정확한 경로와 DB 참여 상태로 검사한다. 현재 HTTP 보안과 충돌하는 기본 CONNECT CSRF를 켜지 않기 위해 `@EnableWebSocketSecurity`는 사용하지 않는다.
 2. `/ws/chat`, Spring Simple Broker, 64 KiB transport 제한과 heartbeat를 설정한다.
@@ -520,7 +523,7 @@ Worker는 단순 메모리 `@Async` 호출만으로 구성하지 않는다. MySQ
 ## 6. 구현 완료 기준
 
 - 문의와 신청이 같은 비즈니스 키의 roomId로 수렴한다.
-- 문의로 새 방을 만들면 INQUIRY_CARD가 함께 한 번 저장되고 기존 방 재호출에는 추가되지 않는다.
+- 문의로 새 방을 만들면 INQUIRY_CARD가 함께 저장되고, 기존 방에서도 새 문의 흐름이 시작될 때만 추가된다.
 - INQUIRY_CARD는 대표 이미지·매물 제목·지역·유형·월세 범위와 상세 이동용 listingId를 제공한다.
 - 예약 직후 방·신청 카드 보장 실패를 client retry와 durable booking event가 보상한다.
 - 기존 Booking 상세 데이터 조립 로직을 재사용하며 bookingId당 BOOKING_CARD는 한 장만 저장된다.

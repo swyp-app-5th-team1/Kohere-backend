@@ -17,6 +17,10 @@ interface MessageJpaRepository extends JpaRepository<MessageJpaEntity, Long> {
   /** BOOKING_CARD 멱등 UNIQUE와 같은 키로 기존 카드를 찾는다. */
   Optional<MessageJpaEntity> findByChatRoomIdAndBookingId(Long chatRoomId, Long bookingId);
 
+  /** 방의 최신 INQUIRY_CARD 한 건만 읽어 연속 문의서 중복 저장을 판단한다. */
+  Optional<MessageJpaEntity> findFirstByChatRoomIdAndTypeOrderByIdDesc(
+      Long chatRoomId, MessageType type);
+
   /** 첫 과거 페이지를 messageId 최신순으로 읽고 {@link Pageable}로 SQL LIMIT를 적용한다. */
   List<MessageJpaEntity> findByChatRoomIdOrderByIdDesc(Long chatRoomId, Pageable pageable);
 

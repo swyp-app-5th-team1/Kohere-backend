@@ -121,8 +121,8 @@ public final class ChatDocsFields {
       `FAILED`여도 `originalContent`가 함께 오므로 앱은 원문 말풍선을 표시할 수 있다. 같은 언어여서 번역이 필요 없는
       `NOT_REQUIRED`도 원문을 표시한다. 백엔드는 `번역 중` 같은 화면 문구를 보내지 않는다.
 
-      새 문의 채팅방이 생성되면 서버가 `INQUIRY_CARD`를 첫 메시지로 저장하고, 입주 신청이 저장되면 `BOOKING_CARD`를 자동 생성해 같은 room
-      topic으로 전달한다. 프런트는 두 카드를 직접 SEND하지 않는다.
+      문의하기를 누르면 서버가 필요한 경우 `INQUIRY_CARD`를 저장하고, 입주 신청이 저장되면 `BOOKING_CARD`를 자동 생성해 같은 room topic으로
+      전달한다. 프런트는 두 카드를 직접 SEND하지 않는다.
 
       **7. ACK: 내가 보낸 TEXT의 저장 결과**
 
@@ -191,12 +191,14 @@ public final class ChatDocsFields {
       **프론트 처리 방법**
 
       - 새 방을 만든 경우 `201 Created`, `created=true`이며 서버가 첫 메시지 `INQUIRY_CARD`도 함께 저장한다.
-      - 기존 방을 반환한 경우 `200 OK`, `created=false`다.
+      - 기존 방을 반환한 경우 `200 OK`, `created=false`다. 이때도 아래 기준에 따라 새 문의서가 저장될 수 있다.
       - 두 응답의 JSON 구조는 같다. 프론트는 두 경우 모두 `chatRoomId`로 채팅방 화면을 열면 된다.
-      - `created`는 새 방인지 구분하는 참고값이다. 화면 이동 여부를 이 값으로 나누지 않는다.
+      - `created`는 **새 방인지** 구분하는 참고값이며 문의서 생성 여부가 아니다. 화면 이동 여부를 이 값으로 나누지 않는다.
       - 문의 응답 자체에는 카드가 없다. 응답을 받은 뒤 메시지 이력 API를 호출해 저장된 `INQUIRY_CARD`를 읽는다.
       - 신규 방의 room topic은 프론트 구독 전에 카드가 발행될 수 있으므로 `created=true`여도 메시지 이력 조회를 생략하지 않는다.
-      - 기존 방이면 문의서를 새로 추가하지 않는다. 따라서 반복 문의나 신청으로 먼저 만들어진 방에 카드가 중복되지 않는다.
+      - 화면에서 보이는 문의서가 마지막 메시지이면 같은 문의서를 연속 저장하지 않는다.
+      - 최신 문의서 뒤에 TEXT 또는 BOOKING_CARD가 있으면 새 문의서를 현재 대화 끝에 저장한다.
+      - 신청으로 방이 먼저 만들어져 문의서가 아직 없거나, 사용자가 방을 삭제해 기존 문의서를 볼 수 없으면 새 문의서를 저장한다.
       - 채팅방 목록의 상대 이미지는 앱이 기본 아이콘으로 표시한다. 문의서 대표 이미지는 메시지 이력의 `inquiryCard.thumbnailUrl`에 있다.
 
       **에러 코드**
@@ -346,9 +348,9 @@ public final class ChatDocsFields {
       **신청 완료 뒤 BOOKING_CARD를 받는 흐름**
 
       1. 앱이 기존 `POST /api/v1/listings/{listingId}/bookings`로 신청을 저장한다.
-      2. 앱이 `POST /api/v1/listings/{listingId}/inquiries`로 같은 매물의 `chatRoomId`를 받는다.
-      3. 앱이 이 메시지 이력 API를 호출한다.
-      4. 서버가 저장한 `BOOKING_CARD`가 일반 TEXT와 같은 `content[]`에 시간순으로 함께 반환된다.
+      2. 서버가 같은 매물의 기존 채팅방을 사용하거나 새 채팅방을 자동으로 만든다.
+      3. 앱은 채팅방 목록 이벤트 또는 채팅방 목록 API에서 해당 `chatRoomId`를 확인한다.
+      4. 앱이 이 메시지 이력 API를 호출하면 저장된 `BOOKING_CARD`가 일반 TEXT와 같은 `content[]`에 함께 반환된다.
 
       BOOKING_CARD를 "채팅방에 전달"한다는 말은 프론트가 카드 전송 API를 호출한다는 뜻이 아니다. 백엔드가 예약 이벤트를 처리해
       `chat_messages`에 저장하고, 이 API는 이미 저장된 카드를 읽어 프론트에 반환한다. 프론트는 `type=BOOKING_CARD`를 보고 카드 UI만 그린다.
@@ -356,7 +358,7 @@ public final class ChatDocsFields {
       **문의하기 뒤 INQUIRY_CARD를 받는 흐름**
 
       1. `POST /api/v1/listings/{listingId}/inquiries`를 호출한다.
-      2. 새 방이면 서버가 방·참여자 두 명·문의서를 함께 저장하고 `created=true`를 반환한다.
+      2. 새 방이면 서버가 방·참여자 두 명·문의서를 함께 저장한다. 기존 방이면 이력 상태에 따라 문의서를 추가하거나 연속 중복을 생략한다.
       3. 반환된 `chatRoomId`로 이 메시지 이력 API를 호출한다.
       4. `type=INQUIRY_CARD`인 항목의 `inquiryCard`로 문의서 UI를 그린다.
 
@@ -434,7 +436,7 @@ public final class ChatDocsFields {
       **메시지 종류**
 
       - `TEXT`: 사용자가 보낸 변경되지 않은 원문을 `originalContent`로 반환한다. `clientMessageId`는 전송 시 프런트가 생성한 UUID다.
-      - `INQUIRY_CARD`: 문의하기로 새 방을 만들 때 서버가 저장한 문의서다. `inquiryCard`에 대표 이미지·제목·지역 code·매물 유형·최소/최대 월세가 있다.
+      - `INQUIRY_CARD`: 문의하기를 눌렀을 때 서버가 필요한 경우 저장한 문의서다. `inquiryCard`에 대표 이미지·제목·지역 code·매물 유형·최소/최대 월세가 있다.
       - `BOOKING_CARD`: 신청 완료 이벤트로 서버가 만든 카드다. `bookingCard`에 신청 시점 정보가 있고 `originalContent`·`clientMessageId`·`senderId`는 null이다.
       - 문의서의 `inquiryCard.thumbnailUrl`과 신청서의 `bookingCard.listing.thumbnailUrl`은 각 카드 상단 대표 이미지다. 채팅방 목록의 프로필 이미지와는 관계없다.
       - 카드 문구·항목명은 앱이 `myRole`과 지원 언어 `ko/en`에 맞춰 표시하고, 카드 payload 자체는 Google 자동 번역 대상이 아니다.
@@ -729,7 +731,7 @@ public final class ChatDocsFields {
         field(
             "data.created",
             JsonFieldType.BOOLEAN,
-            "새 채팅방·참여자 두 명·첫 INQUIRY_CARD를 이번 요청에서 함께 저장했으면 true. 기존 방을 반환해 문의서를 추가하지 않았으면 false. 값과 관계없이 chatRoomId로 화면 이동"),
+            "이번 요청에서 새 채팅방을 만들었으면 true, 기존 방이면 false. 문의서 저장 여부와는 다른 값이며, false여도 이력 상태에 따라 문의서가 추가될 수 있음. 값과 관계없이 chatRoomId로 화면 이동"),
         errorNull());
   }
 

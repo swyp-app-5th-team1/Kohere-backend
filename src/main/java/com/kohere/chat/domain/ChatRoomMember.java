@@ -89,6 +89,22 @@ public class ChatRoomMember {
   }
 
   /**
+   * 특정 메시지가 현재 사용자에게 보이는 이력 범위에 포함되는지 확인한다.
+   *
+   * <p>방이 현재 숨김 상태라면 사용자는 그 방의 메시지를 볼 수 없다. 방이 보이는 상태라도 사용자가 과거에 삭제한 경계 이하의 메시지는 다시 노출하지 않는다. 문의서
+   * 재전송 판단은 이 규칙을 그대로 사용해, 사용자가 볼 수 없는 오래된 문의서를 새 문의서처럼 취급한다.
+   *
+   * @param messageId 확인할 서버 메시지 ID
+   * @return 현재 채팅방 이력에서 해당 메시지를 볼 수 있으면 {@code true}
+   */
+  public boolean canSeeMessage(long messageId) {
+    if (messageId <= 0) {
+      throw new IllegalArgumentException("messageId는 1 이상이어야 합니다.");
+    }
+    return roomHiddenAt == null && messageId > historyHiddenThroughMessageId;
+  }
+
+  /**
    * 사용자 삭제 이후에 실제로 발생한 새 메시지가 있으면 채팅방을 목록에 다시 표시한다.
    *
    * <p>비동기 신청 이벤트가 늦게 처리될 수 있으므로 단순히 "현재 숨김"만 보고 되살리면 안 된다. 사용자가 메시지 발생 뒤에 방을 삭제했다면 그 최신 선택을 존중하고,

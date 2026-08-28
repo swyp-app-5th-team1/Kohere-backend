@@ -12,7 +12,7 @@
 - user, listing, booking처럼 다른 모듈이 소유한 ID뿐 아니라 chat 테이블 사이 ID도 값으로 참조하고 FK를 만들지 않는다. 존재·참여 권한과 저장 순서는 애플리케이션 트랜잭션으로 검증하며, DB UNIQUE/CHECK가 중복과 잘못된 필드 조합을 최종 차단한다.
 - `chat_messages`는 전송 중 임시 큐나 사용자별 사본이 아니라 모든 채팅방에서 저장이 완료된 메시지의 공유 정본이다.
 - `chat_messages.content`는 사용자가 보낸 `TEXT`의 불변 원문이며 기록·신고의 정본이다.
-- `INQUIRY_CARD`는 문의로 새 방을 만들 때 공개 Listing 데이터로 함께 만드는 서버 메시지이며 문의 시점의 매물 요약을 `inquiry_payload`에 저장한다.
+- `INQUIRY_CARD`는 문의하기 시 공개 Listing 데이터로 만드는 서버 메시지이며 문의 시점의 매물 요약을 `inquiry_payload`에 저장한다. 같은 방에도 대화 흐름에 따라 여러 장이 시간순으로 존재할 수 있다.
 - `BOOKING_CARD`는 기존 Booking 데이터를 재사용해 만든 서버 메시지이며 신청 시점의 구조화 값을 `payload`에 저장한다.
 - 자동 번역은 사용자·대상 언어별 파생 데이터이며 원문을 덮어쓰지 않는다.
 - 방과 과거 메시지의 가시성은 `chat_room_members`에서 사용자별로 관리한다.
@@ -170,7 +170,14 @@ INDEX idx_chat_messages_room_id_desc (chat_room_id, id DESC)
 
 메시지의 ID·방·종류·전송 시각과 TEXT 원문은 저장 후 수정하지 않는다. 다만 `BOOKING_CARD` 안의 신청자 개인정보는 아래 익명화 규칙이 적용될 때에만 가린다. DB CHECK는 TEXT `content`를 1~3,000자로 제한하고 타입별 필드를 배타적으로 강제한다. 따라서 TEXT에 카드 payload가 섞이거나, 서버 카드가 사용자 발신자로 저장되거나, 본문 없는 TEXT가 정본에 남지 않는다. 현재 허용 타입은 `TEXT`, `INQUIRY_CARD`, `BOOKING_CARD`이며 일반 `LISTING_CARD`나 `SYSTEM` 타입은 없다. `InquiryCardPayload`는 대표 이미지 URL, 매물 제목, city·district·매물 유형 code, 활성 방 최소·최대 월세, listingId를 보존하고, `BookingCardPayload`는 매물·신청자·객실·입주 조건·금액 스냅샷을 보존한다.
 
-`INQUIRY_CARD`는 새 문의 방·두 참여자와 같은 생성 트랜잭션에서만 저장한다. `(listing_id, tenant_id, landlord_id)` 방 UNIQUE에 의해 동시 문의 중 한 요청만 신규 방과 문의서를 커밋하고, 충돌한 요청은 기존 roomId를 반환하므로 문의서가 두 장 생기지 않는다. 기존 방을 반환하는 경로는 문의 메시지를 INSERT하지 않는다.
+`INQUIRY_CARD`는 새 방뿐 아니라 기존 방에도 저장할 수 있다. 서버는 방을 잠근 뒤 가장 최근 문의서 ID, `chat_rooms.last_message_id`, 요청자의 `history_hidden_through_message_id`를 함께 비교한다.
+
+- 문의서가 한 장도 없으면 저장한다.
+- 최근 문의서 뒤에 `TEXT` 또는 `BOOKING_CARD`가 있으면 저장한다.
+- 최근 문의서가 요청자의 숨김 경계 안에 있어 보이지 않으면 저장한다.
+- 요청자에게 보이는 최근 문의서가 방의 마지막 메시지이면 저장하지 않는다.
+
+따라서 같은 방에 여러 문의서가 있을 수 있지만 같은 문의 API의 즉시 재시도나 동시 요청이 문의서를 연속으로 만들지는 않는다. 신규 방은 방·두 참여자·첫 문의서를 한 트랜잭션으로 저장하고, 기존 방은 문의서·마지막 메시지 포인터·방 재노출 상태를 한 트랜잭션으로 갱신한다. 이 규칙은 기존 `inquiry_payload` 컬럼으로 처리하므로 추가 migration은 필요하지 않다.
 
 `(chat_room_id, sender_id, client_message_id)` UNIQUE는 TEXT 재전송 중복을 막고, `(chat_room_id, booking_id)` UNIQUE는 같은 신청 이벤트가 재처리될 때 카드가 두 장 생기는 것을 막는다. `(chat_room_id, id DESC)` 인덱스는 과거 페이지 조회와 재연결 누락 보충에서 같은 messageId 범위 조회를 빠르게 한다.
 

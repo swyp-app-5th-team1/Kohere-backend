@@ -28,7 +28,7 @@
 | [08-testing-and-implementation.md](08-testing-and-implementation.md) | 클라이언트 동작, 테스트, 단계별 개발 계획, 운영 전환 기준 |
 | [09-frontend-stomp-guide.md](09-frontend-stomp-guide.md) | 프론트엔드용 WebSocket/STOMP 연결·구독·전송·ACK·재연결 안내 |
 | [10-inquiry-card-frontend-guide.md](10-inquiry-card-frontend-guide.md) | 프론트엔드용 문의하기·INQUIRY_CARD 응답·UI·View Detail 연동 안내 |
-| [future/README.md](future/README.md) | 관리자 신고 처리·삭제 복구, 3개월 만료, 물리 삭제, 채팅 알림·안 읽음 등 후속 고도화 설계 |
+| [future/README.md](future/README.md) | 관리자 신고 처리·삭제 복구, 3개월 만료, 물리 삭제, iOS 채팅 푸시 등 후속 고도화 설계 |
 
 ### 문서의 역할과 우선순위
 
@@ -48,7 +48,7 @@
 | 채팅 형태 | 세입자와 임대인의 1:1 채팅만 지원 |
 | 채팅방 식별 | `(listingId, tenantId, landlordId)`마다 한 방 |
 | 문의·신청 | 두 진입점 모두 같은 방을 사용 |
-| 메시지 종류 | 사용자가 보내는 `TEXT`, 문의로 새 방을 만들 때 서버가 만드는 `INQUIRY_CARD`, 신청 완료 때 서버가 만드는 `BOOKING_CARD` |
+| 메시지 종류 | 사용자가 보내는 `TEXT`, 문의하기 시 서버가 필요 여부를 판단해 만드는 `INQUIRY_CARD`, 신청 완료 때 서버가 만드는 `BOOKING_CARD` |
 | 신청 카드 | 기존 Booking 상세 데이터 조립 로직을 재사용하고 `bookingId`당 한 번만 같은 방에 저장 |
 | 저장소 | MySQL이 채팅 기록의 정본 |
 | 실시간 통신 | WebSocket 위에서 STOMP 사용 |
@@ -69,12 +69,12 @@
 - 그룹 채팅
 - 이미지·영상·파일 메시지
 - 일반 `LISTING_CARD`, `SYSTEM` 메시지 (문의 전용 `INQUIRY_CARD`와 신청 전용 `BOOKING_CARD`는 범위에 포함)
-- 읽음 위치, 안 읽은 메시지 수, 숫자 1 표시 ([후속 알림·안 읽음 계획](future/06-chat-notifications.md))
+- 읽음 위치, 안 읽은 메시지 수, 숫자 1 표시
 - 메시지 수정·개별 삭제·전송 취소
 - 사용자가 삭제한 채팅방의 Undo·복원
 - 타이핑 중·접속 중 표시
 - 채팅방 자동 시간 만료
-- 푸시 알림 ([후속 알림·안 읽음 계획](future/06-chat-notifications.md))
+- 푸시 알림 ([후속 iOS 채팅 푸시 계획](future/06-chat-notifications.md))
 - 다중 서버용 외부 broker relay
 - 백업 데이터 파기 자동화
 - 번역문 직접 수정과 사용자별 번역 용어 설정
@@ -94,4 +94,4 @@
 - 프론트에서 문의서 카드만 연동하려면 `10`을 먼저 읽고 전체 실시간 연결은 `09`에서 확인한다.
 - 백엔드를 구현하려면 `01 → 02 → 03 → 06 → 07 → 08` 순서로 읽는다.
 - 관리자 처리와 물리 삭제를 고도화할 때는 `future/README.md`부터 읽는다.
-- 읽음·안 읽음 수와 모바일·웹 푸시를 고도화할 때는 `future/06-chat-notifications.md`를 읽는다.
+- iOS 채팅 푸시와 채팅방 딥링크를 구현할 때는 `future/06-chat-notifications.md`를 읽는다.

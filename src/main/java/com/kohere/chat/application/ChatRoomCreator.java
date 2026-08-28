@@ -103,40 +103,6 @@ public class ChatRoomCreator {
     return room;
   }
 
-  /**
-   * 직접 문의로 기존 방에 재진입한 임차인의 목록 표시 상태만 되돌린다.
-   *
-   * <p>일반 사용자의 삭제 복원 기능은 제공하지 않으므로 과거 메시지 숨김 경계는 변경하지 않는다. 이미 보이는 상태에서는 DB UPDATE도 하지 않는다.
-   *
-   * @param roomId 다시 표시할 기존 채팅방 ID
-   * @param tenantId 재진입한 임차인 ID
-   * @param now 재진입 시각
-   */
-  @Transactional
-  public void showExistingRoomForTenant(long roomId, long tenantId, Instant now) {
-    // 삭제와 같은 room -> member 순서로 잠가 동시 DELETE와 직접 문의 중 마지막으로 실행된 행동이 일관되게 반영되게 한다.
-    chatRoomRepository
-        .findByIdForUpdate(roomId)
-        .orElseThrow(() -> new IllegalStateException("재진입할 채팅방을 찾을 수 없습니다."));
-
-    List<ChatRoomMember> members = memberRepository.findByChatRoomIdForUpdate(roomId);
-    if (members.size() != 2) {
-      throw new IllegalStateException("1:1 채팅방에는 참여자가 정확히 두 명이어야 합니다.");
-    }
-
-    ChatRoomMember current =
-        members.stream()
-            .filter(member -> member.getUserId() == tenantId)
-            .findFirst()
-            // 방은 있는데 임차인 행이 없으면 저장 불변식이 깨진 서버 상태다. 사용자 입력 오류로 감추지 않고 즉시 드러낸다.
-            .orElseThrow(() -> new IllegalStateException("채팅방의 임차인 참여자 정보를 찾을 수 없습니다."));
-
-    ChatRoomMember visible = current.showAgain(now);
-    if (visible != current) {
-      memberRepository.save(visible);
-    }
-  }
-
   /** 역할과 상대가 서로 뒤바뀌지 않도록 신규 참여자 생성 코드를 한곳에 둔다. */
   private static ChatRoomMember newMember(
       long roomId, long userId, long counterpartId, ChatParticipantRole role, Instant now) {

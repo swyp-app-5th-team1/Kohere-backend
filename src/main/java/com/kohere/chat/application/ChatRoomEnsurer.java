@@ -43,8 +43,8 @@ public class ChatRoomEnsurer {
   /**
    * 문의용 기존 방을 반환하거나 새 방과 참여자·INQUIRY_CARD를 함께 만든다.
    *
-   * <p>신청 흐름의 {@link #ensure(ChatRoomSeed, long, Instant)}와 분리한 이유는 신청으로 처음 생긴 방에 문의서를 잘못 추가하지 않기
-   * 위해서다. 문의서 생성은 이 메서드가 실제로 새 방을 만든 경우에만 실행된다.
+   * <p>신청 흐름의 {@link #ensure(ChatRoomSeed, long, Instant)}와 분리한 이유는 문의로 새 방을 만들 때 방·참여자·첫 문의서를 한
+   * 트랜잭션에 저장하기 위해서다. 기존 방의 문의서 재전송 여부는 {@link InquiryCardWriter}가 이력 상태를 확인해 결정한다.
    *
    * @param seed 방 생성에 필요한 매물·임대인 정보
    * @param tenantId 방의 임차인 users.id

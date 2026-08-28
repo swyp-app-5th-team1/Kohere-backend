@@ -9,6 +9,7 @@ import com.kohere.chat.application.ChatMessageHistoryService;
 import com.kohere.chat.application.ChatRoomCreator;
 import com.kohere.chat.application.ChatRoomDeletionService;
 import com.kohere.chat.application.ChatTextMessageService;
+import com.kohere.chat.application.InquiryCardWriter;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.application.dto.MessageResponse;
 import com.kohere.chat.domain.BookingCardPayload;
@@ -19,6 +20,7 @@ import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberPage;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomRepository;
+import com.kohere.chat.domain.InquiryCardPayload;
 import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
@@ -72,7 +74,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   ChatTextMessageService.class,
   ChatRoomDeletionService.class,
   ChatMessageHistoryService.class,
-  ChatRoomCreator.class
+  ChatRoomCreator.class,
+  InquiryCardWriter.class
 })
 @Testcontainers
 class ChatPersistenceIntegrationTest {
@@ -102,8 +105,8 @@ class ChatPersistenceIntegrationTest {
   /** 삭제 경계가 실제 REST 메시지 응답에 적용되는지 확인할 읽기 유스케이스다. */
   @Autowired private ChatMessageHistoryService messageHistoryService;
 
-  /** 직접 문의 재진입이 같은 방을 다시 표시하되 과거 이력은 복원하지 않는지 확인한다. */
-  @Autowired private ChatRoomCreator roomCreator;
+  /** 기존 방의 이력 상태에 따라 새 문의서를 저장하고 사용자별 표시 상태를 바꾸는 유스케이스다. */
+  @Autowired private InquiryCardWriter inquiryCardWriter;
 
   /** 이 통합 테스트는 chat 저장 원자성에 집중하므로 user 모듈의 차단 조회 경계만 대체한다. */
   @MockitoBean private UserBlockService userBlockService;
@@ -408,7 +411,7 @@ class ChatPersistenceIntegrationTest {
         .containsExactly(newMessage.getId(), oldMessage.getId());
   }
 
-  /** 같은 매물에 직접 다시 문의하면 방만 재표시되고 삭제 이전 대화는 요청자에게 복원되지 않는다. */
+  /** 같은 매물에 직접 다시 문의하면 새 문의서로 방이 재표시되고 삭제 이전 대화는 요청자에게 복원되지 않는다. */
   @Test
   void directInquiryReopensSameRoomWithoutRestoringDeletedHistory() {
     Instant createdAt = now();
@@ -423,7 +426,23 @@ class ChatPersistenceIntegrationTest {
             .message();
 
     roomDeletionService.deleteRoom(101L, room.getId());
-    roomCreator.showExistingRoomForTenant(room.getId(), 101L, now().plusSeconds(1));
+    Message inquiryCard =
+        inquiryCardWriter
+            .saveIfNeeded(
+                room.getId(),
+                101L,
+                new InquiryCardPayload(
+                    room.getListingId(),
+                    "https://cdn.kohere.com/inquiry.jpg",
+                    "문의 대상 매물",
+                    "SEOUL",
+                    "MAPO_GU",
+                    "CO_LIVING",
+                    350_000,
+                    500_000),
+                now().plusSeconds(1))
+            .orElseThrow()
+            .message();
 
     entityManager.flush();
     entityManager.clear();
@@ -437,10 +456,12 @@ class ChatPersistenceIntegrationTest {
         messageHistoryService.getMessages(101L, room.getId(), null, null, 10);
     CursorResponse<MessageResponse> landlordHistory =
         messageHistoryService.getMessages(202L, room.getId(), null, null, 10);
-    assertThat(tenantHistory.content()).isEmpty();
+    assertThat(tenantHistory.content())
+        .extracting(MessageResponse::messageId)
+        .containsExactly(inquiryCard.getId());
     assertThat(landlordHistory.content())
         .extracting(MessageResponse::messageId)
-        .containsExactly(oldMessage.getId());
+        .containsExactly(inquiryCard.getId(), oldMessage.getId());
   }
 
   /** 같은 방·bookingId의 신청 이벤트 재처리가 카드를 중복 저장하지 않는지 확인한다. */
