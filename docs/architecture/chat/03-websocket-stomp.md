@@ -154,15 +154,16 @@ Google API는 7번 저장 트랜잭션 안에서 호출하지 않는다. 원문�
 
 ### 서버가 만드는 INQUIRY_CARD
 
-`INQUIRY_CARD`는 STOMP SEND로 만들지 않는다. 세입자가 문의 REST API를 호출해 새 방이 생성될 때 Chat Application이 다음 순서로 처리한다.
+`INQUIRY_CARD`는 STOMP SEND로 만들지 않는다. 세입자가 문의 REST API를 호출하면 Chat Application이 다음 순서로 처리한다.
 
 1. Listing 공개 API에서 실제 임대인과 문의서용 매물 요약을 조회한다.
 2. 본인 매물과 양방향 차단 관계를 검사한다.
-3. 새 채팅방·두 참여자·`INQUIRY_CARD`를 같은 트랜잭션으로 저장한다.
+3. 같은 매물·세입자·임대인의 채팅방을 조회하거나 새로 만들고 방을 잠근다.
 4. 문의서는 매물의 첫 대표 이미지, 매물 제목, city·district code, 매물 유형 code, `ACTIVE` 방의 최소·최대 월세, 상세 이동용 listingId를 보존한다.
-5. 커밋된 신규 카드만 room topic으로 발행하고 두 사용자에게 방 목록 `ROOM_CREATED` 신호를 보낸다.
-6. 기존 방을 반환한 문의 API 호출은 문의서를 추가하거나 다시 발행하지 않는다.
-7. 앱이 실시간 이벤트를 놓쳐도 메시지 이력 REST API에서 저장된 카드를 다시 조회할 수 있다.
+5. 새 방, 문의서가 없는 방, 최근 문의서 뒤에 다른 메시지가 있는 방, 요청자가 최근 문의서를 볼 수 없는 방에는 `INQUIRY_CARD`를 저장한다.
+6. 요청자에게 보이는 최근 문의서가 마지막 메시지이면 카드를 연속 저장하지 않는다.
+7. 커밋된 신규 카드만 room topic으로 발행하고, 방 상태에 맞춰 `ROOM_CREATED`, `ROOM_UPDATED`, `ROOM_REOPENED` 중 하나로 목록 갱신을 알린다.
+8. 앱이 실시간 이벤트를 놓쳐도 메시지 이력 REST API에서 저장된 카드를 다시 조회할 수 있다.
 
 문의서에는 `clientMessageId`, `senderId`, TEXT 원문과 번역 결과가 없다. city·district·매물 유형의 고정 label은 앱이 code를 기준으로 `ko/en` 언어에 맞춰 표시하고, `View Detail`은 `inquiryCard.listingId`로 기존 매물 상세 화면을 연다.
 

@@ -22,23 +22,24 @@ sequenceDiagram
     APP->>CHAT: 이 매물의 채팅방 열기
     CHAT->>LIST: 매물과 임대인 확인
     LIST-->>CHAT: 매물·임대인·문의서 정보
-    CHAT->>DB: 같은 매물·세입자·임대인의 방 조회
+    CHAT->>DB: 방 조회 또는 생성 후 잠금
+    DB-->>CHAT: roomId·최근 문의서·마지막 메시지·숨김 경계
 
-    alt 기존 방이 있음
-        DB-->>CHAT: 기존 roomId
-    else 기존 방이 없음
-        CHAT->>DB: 방·두 참여자·INQUIRY_CARD 저장
-        DB-->>CHAT: 새 roomId와 messageId COMMIT
-        CHAT->>BROKER: 신규 문의서와 ROOM_CREATED 발행
+    alt 새 문의서가 필요함
+        CHAT->>DB: INQUIRY_CARD 저장·마지막 메시지 갱신
+        DB-->>CHAT: roomId와 messageId COMMIT
+        CHAT->>BROKER: 신규 문의서와 방 목록 갱신 신호 발행
+    else 보이는 문의서가 마지막 메시지임
+        CHAT->>DB: 문의서 추가 없이 기존 roomId 유지
     end
 
     CHAT-->>APP: roomId
     APP-->>U: 채팅방 화면 열기
 ```
 
-**쉽게 설명하면:** 문의하기를 누르면 서버는 `매물·세입자·임대인` 조합으로 기존 방을 찾는다. 이미 있으면 문의서를 추가하지 않고 같은 `roomId`를 반환한다. 방이 없으면 방·두 참여자와 함께 대표 이미지·제목·지역·유형·월세 범위가 담긴 `INQUIRY_CARD`를 저장한다. `roomId`는 이후 방 정보·메시지 조회와 실시간 구독에 사용하는 채팅방 번호다.
+**쉽게 설명하면:** 문의하기를 누르면 서버는 `매물·세입자·임대인` 조합의 방을 찾거나 만든다. 방 생성 여부와 별도로 문의서가 필요한지도 확인한다. 문의서가 한 번도 없거나 최근 문의서 뒤에 `TEXT`·`BOOKING_CARD`가 있거나, 요청자가 최근 문의서를 볼 수 없으면 새 `INQUIRY_CARD`를 저장한다. 요청자에게 보이는 문의서가 마지막 메시지이면 같은 카드를 연속으로 저장하지 않는다. `roomId`는 이후 방 정보·메시지 조회와 실시간 구독에 사용하는 채팅방 번호다.
 
-**결과:** 같은 매물·세입자·임대인 조합은 항상 같은 채팅방을 사용하고, 문의로 새 방을 만든 경우에만 문의서가 한 장 저장된다.
+**결과:** 같은 매물·세입자·임대인 조합은 항상 같은 채팅방을 사용하면서, 새 문의 흐름이 시작될 때만 문의서가 한 장 추가된다.
 
 ### 매물에서 신청한 뒤 채팅방 열기
 
@@ -48,27 +49,29 @@ sequenceDiagram
     participant APP as 앱
     participant BOOK as 기존 신청 API
     participant DB as MySQL
-    participant CHAT as 채팅방 API
+    participant CHAT as Chat Application
+    participant BROKER as STOMP Broker
 
     U->>APP: 입주일·기간 선택 후 신청
     APP->>BOOK: 신청 생성 요청
     BOOK->>DB: 신청과 신청 완료 이벤트 저장
     DB-->>BOOK: 저장 완료
     BOOK-->>APP: 신청 완료
-    APP->>CHAT: 이 매물의 채팅방 열기
-    CHAT->>DB: 같은 매물·세입자·임대인의 방 조회 또는 생성
-    DB-->>CHAT: 기존 또는 새 roomId
-    CHAT-->>APP: roomId
+    DB-->>CHAT: 저장된 신청 완료 이벤트 전달
+    CHAT->>DB: 같은 방 보장·BOOKING_CARD 저장
+    CHAT->>BROKER: 방 목록 갱신·신청서 이벤트
+    BROKER-->>APP: 방 목록 갱신 신호
+    APP->>CHAT: 채팅방 목록 조회 후 같은 매물 roomId 확인
     APP->>CHAT: 채팅방 메시지 이력 조회
     CHAT-->>APP: 현재 저장 완료된 TEXT·INQUIRY_CARD·BOOKING_CARD
     APP-->>U: 채팅방 화면 열기
 ```
 
-**쉽게 설명하면:** 이 그림은 앱이 해야 하는 HTTP 호출만 보여 준다. 먼저 기존 신청 API로 신청을 저장한 다음 문의하기 API로 채팅방 번호를 받는다. 신청 이벤트가 방을 먼저 만들었거나 이미 문의했던 방이 있으면 같은 `roomId`를 그대로 사용하며, 기존 방을 반환하므로 이 호출이 문의서를 추가하지 않는다. 마지막으로 메시지 이력 API를 호출하면 현재 저장이 끝난 일반 대화와 서버 카드를 함께 받는다.
+**쉽게 설명하면:** 먼저 기존 신청 API로 신청을 저장한다. 서버가 저장된 신청 이벤트를 처리해 문의하기와 같은 기준의 방을 보장하고 `BOOKING_CARD`를 저장한다. 앱은 방 목록 갱신 신호를 받거나 목록을 다시 조회해 같은 매물의 `roomId`를 확인한 뒤 메시지 이력을 연다. 신청만 한 상황에서는 문의 API를 대신 호출하지 않으므로 `INQUIRY_CARD`가 자동으로 추가되지 않는다.
 
 신청 카드 자체는 앱이 보내지 않는다. 서버가 자동 저장하는 과정은 아래 **서버가 신청 후 채팅방과 신청 카드를 자동 보완하기** 그림에 따로 표시한다. 비동기 처리가 아직 끝나지 않아 첫 이력 조회에 카드가 없다면 짧게 기다린 뒤 이력 API를 한 번 다시 조회할 수 있다.
 
-**결과:** 신청은 기존 Booking 기능이 처리하고, 신청 완료 후 문의하기와 같은 채팅방으로 이동하며 그 안에 신청 카드가 표시된다.
+**결과:** 신청은 기존 Booking 기능이 처리하고, 문의하기와 같은 기준의 채팅방에 신청 카드가 표시된다. 나중에 사용자가 실제 문의하기를 누르면 그 뒤에 문의서가 추가될 수 있다.
 
 ### 채팅방 안에서 신청하기
 

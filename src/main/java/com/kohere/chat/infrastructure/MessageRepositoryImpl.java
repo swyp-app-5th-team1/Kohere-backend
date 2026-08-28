@@ -67,6 +67,14 @@ public class MessageRepositoryImpl implements MessageRepository {
 
   /** {@inheritDoc} */
   @Override
+  public Optional<Message> findLatestInquiryCard(Long chatRoomId) {
+    return jpaRepository
+        .findFirstByChatRoomIdAndTypeOrderByIdDesc(chatRoomId, MessageType.INQUIRY_CARD)
+        .map(MessageRepositoryImpl::toDomain);
+  }
+
+  /** {@inheritDoc} */
+  @Override
   public List<Message> findBefore(Long chatRoomId, Long beforeMessageId, int size) {
     // 첫 페이지에는 cursor가 없으므로 별도 쿼리를 사용한다. SQL의 OR :cursor IS NULL보다 인덱스 범위가 명확하다.
     List<MessageJpaEntity> entities =

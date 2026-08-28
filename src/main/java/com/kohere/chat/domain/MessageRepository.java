@@ -61,6 +61,16 @@ public interface MessageRepository {
   Optional<Message> findByChatRoomIdAndBookingId(Long chatRoomId, Long bookingId);
 
   /**
+   * 채팅방에 가장 최근에 저장된 문의서를 찾는다.
+   *
+   * <p>문의하기를 다시 눌렀을 때 같은 문의서를 연속 저장할지 판단하는 데 사용한다. 전체 이력을 메모리로 가져오지 않고 DB에서 최신 문의서 한 건만 읽는다.
+   *
+   * @param chatRoomId 문의서를 찾을 채팅방 ID
+   * @return 문의서가 있으면 가장 큰 messageId의 INQUIRY_CARD
+   */
+  Optional<Message> findLatestInquiryCard(Long chatRoomId);
+
+  /**
    * 채팅 화면에서 위로 스크롤할 때 기준 ID보다 오래된 메시지를 최신순으로 읽는다.
    *
    * @param chatRoomId 조회할 방 번호

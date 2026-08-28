@@ -3,7 +3,7 @@ package com.kohere.chat.domain;
 import java.util.Objects;
 
 /**
- * 문의하기로 새 채팅방을 만들 때 서버가 {@link MessageType#INQUIRY_CARD}에 저장하는 매물 요약이다.
+ * 사용자가 문의하기를 눌렀을 때 서버가 {@link MessageType#INQUIRY_CARD}에 저장하는 매물 요약이다.
  *
  * <p>프런트는 이 값을 보내지 않고 {@code listingId}만 보낸다. 서버가 공개 매물에서 조회한 값을 문의 시점의 사본으로 저장하므로, 매물 정보가 나중에 바뀌어도
  * 기존 채팅방에서는 문의를 시작했을 당시의 카드를 그대로 보여 줄 수 있다.

@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
  * 중복 처리 규칙이 생기는 것을 막는다. 읽음 처리는 이번 범위에서 제외한다.
  *
  * <p>문의와 신청이 동일한 방 생성 규칙을 사용하도록 실제 조회·생성·동시성 수렴은 {@link ChatRoomEnsurer}에 위임한다. 이 서비스는 문의 요청자만 수행할
- * 역할·매물·차단 검증과 기존 방 재표시를 담당한다.
+ * 역할·매물·차단 검증과 문의서 저장 여부 판단 흐름을 담당한다.
  */
 @Service
 @RequiredArgsConstructor
@@ -36,8 +36,8 @@ public class ChatService {
   private final ChatListingQueryService listingQueryService;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
-  private final ChatRoomCreator roomCreator;
   private final ChatRoomEnsurer roomEnsurer;
+  private final InquiryCardWriter inquiryCardWriter;
   private final InquiryCardRealtimePublisher inquiryCardRealtimePublisher;
 
   /**
@@ -65,12 +65,16 @@ public class ChatService {
     ChatRoomEnsurer.InquiryEnsureResult ensured =
         roomEnsurer.ensureInquiry(seed, tenantId, inquiryPayload, now);
 
-    // 직접 문의는 사용자의 명시적 재진입이다. 기존 방만 다시 표시하며 과거 메시지 숨김 경계는 복원하지 않는다.
-    if (!ensured.created()) {
-      roomCreator.showExistingRoomForTenant(ensured.room().getId(), tenantId, now);
-    } else {
-      // createInquiry 트랜잭션이 반환된 뒤이므로 DB commit이 끝난 카드만 실시간 채널에 전달한다.
-      inquiryCardRealtimePublisher.publishNewInquiryCard(ensured.room(), ensured.message());
+    InquiryCardProcessResult inquiryResult =
+        ensured.created()
+            ? InquiryCardProcessResult.forNewRoom(ensured.room(), ensured.message())
+            : inquiryCardWriter
+                .saveIfNeeded(ensured.room().getId(), tenantId, inquiryPayload, now)
+                .orElse(null);
+
+    // 연속 중복 문의서는 저장하지 않으므로 실시간 이벤트도 보내지 않는다. 저장이 끝난 문의서만 두 참여자에게 전달한다.
+    if (inquiryResult != null) {
+      inquiryCardRealtimePublisher.publishNewInquiryCard(inquiryResult);
     }
     return new InquiryResponse(ensured.room().getId(), ensured.created());
   }

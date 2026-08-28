@@ -4,11 +4,11 @@ import com.kohere.chat.application.BookingCardRealtimePublisher;
 import com.kohere.chat.application.BookingCardResponseMapper;
 import com.kohere.chat.application.BookingCardService;
 import com.kohere.chat.application.BookingCardWriter;
+import com.kohere.chat.application.InquiryCardProcessResult;
 import com.kohere.chat.application.InquiryCardRealtimePublisher;
 import com.kohere.chat.application.InquiryCardResponseMapper;
 import com.kohere.chat.application.TextMessageSaveResult;
 import com.kohere.chat.application.translation.ChatTranslationResultPublisher;
-import com.kohere.chat.domain.ChatRoom;
 import com.kohere.chat.domain.ChatRoomMember;
 import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.Message;
@@ -153,20 +153,23 @@ public class ChatRealtimeMessagePublisher
   }
 
   /**
-   * 신규 문의 방과 함께 저장된 INQUIRY_CARD를 room topic과 두 참여자의 목록 queue로 전달한다.
+   * 저장된 INQUIRY_CARD를 room topic과 현재 방이 보이는 참여자의 목록 queue로 전달한다.
    *
-   * <p>신규 방만 이 메서드를 호출하므로 목록 이벤트는 항상 ROOM_CREATED다. 프런트가 아직 새 room topic을 구독하지 못해 카드 이벤트를 놓쳐도 문의
-   * API 응답 직후 REST 메시지 이력으로 같은 정본을 읽을 수 있다.
+   * <p>신규 방은 ROOM_CREATED, 숨긴 방이 다시 보이면 ROOM_REOPENED, 이미 보이는 기존 방이면 ROOM_UPDATED를 보낸다. 프런트가 아직 새
+   * room topic을 구독하지 못해 카드 이벤트를 놓쳐도 문의 API 응답 직후 REST 메시지 이력으로 같은 정본을 읽을 수 있다.
    */
   @Override
-  public void publishNewInquiryCard(ChatRoom room, Message message) {
-    if (message.getType() != MessageType.INQUIRY_CARD) {
-      throw new IllegalArgumentException("Only INQUIRY_CARD can use inquiry publishing");
-    }
-
+  public void publishNewInquiryCard(InquiryCardProcessResult result) {
+    Message message = result.message();
     publishRoomMessage(message);
-    publishRoomListEvent(room.getTenantId(), message, ChatStompEventType.ROOM_CREATED);
-    publishRoomListEvent(room.getLandlordId(), message, ChatStompEventType.ROOM_CREATED);
+
+    for (InquiryCardProcessResult.MemberActivity member : result.memberActivities()) {
+      if (!member.roomVisible()) {
+        continue;
+      }
+      ChatStompEventType eventType = roomEventType(result.roomCreated(), member.roomReopened());
+      publishRoomListEvent(member.userId(), message, eventType);
+    }
   }
 
   /** 신규 방·숨긴 방 재표시·일반 목록 갱신 중 프런트가 처리할 한 종류를 선택한다. */

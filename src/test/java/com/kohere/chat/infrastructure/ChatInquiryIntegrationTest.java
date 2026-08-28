@@ -9,9 +9,12 @@ import static org.mockito.Mockito.verify;
 
 import com.kohere.chat.application.ChatRoomCreator;
 import com.kohere.chat.application.ChatRoomEnsurer;
+import com.kohere.chat.application.ChatRoomSeed;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.InquiryCardRealtimePublisher;
+import com.kohere.chat.application.InquiryCardWriter;
 import com.kohere.chat.application.dto.InquiryResponse;
+import com.kohere.chat.domain.BookingCardPayload;
 import com.kohere.chat.domain.ChatListingUnavailableException;
 import com.kohere.chat.domain.ChatParticipantRole;
 import com.kohere.chat.domain.ChatRoom;
@@ -29,10 +32,12 @@ import com.kohere.listing.api.ChatListingView;
 import com.kohere.user.api.UserAccountService;
 import com.kohere.user.api.UserBlockService;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -71,6 +76,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
   MessageRepositoryImpl.class,
   ChatRoomCreator.class,
   ChatRoomEnsurer.class,
+  InquiryCardWriter.class,
   ChatService.class
 })
 class ChatInquiryIntegrationTest {
@@ -83,6 +89,7 @@ class ChatInquiryIntegrationTest {
   static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
 
   @Autowired private ChatService chatService;
+  @Autowired private ChatRoomCreator roomCreator;
   @Autowired private ChatRoomRepository chatRoomRepository;
   @Autowired private ChatRoomMemberRepository memberRepository;
   @Autowired private MessageRepository messageRepository;
@@ -142,7 +149,7 @@ class ChatInquiryIntegrationTest {
     assertThat(inquiryCard.getInquiryPayload().monthlyRentMin()).isEqualTo(350_000);
     assertThat(inquiryCard.getInquiryPayload().monthlyRentMax()).isEqualTo(500_000);
     assertThat(room.getLastMessageId()).isEqualTo(inquiryCard.getId());
-    verify(inquiryCardRealtimePublisher).publishNewInquiryCard(any(), any());
+    verify(inquiryCardRealtimePublisher).publishNewInquiryCard(any());
   }
 
   /** 같은 요청을 반복하면 새 행을 만들지 않고 최초 roomId를 200 응답용 결과로 돌려준다. */
@@ -158,14 +165,72 @@ class ChatInquiryIntegrationTest {
     assertThat(count("chat_rooms")).isEqualTo(1);
     assertThat(count("chat_room_members")).isEqualTo(2);
     assertThat(count("chat_messages")).isEqualTo(1);
-    verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any(), any());
+    verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any());
   }
 
-  /** 직접 재문의는 방만 목록에 다시 표시하고 사용자가 이미 숨긴 과거 메시지 경계와 삭제 시각은 보존한다. */
+  /** 신청하기로 먼저 만들어진 같은 방에도 문의하기를 누르면 첫 문의서를 이어서 저장한다. */
   @Test
-  @DisplayName("숨긴 기존 방에 다시 문의하면 과거 이력 복원 없이 방만 재표시한다")
+  @DisplayName("신청서가 먼저 있는 기존 방에 문의하면 문의서를 저장한다")
+  void inquiryAfterBookingCardStoresInquiryCard() {
+    Instant createdAt = Instant.parse("2026-08-21T10:00:00Z");
+    ChatRoom room =
+        roomCreator.create(
+            new ChatRoomSeed(
+                LISTING_ID, LANDLORD_ID, "Hongdae Studio share", "Seogyo-dong, Mapo-gu"),
+            TENANT_ID,
+            createdAt);
+    appendBookingCard(room.getId(), 9001L, createdAt.plusSeconds(1));
+
+    InquiryResponse response = chatService.createInquiry(TENANT_ID, LISTING_ID);
+
+    assertThat(response.created()).isFalse();
+    assertThat(response.chatRoomId()).isEqualTo(room.getId());
+    assertThat(messageRepository.findBefore(room.getId(), null, 10))
+        .extracting(Message::getType)
+        .containsExactly(MessageType.INQUIRY_CARD, MessageType.BOOKING_CARD);
+    verify(inquiryCardRealtimePublisher).publishNewInquiryCard(any());
+  }
+
+  /** 문의서 뒤에 일반 대화가 생기면 다음 문의 진입은 새 문의서를 현재 대화 끝에 추가한다. */
+  @Test
+  @DisplayName("문의서 뒤에 TEXT가 있으면 재문의서를 저장한다")
+  void inquiryAfterTextStoresAnotherInquiryCard() {
+    InquiryResponse first = chatService.createInquiry(TENANT_ID, LISTING_ID);
+    appendText(first.chatRoomId(), LANDLORD_ID, "문의서 뒤의 답변", Instant.now());
+
+    InquiryResponse second = chatService.createInquiry(TENANT_ID, LISTING_ID);
+
+    assertThat(second.created()).isFalse();
+    assertThat(messageRepository.findBefore(first.chatRoomId(), null, 10))
+        .extracting(Message::getType)
+        .containsExactly(MessageType.INQUIRY_CARD, MessageType.TEXT, MessageType.INQUIRY_CARD);
+    verify(inquiryCardRealtimePublisher, times(2)).publishNewInquiryCard(any());
+  }
+
+  /** 문의서 뒤에 신청서가 저장된 경우도 다른 활동이 생긴 것이므로 다시 문의할 때 새 문의서를 추가한다. */
+  @Test
+  @DisplayName("문의서 뒤에 BOOKING_CARD가 있으면 재문의서를 저장한다")
+  void inquiryAfterBookingStoresAnotherInquiryCard() {
+    InquiryResponse first = chatService.createInquiry(TENANT_ID, LISTING_ID);
+    appendBookingCard(first.chatRoomId(), 9002L, Instant.now());
+
+    InquiryResponse second = chatService.createInquiry(TENANT_ID, LISTING_ID);
+
+    assertThat(second.created()).isFalse();
+    assertThat(messageRepository.findBefore(first.chatRoomId(), null, 10))
+        .extracting(Message::getType)
+        .containsExactly(
+            MessageType.INQUIRY_CARD, MessageType.BOOKING_CARD, MessageType.INQUIRY_CARD);
+    verify(inquiryCardRealtimePublisher, times(2)).publishNewInquiryCard(any());
+  }
+
+  /** 직접 재문의는 새 문의서를 저장해 방을 다시 표시하고 사용자가 이미 숨긴 과거 메시지 경계와 삭제 시각은 보존한다. */
+  @Test
+  @DisplayName("숨긴 기존 방에 다시 문의하면 과거 이력 복원 없이 새 문의서를 저장한다")
   void repeatedInquiryShowsHiddenRoomWithoutRestoringHistory() {
     InquiryResponse first = chatService.createInquiry(TENANT_ID, LISTING_ID);
+    long firstInquiryId =
+        messageRepository.findBefore(first.chatRoomId(), null, 10).getFirst().getId();
     Instant deletedAt = Instant.parse("2026-08-20T01:02:03Z");
     LocalDateTime deletedAtUtc = LocalDateTime.of(2026, 8, 20, 1, 2, 3);
     jdbcTemplate.update(
@@ -175,7 +240,7 @@ class ChatInquiryIntegrationTest {
         WHERE chat_room_id = ? AND user_id = ?
         """,
         deletedAtUtc,
-        100L,
+        firstInquiryId,
         deletedAtUtc,
         first.chatRoomId(),
         TENANT_ID);
@@ -186,8 +251,12 @@ class ChatInquiryIntegrationTest {
 
     assertThat(second.created()).isFalse();
     assertThat(tenant.getRoomHiddenAt()).isNull();
-    assertThat(tenant.getHistoryHiddenThroughMessageId()).isEqualTo(100L);
+    assertThat(tenant.getHistoryHiddenThroughMessageId()).isEqualTo(firstInquiryId);
     assertThat(tenant.getDeleteRequestedAt()).isEqualTo(deletedAt);
+    assertThat(messageRepository.findBefore(first.chatRoomId(), null, 10))
+        .extracting(Message::getType)
+        .containsExactly(MessageType.INQUIRY_CARD, MessageType.INQUIRY_CARD);
+    verify(inquiryCardRealtimePublisher, times(2)).publishNewInquiryCard(any());
   }
 
   /** 선행 조회가 동시에 비어도 DB UNIQUE와 충돌 후 재조회로 모든 요청이 같은 roomId를 받는다. */
@@ -227,7 +296,7 @@ class ChatInquiryIntegrationTest {
       assertThat(count("chat_rooms")).isEqualTo(1);
       assertThat(count("chat_room_members")).isEqualTo(2);
       assertThat(count("chat_messages")).isEqualTo(1);
-      verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any(), any());
+      verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any());
     } finally {
       executor.shutdownNow();
     }
@@ -288,6 +357,54 @@ class ChatInquiryIntegrationTest {
         "CO_LIVING",
         350_000,
         500_000);
+  }
+
+  /** 테스트 채팅방의 마지막 메시지 포인터까지 실제 TEXT 저장 결과로 이동시킨다. */
+  private void appendText(long roomId, long senderId, String content, Instant sentAt) {
+    Message text =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .senderId(senderId)
+                .type(MessageType.TEXT)
+                .content(content)
+                .clientMessageId(UUID.randomUUID())
+                .sentAt(sentAt)
+                .build());
+    ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow();
+    chatRoomRepository.save(room.recordMessage(text.getId(), sentAt));
+  }
+
+  /** 테스트 채팅방에 신청서 메시지를 저장하고 마지막 메시지 포인터도 같은 카드로 이동시킨다. */
+  private void appendBookingCard(long roomId, long bookingId, Instant sentAt) {
+    BookingCardPayload payload =
+        new BookingCardPayload(
+            bookingId,
+            new BookingCardPayload.Listing(
+                LISTING_ID,
+                "https://cdn.kohere.com/listings/booking-thumb.jpg",
+                "Hongdae Studio share",
+                "Seogyo-dong, Mapo-gu",
+                420_000),
+            new BookingCardPayload.Applicant(
+                TENANT_ID, "Tenant", "MALE", "KR", "Korea", "tenant@example.com"),
+            "room-offer-1",
+            "Room A",
+            LocalDate.of(2026, 9, 1),
+            3,
+            0,
+            1_260_000);
+    Message bookingCard =
+        messageRepository.save(
+            Message.builder()
+                .chatRoomId(roomId)
+                .type(MessageType.BOOKING_CARD)
+                .bookingId(bookingId)
+                .payload(payload)
+                .sentAt(sentAt)
+                .build());
+    ChatRoom room = chatRoomRepository.findById(roomId).orElseThrow();
+    chatRoomRepository.save(room.recordMessage(bookingCard.getId(), sentAt));
   }
 
   /** no-FK 테이블의 실제 행 수를 확인해 도메인 반환만 맞고 저장이 중복되는 회귀를 막는다. */
