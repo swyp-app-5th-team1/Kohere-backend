@@ -2,13 +2,18 @@ package com.kohere.chat.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.booking.BookingCreatedEvent;
 import com.kohere.booking.application.BookingService;
 import com.kohere.booking.presentation.dto.BookingRequest;
 import com.kohere.chat.application.BookingCardService;
+import com.kohere.chat.application.ChatMessageCreatedEventPublisher;
 import com.kohere.chat.application.ChatMessageHistoryService;
 import com.kohere.chat.application.ChatService;
 import com.kohere.chat.application.dto.InquiryResponse;
@@ -73,6 +78,7 @@ class BookingCardIntegrationTest {
   @MockitoBean private ChatListingQueryService chatListingQueryService;
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private UserBlockService userBlockService;
+  @MockitoBean private ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /** 비동기 테스트가 남긴 행을 no-FK 삭제 순서로 비우고 모든 외부 협력 응답을 한곳에서 준비한다. */
   @BeforeEach
@@ -146,6 +152,7 @@ class BookingCardIntegrationTest {
     assertThat(payload.deposit()).isEqualTo(5_000_000);
     assertThat(payload.totalAmount()).isEqualTo(6_500_000);
     assertThat(room.getLastMessageId()).isEqualTo(card.getId());
+    verify(pushEventPublisher).publish(any(ChatRoom.class), any(Message.class), eq(LANDLORD_ID));
   }
 
   /** 문의 중이던 기존 roomId를 유지하고 과거 TEXT 뒤에 카드가 추가되는 실제 화면 흐름을 검증한다. */
@@ -196,6 +203,8 @@ class BookingCardIntegrationTest {
     assertThat(second.messageId()).isEqualTo(first.messageId());
     assertThat(count("chat_messages")).isEqualTo(1);
     assertThat(room().getLastMessageId()).isEqualTo(first.messageId());
+    verify(pushEventPublisher, times(1))
+        .publish(any(ChatRoom.class), any(Message.class), eq(LANDLORD_ID));
   }
 
   /**

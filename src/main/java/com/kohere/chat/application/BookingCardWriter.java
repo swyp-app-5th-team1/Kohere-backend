@@ -29,6 +29,7 @@ public class BookingCardWriter {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /**
    * 신청 카드를 아직 저장하지 않은 경우에만 생성한다.
@@ -67,7 +68,7 @@ public class BookingCardWriter {
                 .build());
 
     // 메시지 INSERT가 성공한 뒤에만 방의 마지막 메시지 포인터를 새 카드로 이동한다.
-    chatRoomRepository.save(room.recordMessage(saved.getId(), storedAt));
+    ChatRoom roomWithMessage = chatRoomRepository.save(room.recordMessage(saved.getId(), storedAt));
 
     List<ChatRoomMember> members = memberRepository.findByChatRoomId(roomId);
     if (members.size() != 2) {
@@ -87,6 +88,9 @@ public class BookingCardWriter {
           new MemberActivityResult(
               visible.getUserId(), visible.getRoomHiddenAt() == null, reopened));
     }
+
+    // bookingId 중복 분기는 이미 반환됐으므로 새 신청 카드를 받은 임대인에게만 알림 후보를 기록한다.
+    pushEventPublisher.publish(roomWithMessage, saved, event.landlordId());
 
     return new WriteResult(saved, true, memberActivities);
   }

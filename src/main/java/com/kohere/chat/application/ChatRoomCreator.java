@@ -31,6 +31,7 @@ public class ChatRoomCreator {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /**
    * 새 채팅방과 정확히 두 명의 참여자를 원자적으로 저장한다.
@@ -76,6 +77,9 @@ public class ChatRoomCreator {
     // 첫 메시지 저장이 성공한 뒤에만 목록 정렬과 미리보기가 문의서를 가리키도록 방 포인터를 갱신한다.
     ChatRoom roomWithMessage =
         chatRoomRepository.save(room.recordMessage(inquiryMessage.getId(), now));
+
+    // 문의를 실행한 임차인 본인이 아니라 새 문의를 받은 임대인에게만 외부 푸시 후보를 만든다.
+    pushEventPublisher.publish(roomWithMessage, inquiryMessage, room.getLandlordId());
     return new InquiryRoomCreation(roomWithMessage, inquiryMessage);
   }
 

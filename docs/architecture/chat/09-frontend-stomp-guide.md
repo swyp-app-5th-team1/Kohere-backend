@@ -14,6 +14,8 @@ Swagger에서는 REST API를 직접 실행할 수 있다. WebSocket/STOMP는 Swa
 
 문의서 카드만 연동할 때 필요한 API·응답·UI 규칙은 [10-inquiry-card-frontend-guide.md](10-inquiry-card-frontend-guide.md)에 따로 모았다.
 
+iOS FCM 토큰 등록·갱신·로그아웃 삭제와 푸시 클릭 채팅방 이동은 [11-frontend-push-notification-guide.md](11-frontend-push-notification-guide.md)를 참고한다.
+
 ## 1. 핵심 용어
 
 | 용어 | 쉬운 설명 |
@@ -944,11 +946,13 @@ Simple Broker는 연결이 끊긴 동안의 이벤트를 다시 재생하지 않
 - 요청자에게만 적용되는 채팅방 삭제 API
 - 채팅방의 상대방을 찾는 사용자 차단 API
 - 고정 사유를 사용하는 채팅방 상대 신고 접수와 원문 증거 저장
+- iOS 앱 설치본별 FCM 토큰 등록·갱신·로그아웃 삭제 REST API
+- 새 TEXT·INQUIRY_CARD·BOOKING_CARD의 iOS FCM 푸시 발송 코드
 
 현재 보완이 필요한 기능:
 
 - 기존 방의 대화·신청·삭제 상태에 따른 INQUIRY_CARD 재전송 판단
-- 푸시 알림
+- dev Firebase/APNs 연결과 실제 iPhone 푸시·딥링크 E2E 검증
 - 읽음 표시와 안 읽은 메시지 수
 - 사용자용 삭제 채팅방 복원
 - 관리자용 신고 처리·삭제 채팅방 복구
