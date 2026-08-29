@@ -6,7 +6,7 @@
 >
 > 상태: 단계별 구현 진행 중
 >
-> 현재 구현: 채팅방 생성·조회·사용자별 삭제·상대 차단, 메시지 이력, STOMP 인증·구독, TEXT·INQUIRY_CARD·BOOKING_CARD 실시간 전달
+> 현재 구현: 채팅방 생성·조회·사용자별 삭제·상대 차단, 메시지 이력, STOMP 인증·구독, TEXT·INQUIRY_CARD·BOOKING_CARD 실시간 전달, iOS FCM 기기 등록·삭제와 채팅 푸시 발송 코드
 
 이 폴더는 Kohere의 세입자·임대인 1:1 채팅 기능을 구현하기 위한 기준 문서다. 기존의 긴 단일 문서를 책임별로 나눴으며, 같은 내용을 여러 파일에 반복하지 않는다.
 
@@ -28,6 +28,7 @@
 | [08-testing-and-implementation.md](08-testing-and-implementation.md) | 클라이언트 동작, 테스트, 단계별 개발 계획, 운영 전환 기준 |
 | [09-frontend-stomp-guide.md](09-frontend-stomp-guide.md) | 프론트엔드용 WebSocket/STOMP 연결·구독·전송·ACK·재연결 안내 |
 | [10-inquiry-card-frontend-guide.md](10-inquiry-card-frontend-guide.md) | 프론트엔드용 문의하기·INQUIRY_CARD 응답·UI·View Detail 연동 안내 |
+| [11-frontend-push-notification-guide.md](11-frontend-push-notification-guide.md) | iOS 프론트엔드용 FCM 토큰 등록·갱신·로그아웃 삭제·푸시 클릭 채팅방 이동 안내 |
 | [future/README.md](future/README.md) | 관리자 신고 처리·삭제 복구, 3개월 만료, 물리 삭제, iOS 채팅 푸시 등 후속 고도화 설계 |
 
 ### 문서의 역할과 우선순위
@@ -75,7 +76,7 @@
 - 사용자가 삭제한 채팅방의 Undo·복원
 - 타이핑 중·접속 중 표시
 - 채팅방 자동 시간 만료
-- 푸시 알림 ([후속 iOS 채팅 푸시 계획](future/06-chat-notifications.md))
+- dev Firebase/APNs 연결과 실제 iPhone의 background·종료 상태 채팅 푸시·딥링크 E2E 검증 ([iOS 채팅 푸시 설계](future/06-chat-notifications.md))
 - 다중 서버용 외부 broker relay
 - 백업 데이터 파기 자동화
 - 번역문 직접 수정과 사용자별 번역 용어 설정
@@ -93,6 +94,7 @@
 - API를 연동하려면 `02 → 03`을 읽는다.
 - 프론트에서 실시간 채팅을 연동하려면 `09`를 먼저 읽고 세부 계약은 `02 → 03`에서 확인한다.
 - 프론트에서 문의서 카드만 연동하려면 `10`을 먼저 읽고 전체 실시간 연결은 `09`에서 확인한다.
+- iOS에서 FCM 기기 등록과 채팅 푸시 딥링크를 연동하려면 `11`을 먼저 읽고 세부 백엔드 계획은 `future/06`에서 확인한다.
 - 백엔드를 구현하려면 `01 → 02 → 03 → 06 → 07 → 08` 순서로 읽는다.
 - 관리자 처리와 물리 삭제를 고도화할 때는 `future/README.md`부터 읽는다.
-- iOS 채팅 푸시와 채팅방 딥링크를 구현할 때는 `future/06-chat-notifications.md`를 읽는다.
+- iOS 프론트에서 채팅 푸시를 연동할 때는 `11-frontend-push-notification-guide.md`를 먼저 읽고, 백엔드 발송을 구현할 때는 `future/06-chat-notifications.md`를 읽는다.
