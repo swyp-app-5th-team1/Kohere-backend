@@ -227,6 +227,10 @@ public class SecurityConfig {
                     // 차단 목록·해제 — /api/v1/users/me 정확 매처가 /me/blocks를 덮지 않아 별도 매처가 필요하다.
                     .requestMatchers("/api/v1/users/me/blocks", "/api/v1/users/me/blocks/*")
                     .hasRole("USER")
+                    // FCM 기기 등록·삭제는 사용자별 푸시 발송 주소를 변경한다. /api/v1/users/me 정확 매처가
+                    // 하위 경로를 덮지 않으므로 ROLE_ONBOARDING이 anyRequest().authenticated()로 통과하지 않게 명시한다.
+                    .requestMatchers("/api/v1/users/me/push-devices/*")
+                    .hasRole("USER")
                     // (4) 게스트 허용(permitAll) — 회원·비회원이 함께 닿는다(#181). 만료 토큰이 조용히 게스트로 강등되지
                     // 않게 막는 가드는 JwtAuthenticationFilter에 있다(공개 티어 PublicPaths만 예외).
                     // 생활 팁 — 비회원 허용(US-8·08-life-tips.md). 게스트는 users 행이 없어 표시 언어를 en으로 고정하고,

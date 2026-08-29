@@ -2,7 +2,7 @@
 
 > 작성일: 2026-08-19
 >
-> 최종 수정: 2026-08-28
+> 최종 수정: 2026-08-29
 >
 > 상태: 단계별 구현 진행 중
 >
@@ -37,6 +37,7 @@
 - 실시간 protocol 계약은 `03-websocket-stomp.md`가 정본이다.
 - 현재 저장·사용자별 숨김 규칙은 `06-data-model-and-retention.md`가 정본이다.
 - 관리자 처리와 자동 보존 만료·물리 삭제 규칙은 `future/` 문서가 정본이다.
+- iOS 채팅 푸시의 기기 토큰·FCM payload·딥링크 계약은 `future/06-chat-notifications.md`가 정본이다.
 - 공통 보안·동시성 규칙은 `07-security-and-concurrency.md`가 정본이다.
 - `04-feature-flows.md`와 `05-sequence-diagrams.md`는 위 정본을 쉽게 설명하는 자료이며 새 정책을 선언하지 않는다.
 
