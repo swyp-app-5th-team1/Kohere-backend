@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 
+import com.kohere.chat.application.ChatMessageCreatedEventPublisher;
 import com.kohere.chat.application.ChatMessageHistoryService;
 import com.kohere.chat.application.ChatRoomCreator;
 import com.kohere.chat.application.ChatRoomDeletionService;
@@ -113,6 +114,9 @@ class ChatPersistenceIntegrationTest {
 
   /** 수신자 표시 언어 snapshot을 만드는 user 공개 API만 mock으로 대체한다. */
   @MockitoBean private UserAccountService userAccountService;
+
+  /** 저장소 정합성 테스트에서는 외부 알림 publication을 분리하고 각 서비스의 호출 가능성만 허용한다. */
+  @MockitoBean private ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /** CHECK 제약을 의도적으로 위반하는 SQL과 물리 타입 확인에만 사용하는 테스트 도구다. */
   @Autowired private JdbcTemplate jdbcTemplate;

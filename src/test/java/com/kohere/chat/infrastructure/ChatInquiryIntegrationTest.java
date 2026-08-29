@@ -3,10 +3,12 @@ package com.kohere.chat.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import com.kohere.chat.application.ChatMessageCreatedEventPublisher;
 import com.kohere.chat.application.ChatRoomCreator;
 import com.kohere.chat.application.ChatRoomEnsurer;
 import com.kohere.chat.application.ChatRoomSeed;
@@ -99,6 +101,7 @@ class ChatInquiryIntegrationTest {
   @MockitoBean private UserAccountService userAccountService;
   @MockitoBean private UserBlockService userBlockService;
   @MockitoBean private InquiryCardRealtimePublisher inquiryCardRealtimePublisher;
+  @MockitoBean private ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /** 동시성 테스트가 커밋한 행도 다음 테스트에 남지 않도록 no-FK 삭제 순서로 직접 비운다. */
   @BeforeEach
@@ -150,6 +153,7 @@ class ChatInquiryIntegrationTest {
     assertThat(inquiryCard.getInquiryPayload().monthlyRentMax()).isEqualTo(500_000);
     assertThat(room.getLastMessageId()).isEqualTo(inquiryCard.getId());
     verify(inquiryCardRealtimePublisher).publishNewInquiryCard(any());
+    verify(pushEventPublisher).publish(any(ChatRoom.class), any(Message.class), eq(LANDLORD_ID));
   }
 
   /** 같은 요청을 반복하면 새 행을 만들지 않고 최초 roomId를 200 응답용 결과로 돌려준다. */
@@ -166,6 +170,8 @@ class ChatInquiryIntegrationTest {
     assertThat(count("chat_room_members")).isEqualTo(2);
     assertThat(count("chat_messages")).isEqualTo(1);
     verify(inquiryCardRealtimePublisher, times(1)).publishNewInquiryCard(any());
+    verify(pushEventPublisher, times(1))
+        .publish(any(ChatRoom.class), any(Message.class), eq(LANDLORD_ID));
   }
 
   /** 신청하기로 먼저 만들어진 같은 방에도 문의하기를 누르면 첫 문의서를 이어서 저장한다. */

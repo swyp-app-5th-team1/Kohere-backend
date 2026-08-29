@@ -18,6 +18,7 @@ import com.kohere.chat.domain.ChatRoomMemberRepository;
 import com.kohere.chat.domain.ChatRoomNotFoundException;
 import com.kohere.chat.domain.ChatRoomRepository;
 import com.kohere.chat.domain.ChatUnavailableException;
+import com.kohere.chat.domain.ListingSnapshot;
 import com.kohere.chat.domain.Message;
 import com.kohere.chat.domain.MessageRepository;
 import com.kohere.chat.domain.MessageType;
@@ -55,6 +56,7 @@ class ChatTextMessageServiceTest {
   @Mock private ChatMessageTranslationRepository translationRepository;
   @Mock private UserAccountService userAccountService;
   @Mock private UserBlockService userBlockService;
+  @Mock private ChatMessageCreatedEventPublisher pushEventPublisher;
 
   private ChatTextMessageService service;
 
@@ -67,7 +69,8 @@ class ChatTextMessageServiceTest {
             messageRepository,
             translationRepository,
             userAccountService,
-            userBlockService);
+            userBlockService,
+            pushEventPublisher);
   }
 
   /** 신규 원문은 한 번 저장하고 저장된 ID로 방 마지막 메시지 포인터를 이동한다. */
@@ -101,6 +104,7 @@ class ChatTextMessageServiceTest {
     assertThat(roomCaptor.getValue().getLastMessageId()).isEqualTo(501L);
     assertThat(roomCaptor.getValue().getLastMessageAt()).isEqualTo(result.message().getSentAt());
     verify(memberRepository, never()).save(any(ChatRoomMember.class));
+    verify(pushEventPublisher).publish(roomCaptor.getValue(), result.message(), RECIPIENT_ID);
   }
 
   /** 숨긴 수신자는 방만 다시 보이게 하고 삭제 전에 숨긴 messageId 경계와 삭제 시각은 그대로 유지한다. */
@@ -158,6 +162,7 @@ class ChatTextMessageServiceTest {
     verify(translationRepository, never()).save(any(ChatMessageTranslation.class));
     verify(chatRoomRepository, never()).save(any(ChatRoom.class));
     verify(memberRepository, never()).save(any(ChatRoomMember.class));
+    verifyNoInteractions(pushEventPublisher);
   }
 
   /** UUID는 같은데 본문이 바뀌면 기존 메시지 의미가 달라지므로 명시적인 충돌로 거부한다. */
@@ -239,6 +244,8 @@ class ChatTextMessageServiceTest {
   /** 수신자 언어 조회와 PENDING 저장소가 DB ID를 반환하는 정상 경로를 준비한다. */
   private void prepareTranslationSave(String language) {
     given(userAccountService.getLanguage(RECIPIENT_ID)).willReturn(language);
+    given(chatRoomRepository.save(any(ChatRoom.class)))
+        .willAnswer(invocation -> invocation.getArgument(0));
     given(translationRepository.save(any(ChatMessageTranslation.class)))
         .willAnswer(
             invocation -> {
@@ -254,6 +261,7 @@ class ChatTextMessageServiceTest {
         .tenantId(SENDER_ID)
         .landlordId(RECIPIENT_ID)
         .category(ChatCategory.LANDLORD)
+        .listingSnapshot(new ListingSnapshot("고시원3", "마포구"))
         .createdAt(Instant.parse("2026-08-19T00:00:00Z"))
         .updatedAt(Instant.parse("2026-08-19T00:00:00Z"))
         .build();

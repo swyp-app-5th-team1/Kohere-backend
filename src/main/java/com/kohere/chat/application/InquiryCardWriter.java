@@ -29,6 +29,7 @@ public class InquiryCardWriter {
   private final ChatRoomRepository chatRoomRepository;
   private final ChatRoomMemberRepository memberRepository;
   private final MessageRepository messageRepository;
+  private final ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /**
    * 기존 방의 현재 이력과 임차인 표시 상태를 확인하고 필요한 경우 문의서를 저장한다.
@@ -74,6 +75,9 @@ public class InquiryCardWriter {
 
     List<InquiryCardProcessResult.MemberActivity> activities =
         updateMemberVisibility(members, tenantId, now);
+
+    // 연속 중복 분기는 위에서 반환됐으므로 실제 저장된 재문의만 임대인용 푸시 후보가 된다.
+    pushEventPublisher.publish(roomWithMessage, saved, room.getLandlordId());
     return Optional.of(new InquiryCardProcessResult(roomWithMessage, saved, false, activities));
   }
 

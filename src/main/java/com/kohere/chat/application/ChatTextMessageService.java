@@ -39,6 +39,7 @@ public class ChatTextMessageService {
   private final ChatMessageTranslationRepository translationRepository;
   private final UserAccountService userAccountService;
   private final UserBlockService userBlockService;
+  private final ChatMessageCreatedEventPublisher pushEventPublisher;
 
   /**
    * 인증 사용자의 TEXT를 신규 저장하거나 같은 재시도의 기존 결과를 반환한다.
@@ -120,7 +121,7 @@ public class ChatTextMessageService {
                 saved.getId(), recipient.getUserId(), targetLanguage, sentAt));
 
     // INSERT가 성공한 최종 messageId만 채팅방 목록의 마지막 메시지 포인터로 기록한다.
-    chatRoomRepository.save(room.recordMessage(saved.getId(), sentAt));
+    ChatRoom roomWithMessage = chatRoomRepository.save(room.recordMessage(saved.getId(), sentAt));
 
     ChatRoomMember visibleRecipient = recipient.showForNewActivity(sentAt, sentAt);
     boolean reopened = visibleRecipient != recipient;
@@ -131,6 +132,9 @@ public class ChatTextMessageService {
        */
       memberRepository.save(visibleRecipient);
     }
+
+    // 메시지·번역 작업·방 포인터·수신자 재표시가 모두 같은 트랜잭션에 준비된 뒤에만 알림 후보를 기록한다.
+    pushEventPublisher.publish(roomWithMessage, saved, recipient.getUserId());
 
     return new TextMessageSaveResult(
         saved, false, recipient.getUserId(), reopened, translation.getId());
