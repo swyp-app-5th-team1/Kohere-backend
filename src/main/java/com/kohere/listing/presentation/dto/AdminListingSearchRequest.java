@@ -13,7 +13,9 @@ import java.util.Set;
  * 두 벌 문서화·테스트해야 하고 "전체"가 {@code status} 생략과 중복된다.
  *
  * @param status 조회할 상태. 콤마로 여러 개 보낼 수 있다({@code ?status=PENDING,REJECTED})
- * @param sort 정렬 키. 현재는 {@code createdAt,asc}만 인식하고 그 외에는 등록 최신순이다
+ * @param sort 정렬 키. {@code createdAt,asc}(등록 오래된 순)와 {@code updatedAt,desc}(최근 수정순 — 수정 재심사 건이 등록
+ *     최신순 큐 바닥에 가라앉는 것을 따로 본다)를 인식하고, <b>그 밖의 값이나 생략은 400이 아니라 등록 최신순</b>이다. 허용값의 정본은 {@code
+ *     ListingRepositoryImpl#adminSort}이며, 모르는 키 하나로 심사 목록이 멈추지 않게 조용히 기본값으로 간다
  */
 public record AdminListingSearchRequest(
     Set<Listing.ListingStatus> status,

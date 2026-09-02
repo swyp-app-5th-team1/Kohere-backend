@@ -26,6 +26,13 @@ import java.util.Set;
  */
 final class ListingReviewFixtures {
 
+  /**
+   * 이 매물을 등록한 임대인이다. <b>심사하는 관리자와 반드시 다른 계정</b>이어야 한다 — 매물을 보유한 계정을 관리자로 승격하면 자기 매물을 자기가 심사하게 되어
+   * 스펙이 명시적으로 금지하는 상황이 되고, 임대인 이름 조합을 검증할 때도 두 조회({@code getUserType}·{@code getUserName})가 같은 id로
+   * 겹쳐 무엇을 세우고 있는지 흐려진다.
+   */
+  static final long LANDLORD_ID = 2L;
+
   private static final String LISTING_ID = "68e0000000000000000000a1";
   private static final String ROOM_OFFER_ID = "68e0000000000000000001a1";
   private static final String SECOND_ROOM_OFFER_ID = "68e0000000000000000001a2";
@@ -38,7 +45,7 @@ final class ListingReviewFixtures {
     return Listing.builder()
         .id(LISTING_ID)
         .schemaVersion(4)
-        .landlordId(1L)
+        .landlordId(LANDLORD_ID)
         .contact(new Listing.Contact("김담당", "+82) 10-1111-2222"))
         .businessRegistrationNumber("1112233344")
         .blogUrl(null)

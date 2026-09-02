@@ -45,7 +45,7 @@
 | GET | `/api/v2/users/me/listings` | 내 매물 목록(임대인) — **모든 상태**, `status`로 필터, 최근 수정순 | 필수(임대인) | 200 |
 | GET | `/api/v2/users/me/listings/{listingId}` | 내 매물 상세(임대인) — 수정 폼이 프리필할 **전 필드** | 필수(임대인) | 200 |
 | GET | `/api/v1/admin/listings` | 매물 심사 목록(관리자) — **모든 상태**, `status`로 필터 | 필수(관리자) | 200 |
-| GET | `/api/v1/admin/listings/{listingId}` | 심사용 상세(관리자) — 저장된 **전 필드** | 필수(관리자) | 200 |
+| GET | `/api/v1/admin/listings/{listingId}` | 심사용 상세(관리자) — 저장된 **전 필드** + 등록 임대인 이름 | 필수(관리자) | 200 |
 | POST | `/api/v1/admin/listings/{listingId}/approval` | 매물 승인(관리자) → `PUBLISHED` | 필수(관리자) | 200 |
 | POST | `/api/v1/admin/listings/{listingId}/rejection` | 매물 반려(관리자) → `REJECTED` + 사유 저장 | 필수(관리자) | 200 |
 
@@ -1367,13 +1367,23 @@ Request Body: 없음
 
 ### 심사 응답의 노출 범위
 
-심사 상세·목록은 **매물 문서에 저장된 모든 필드**를 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·`rejectionReason`을 감추지 않는다. 표시 여부는 관리자 화면이 정한다.
+심사 상세·목록은 **매물 문서에 저장된 모든 필드 + 등록 임대인의 계정 이름**을 담는다 — 세입자 응답이 감추는 `landlordId`·`businessRegistrationNumber`·설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)·`rejectionReason`을 감추지 않고, `landlordId` 바로 다음 자리에 **`landlordName`**(그 매물을 등록한 임대인 계정의 이름)을 더한다. 표시 여부는 관리자 화면이 정한다.
 
-노출해도 되는 근거는 둘이다 — 매물 문서에는 **임대인 개인 연락처가 저장되지 않으므로**(`contact.phone`은 지점 대표 전화, [ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended) 마스킹 대상 PII가 이 응답에 없고, `businessRegistrationNumber`는 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이라 오히려 필수다([ADR-0033](../../adr/0033-business-registry-verification.md) 개정). 표시 언어는 임대인 화면과 같이 한국어 고정이다.
+**`landlordName`만은 매물 문서에서 오는 값이 아니다.** 정본은 `users.name`이고, `listing`이 응답을 만드는 시점에 `user :: api`의 공개 쿼리 `getUserName`을 동기 호출해 **애플리케이션 레벨로 조합**한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). 매물은 MongoDB·계정은 MySQL이라 애초에 조인할 수 없는 값이기도 하다([ADR-0005](../../adr/0005-polyglot-persistence.md) — cross-store 조인 금지). **매물 문서에 이름을 스냅샷 저장하지 않는다** — 임대인이 프로필에서 이름을 고치면 심사 화면도 그대로 따라와야 하고, 등록 당시의 이름을 보존해야 할 요구가 없기 때문이다. 예약이 예약자 성명을 스냅샷 없이 조회 시점에 조인하는 것과 같은 선택이다([04-booking-inquiry-chat](./04-booking-inquiry-chat.md)).
+
+**`listing.contact.managerName`과는 다른 값이다.** 그쪽은 임대인이 등록 폼에 적어 넣은 **지점 담당자** 이름이고, `landlordName`은 **매물을 등록한 계정**의 이름이다. 임대인이 자기 지점을 직접 올리면 두 값이 같고, 본사 계정 하나로 여러 지점을 올리면 다르다 — 둘 다 응답에 들어 있으니 관리자 화면은 어느 쪽을 보여 줄지 정해 두어야 한다.
+
+**이름이 비어 있거나(소셜 provider가 이름을 주지 않은 계정·탈퇴로 PII를 익명화한 계정) 계정 행 자체를 찾지 못하면 응답에서 그 키가 빠진다.** 심사 대상은 매물이고 이름은 표시 보조값이라, 매물 한 건의 임대인을 찾지 못했다고 심사 목록 전체가 404로 죽어서는 안 된다. 같은 응답의 `serviceFeedback`·`rejectionReason`이 이미 쓰는 **값이 없으면 키를 생략한다**는 규칙 그대로다.
+
+> **그 생략은 저절로 되지 않는다.** `getUserName`은 이름이 없으면(미설정·탈퇴 익명화 — 탈퇴는 행이 남고 이름만 빈다) 빈 문자열을 주지만, **계정 행 자체가 없으면 `UserNotFoundException`을 던진다**. 그대로 흘리면 심사 목록이 통째로 `404 USER_NOT_FOUND`가 되는데, 그 코드는 "매물이 없다"도 "관리자가 없다"도 아니라 관리자 화면이 해석할 수 없다. 그래서 **`listing`이 그 예외만 잡아 이름을 비운다** — 같은 쿼리를 쓰는 `chat`·`booking`은 잡지 않는데, 거기서는 상대가 없으면 그 대화·예약 자체가 성립하지 않아 실패가 곧 정답이기 때문이다. 심사는 반대다: 임대인 계정이 사라져도 그 매물은 여전히 판단해야 할 대상으로 남는다.
+>
+> **잡는 자리는 심사 트랜잭션 밖이다.** 심사 4종은 모두 트랜잭션 안에서 도는데, 그 안에서 예외를 잡으면 잡기도 전에 스프링이 **바깥 트랜잭션을 rollback-only로 표시**한다(참여 트랜잭션의 실패 규칙). 정상 반환해도 커밋 시점에 터져 결국 `500`이 나가므로, 부재를 조용히 넘기려던 의도가 정반대로 뒤집힌다. 그래서 이름 조회는 **트랜잭션을 잠시 밀어 두고**(`NOT_SUPPORTED`) 수행한다.
+
+노출해도 되는 근거는 셋이다 — 매물 문서에는 **임대인 개인 연락처가 저장되지 않으므로**(`contact.phone`은 지점 대표 전화, [ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md) Amended) 마스킹 대상 PII가 이 응답에 없고, `businessRegistrationNumber`는 **관리자가 심사에서 진위를 수동 확인해야 하는 값**이라 오히려 필수이며, `landlordName`은 **심사자가 등록자를 알아보는 데 필요한 최소값**이다 — `landlordId` 숫자만으로는 화면에서 누구의 매물인지 분간할 수 없다. 이름을 실었다고 그 선이 넓어지지는 않는다 — 임대인의 개인 연락처·이메일은 여전히 싣지 않는다. 표시 언어는 임대인 화면과 같이 한국어 고정이다.
 
 ### GET /api/v1/admin/listings — 매물 심사 목록
 
-- 설명: **모든 상태**의 매물을 등록 최신순으로 조회한다. `status`로 상태별 필터가 가능하다.
+- 설명: **모든 상태**의 매물을 조회한다. 기본은 등록 최신순이고 `sort`로 바꿀 수 있으며, `status`로 상태별 필터가 가능하다.
 - 인증: 필수(관리자)
 
 쿼리 파라미터:
@@ -1383,12 +1393,24 @@ Request Body: 없음
 | `status` | `ListingStatus[]` | 선택 | 상태 필터. 콤마로 여러 개(`?status=PENDING,REJECTED`). **생략하면 전체** |
 | `page` | integer | 선택 | 0부터. 기본 `0` |
 | `size` | integer | 선택 | 기본 `20`, 최대 `100` |
+| `sort` | string | 선택 | 정렬 키. `createdAt,asc`(등록 오래된 순 — 먼저 올라온 것부터 심사한다) · `updatedAt,desc`(최근 수정순 — 수정 재심사 건이 등록 최신순 큐 바닥에 가라앉는 것을 따로 보는 용도). **그 밖의 값이나 생략은 400이 아니라 등록 최신순**이다 — 모르는 정렬 키 하나로 심사 목록이 멈추지 않게 조용히 기본값으로 간다 |
+
+성공 Response (200): `data.content[]`의 각 항목은 아래 `GET /api/v1/admin/listings/{listingId}`(심사용 상세)와 **같은 구조**이며 `landlordName`도 그대로 들어 있다. 항목 한 건의 앞머리만 보면 이렇다.
+
+```jsonc
+{
+  "listing": { "listingId": "6858e2000000000000000001", "title": "…" },  // 세입자 상세와 같은 구조(표시 언어만 한국어 고정)
+  "landlordId": 11,
+  "landlordName": "김임대",  // 이름이 없거나 계정을 찾을 수 없으면 이 키가 빠진다
+  "businessRegistrationNumber": "1234567890"
+}
+```
 
 발생 가능한 에러: `400 INVALID_INPUT`(정의되지 않은 `status`, `size` 범위 초과) · `403 FORBIDDEN`(관리자 아님) · `403 AUTH_ONBOARDING_REQUIRED` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.
 
 ### GET /api/v1/admin/listings/{listingId} — 심사용 상세
 
-- 설명: 심사 대상 매물의 **저장된 전 필드**를 반환한다. 상태와 무관하게 조회된다.
+- 설명: 심사 대상 매물의 **저장된 전 필드**에 `landlordId` 다음 자리의 **`landlordName`**(등록 임대인 계정 이름 — 매물 문서 밖에서 조회 시점에 조합, 위 「심사 응답의 노출 범위」)을 더해 반환한다. 상태와 무관하게 조회된다.
 - 인증: 필수(관리자)
 
 발생 가능한 에러: `404 LISTING_NOT_FOUND`(없는 id·ObjectId 형식 아님) · `403 FORBIDDEN` · `401 UNAUTHENTICATED`/`TOKEN_EXPIRED`.

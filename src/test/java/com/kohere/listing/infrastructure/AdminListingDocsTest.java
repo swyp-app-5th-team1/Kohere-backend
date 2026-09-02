@@ -40,6 +40,7 @@ import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.user.api.UserAccountService;
+import com.kohere.user.domain.UserNotFoundException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -89,6 +90,13 @@ class AdminListingDocsTest {
 
   /** 정식 회원이지만 관리자가 아니라 서비스가 403으로 거르는 계정이다. */
   private static final long LANDLORD_ID = 42L;
+
+  /** 시드 매물 두 건의 소유 임대인이다({@code listings-v4.json}). 위 {@link #LANDLORD_ID}와는 다른 계정이다. */
+  private static final long SEEDED_LANDLORD_ID = 11L;
+
+  private static final long SECOND_SEEDED_LANDLORD_ID = 12L;
+
+  private static final String SEEDED_LANDLORD_NAME = "김임대";
 
   private static final String LISTINGS_COLLECTION = "listings";
   private static final String LISTING_CATALOG_COLLECTION = "listingCatalog";
@@ -146,6 +154,10 @@ class AdminListingDocsTest {
 
     given(userAccountService.getUserType(ADMIN_ID)).willReturn("ADMIN");
     given(userAccountService.getUserType(LANDLORD_ID)).willReturn("LANDLORD");
+    // 심사 응답의 landlordName은 매물 문서가 아니라 user에서 온다. 시드 두 매물의 임대인을 각각 세워
+    // 두지 않으면 mock이 null을 돌려주고 그 키가 통째로 빠져, 문서 예시에 필드가 나타나지 않는다.
+    given(userAccountService.getUserName(SEEDED_LANDLORD_ID)).willReturn(SEEDED_LANDLORD_NAME);
+    given(userAccountService.getUserName(SECOND_SEEDED_LANDLORD_ID)).willReturn("이임대");
   }
 
   @Test
@@ -156,11 +168,14 @@ class AdminListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken()))
                 .queryParam("status", "PENDING")
                 .queryParam("page", "0")
-                .queryParam("size", "20"))
+                .queryParam("size", "20")
+                .queryParam("sort", "createdAt,asc"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.content[0].listing.status").value("PENDING"))
         // 세입자 응답이 감추는 값이 심사 응답에는 들어 있다.
         .andExpect(jsonPath("$.data.content[0].businessRegistrationNumber").isString())
+        // 이 값만은 매물 문서가 아니라 user에서 조합해 온 것이다.
+        .andExpect(jsonPath("$.data.content[0].landlordName").value(SEEDED_LANDLORD_NAME))
         .andDo(
             document(
                 "admin-listing-list",
@@ -171,7 +186,11 @@ class AdminListingDocsTest {
                 queryParameters(
                     parameterWithName("status").description("상태 필터. 콤마로 여러 개. 생략하면 전체").optional(),
                     parameterWithName("page").description("0부터 시작하는 페이지 번호").optional(),
-                    parameterWithName("size").description("페이지 크기(기본 20, 최대 100)").optional()),
+                    parameterWithName("size").description("페이지 크기(기본 20, 최대 100)").optional(),
+                    parameterWithName("sort")
+                        .description(
+                            "정렬 키. createdAt,asc(등록 오래된 순) · updatedAt,desc(최근 수정순). 생략하면 등록 최신순")
+                        .optional()),
                 responseFields(adminListingPageResponseFields())));
   }
 
@@ -183,6 +202,7 @@ class AdminListingDocsTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(adminToken())))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.landlordId").isNumber())
+        .andExpect(jsonPath("$.data.landlordName").value(SEEDED_LANDLORD_NAME))
         .andDo(
             document(
                 "admin-listing-detail",
@@ -280,6 +300,38 @@ class AdminListingDocsTest {
                     HttpHeaders.AUTHORIZATION,
                     bearer(jwtTokenService.issueOnboardingToken(ADMIN_ID))))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void 임대인계정을_찾지못해도_심사목록은_살아있다() throws Exception {
+    // 임대인 계정이 사라졌거나 탈퇴한 매물. getUserName이 던지는 예외를 listing이 잡지 않으면
+    // 매물 한 건 때문에 목록 전체가 404 USER_NOT_FOUND가 된다 — 이 API의 핵심 회귀 지점이다.
+    // 스니펫은 만들지 않는다: 같은 오퍼레이션의 2xx 예시가 둘이 되면 문서에서 어느 쪽이 정본인지 갈린다.
+    given(userAccountService.getUserName(SEEDED_LANDLORD_ID))
+        .willThrow(new UserNotFoundException());
+
+    mockMvc
+        .perform(
+            get("/api/v1/admin/listings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken()))
+                .queryParam("status", "PENDING"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content[0].landlordId").isNumber())
+        .andExpect(jsonPath("$.data.content[0].landlordName").doesNotExist());
+  }
+
+  @Test
+  void 이름이_빈_계정은_키가_빠진다() throws Exception {
+    // getUserName은 이름 미설정을 빈 문자열로 준다(소셜 provider 미제공·탈퇴 익명화).
+    // 그대로 실으면 "이름이 없다"와 "이름이 빈칸이다"가 클라이언트에서 갈리지 않는다.
+    given(userAccountService.getUserName(SEEDED_LANDLORD_ID)).willReturn("");
+
+    mockMvc
+        .perform(
+            get("/api/v1/admin/listings/{listingId}", PENDING_LISTING_ID)
+                .header(HttpHeaders.AUTHORIZATION, bearer(adminToken())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.landlordName").doesNotExist());
   }
 
   @Test

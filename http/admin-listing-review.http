@@ -231,6 +231,14 @@ Content-Type: application/json
 # ─────────────────────────────── 심사 ───────────────────────────────
 
 ### 9. 심사 목록 — 모든 상태. 시드 2건(PUBLISHED)과 7번 등록 1건(PENDING)이 함께 나온다
+#     ★ 각 항목에 landlordName(등록 임대인 계정 이름)이 함께 온다. 매물 문서가 아니라 user 에서
+#       조회 시점에 붙여 오는 값이다.
+#       · 7번으로 등록한 매물 → 5번 landlordLogin 계정의 이름이 실린다.
+#       · 시드 2건(landlordId 11·12) → 로컬 MySQL 에 그 계정이 없다면 **키가 통째로 빠지는 것이 정상**이다.
+#         버그가 아니다. ★ 여기서 정말 확인할 것은 **응답이 200 이라는 것** 이다 —
+#         임대인을 못 찾은 매물이 섞여도 목록 전체가 404·500 으로 죽지 않는 것이 이 설계의 요점이고,
+#         이름 조회를 심사 트랜잭션 밖에서 하는 이유도 그것이다(LandlordNameLookup 주석 참고).
+#         users 에 id 11·12 가 실제로 있으면 그 이름이 실린다 — 어느 쪽이든 200 이면 통과다.
 GET {{baseUrl}}/api/v1/admin/listings?page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
@@ -238,8 +246,17 @@ Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 GET {{baseUrl}}/api/v1/admin/listings?status=PENDING&page=0&size=20
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
-### 11. 심사 상세 — **저장된 전 필드**를 확인한다
-#     세입자 상세가 감추는 landlordId · businessRegistrationNumber · 설문 3종이 보여야 한다.
+### 10-1. 정렬 — 등록 오래된 순
+#     sort 는 createdAt,asc 와 updatedAt,desc 두 값만 인식한다(후자는 landlord-listing.http 15번이
+#     수정 재심사 큐로 쓴다). 그 밖의 값은 400 이 아니라 **조용히 등록 최신순**이다 —
+#     아래 sort 를 sort=foo 로 바꿔 보면 9번과 같은 순서로 돌아오는 것을 확인할 수 있다.
+GET {{baseUrl}}/api/v1/admin/listings?sort=createdAt,asc&page=0&size=20
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+### 11. 심사 상세 — **저장된 전 필드 + 임대인 이름**을 확인한다
+#     세입자 상세가 감추는 landlordId · landlordName · businessRegistrationNumber · 설문 3종이 보여야 한다.
+#     ★ landlordName(5번 계정 이름)과 listing.contact.managerName("김운영" — 7번 등록 폼에 적은
+#       지점 담당자)은 **서로 다른 값**이다. 둘이 나란히 실리니 화면이 어느 쪽을 쓸지 정해야 한다.
 GET {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 
@@ -318,4 +335,22 @@ Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
 ### 25. 관리자 로그아웃 → **204** (허용 목록)
 #     관리자도 세션은 끝낼 수 있어야 한다. refresh 는 웹이라 HttpOnly 쿠키로 함께 지워진다.
 POST {{baseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}
+
+# ─────────────────────── 임대인 이름은 스냅샷이 아니다 (선택) ───────────────────────
+# 26 → 27 을 이어서 실행하면 심사 응답의 landlordName 이 매물에 박힌 값이 아니라
+# 조회할 때마다 user 에서 새로 읽어 오는 값임을 눈으로 확인할 수 있다.
+# ※ 25번 로그아웃을 이미 실행했다면 4번으로 관리자 토큰을 다시 받는다.
+
+### 26. 임대인이 자기 이름을 바꾼다 → 200
+PATCH {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{landlordLogin.response.body.$.data.accessToken}}
+Content-Type: application/json
+
+{ "name": "이름바꿈" }
+
+### 27. 심사 상세를 다시 조회 → landlordName 이 **즉시** 바뀌어 있다
+#     매물 문서는 한 글자도 건드리지 않았는데 값이 따라온다. 스냅샷이었다면 옛 이름이 남았을 자리다.
+#     listing.contact.managerName("김운영")은 등록 폼 값이라 그대로다 — 둘이 다른 값임이 여기서 드러난다.
+GET {{baseUrl}}/api/v1/admin/listings/{{register.response.body.$.data.listingId}}
 Authorization: Bearer {{adminLogin.response.body.$.data.accessToken}}

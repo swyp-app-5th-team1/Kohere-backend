@@ -1083,13 +1083,13 @@ public final class ListingDocsFields {
       **요청 주의사항**
 
       - `status`를 **보내지 않으면 전체**다. 콤마로 여러 개 보낼 수 있다(`?status=PENDING,REJECTED`).
-      - `sort`는 `createdAt,asc`만 인식하고, 그 밖의 값이나 생략은 **등록 최신순**이다.
+      - `sort`를 보내지 않거나 인식하지 못하는 값을 보내면 **등록 최신순**이다(400이 아니다).
 
       **응답 주의사항**
 
       - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
-      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
-      - `serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다.
+      - 각 항목의 `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`landlordName`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
+      - `landlordName`·`serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다.
       - `listing.favorited`는 **항상 false**다. 관리자에게는 찜 개념이 없다.
       - `{code,label}`의 `label`은 **항상 한국어**다.
 
@@ -1117,9 +1117,9 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - **설문 3종의 부재 표현이 다르다** — `preferredNationalities`·`contractDifficulties`는 답하지 않았어도 **빈 배열**로 실리고, `serviceFeedback`은 값이 `null`이 아니라 **필드 자체가 생략된다**.
-      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
+      - `listing`은 매물 상세(`GET /api/v2/listings/{listingId}`)와 같은 구조다. 그 바깥에 **세입자 응답에는 없는 값**이 함께 실린다 — `landlordId`·`landlordName`·`businessRegistrationNumber`·`preferredNationalities`·`contractDifficulties`·`serviceFeedback`·`rejectionReason`.
       - `businessRegistrationNumber`는 **마스킹 없이 원문**이다. 심사에서 진위를 직접 확인하는 값이다.
-      - `serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
+      - `landlordName`·`serviceFeedback`·`rejectionReason`은 값이 null이 아니라 **필드 자체가 생략**된다. `rejectionReason`은 `status`가 `REJECTED`일 때만 실린다.
       - `listing.favorited`는 **항상 false**다.
       - `{code,label}`의 `label`은 **항상 한국어**다.
 
@@ -1239,6 +1239,12 @@ public final class ListingDocsFields {
         new ArrayList<>(
             listingDocumentFields(prefix + ".listing", null, ListingDocumentVariant.MANAGED));
     fields.add(field(prefix + ".landlordId", JsonFieldType.NUMBER, "매물 소유 임대인 계정 id. 세입자 응답에는 없다"));
+    fields.add(
+        optField(
+            prefix + ".landlordName",
+            JsonFieldType.STRING,
+            "매물 소유 임대인 계정 이름. 등록 폼의 지점 담당자(listing.contact.managerName)와는 다른 값이다."
+                + " 임대인 이름을 알 수 없으면 값이 null이 아니라 필드 자체가 생략된다"));
     fields.add(
         field(
             prefix + ".businessRegistrationNumber",
