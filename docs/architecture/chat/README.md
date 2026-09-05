@@ -2,11 +2,11 @@
 
 > 작성일: 2026-08-19
 >
-> 최종 수정: 2026-08-29
+> 최종 수정: 2026-09-06
 >
 > 상태: 단계별 구현 진행 중
 >
-> 현재 구현: 채팅방 생성·조회·사용자별 삭제·상대 차단, 메시지 이력, STOMP 인증·구독, TEXT·INQUIRY_CARD·BOOKING_CARD 실시간 전달, iOS FCM 기기 등록·삭제와 채팅 푸시 발송 코드
+> 현재 구현: 채팅방 생성·조회·사용자별 삭제·상대 차단, 메시지 이력, STOMP 인증·구독, TEXT·INQUIRY_CARD·BOOKING_CARD 실시간 전달, iOS FCM 기기 등록·삭제·채팅 푸시 발송, 사용자 단위 채팅 푸시 허용·거부 API
 
 이 폴더는 Kohere의 세입자·임대인 1:1 채팅 기능을 구현하기 위한 기준 문서다. 기존의 긴 단일 문서를 책임별로 나눴으며, 같은 내용을 여러 파일에 반복하지 않는다.
 
@@ -28,7 +28,7 @@
 | [08-testing-and-implementation.md](08-testing-and-implementation.md) | 클라이언트 동작, 테스트, 단계별 개발 계획, 운영 전환 기준 |
 | [09-frontend-stomp-guide.md](09-frontend-stomp-guide.md) | 프론트엔드용 WebSocket/STOMP 연결·구독·전송·ACK·재연결 안내 |
 | [10-inquiry-card-frontend-guide.md](10-inquiry-card-frontend-guide.md) | 프론트엔드용 문의하기·INQUIRY_CARD 응답·UI·View Detail 연동 안내 |
-| [11-frontend-push-notification-guide.md](11-frontend-push-notification-guide.md) | iOS 프론트엔드용 FCM 토큰 등록·갱신·로그아웃 삭제·푸시 클릭 채팅방 이동 안내 |
+| [11-frontend-push-notification-guide.md](11-frontend-push-notification-guide.md) | iOS 프론트엔드용 FCM 토큰 등록·갱신·로그아웃 삭제, 사용자 단위 채팅 푸시 on/off, 푸시 클릭 채팅방 이동 안내 |
 | [future/README.md](future/README.md) | 관리자 신고 처리·삭제 복구, 3개월 만료, 물리 삭제, iOS 채팅 푸시 등 후속 고도화 설계 |
 
 ### 문서의 역할과 우선순위
@@ -38,7 +38,7 @@
 - 실시간 protocol 계약은 `03-websocket-stomp.md`가 정본이다.
 - 현재 저장·사용자별 숨김 규칙은 `06-data-model-and-retention.md`가 정본이다.
 - 관리자 처리와 자동 보존 만료·물리 삭제 규칙은 `future/` 문서가 정본이다.
-- iOS 채팅 푸시의 기기 토큰·FCM payload·딥링크 계약은 `future/06-chat-notifications.md`가 정본이다.
+- iOS 채팅 푸시의 기기 토큰·사용자 수신 설정·FCM payload·딥링크 계약은 `future/06-chat-notifications.md`가 정본이다.
 - 공통 보안·동시성 규칙은 `07-security-and-concurrency.md`가 정본이다.
 - `04-feature-flows.md`와 `05-sequence-diagrams.md`는 위 정본을 쉽게 설명하는 자료이며 새 정책을 선언하지 않는다.
 
@@ -72,6 +72,7 @@
 - 이미지·영상·파일 메시지
 - 일반 `LISTING_CARD`, `SYSTEM` 메시지 (문의 전용 `INQUIRY_CARD`와 신청 전용 `BOOKING_CARD`는 범위에 포함)
 - 읽음 위치, 안 읽은 메시지 수, 숫자 1 표시
+- 채팅방별 푸시 알림 음소거
 - 메시지 수정·개별 삭제·전송 취소
 - 사용자가 삭제한 채팅방의 Undo·복원
 - 타이핑 중·접속 중 표시
