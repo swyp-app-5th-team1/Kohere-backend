@@ -6,5 +6,5 @@
  */
 @org.springframework.modulith.ApplicationModule(
     displayName = "Notification",
-    allowedDependencies = {"common", "chat"})
+    allowedDependencies = {"common", "chat", "user::api"})
 package com.kohere.notification;

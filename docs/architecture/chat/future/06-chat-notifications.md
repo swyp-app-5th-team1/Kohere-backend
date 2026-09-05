@@ -2,11 +2,11 @@
 
 > 작성일: 2026-08-28
 >
-> 최종 수정: 2026-08-29
+> 최종 수정: 2026-09-06
 >
-> 상태: 백엔드 코드 구현 — 실제 Firebase/APNs 연결과 iPhone E2E 검증 전
+> 상태: 백엔드 푸시·사용자 단위 on/off 코드 구현 — 실제 Firebase/APNs 연결과 iPhone E2E 검증 전
 >
-> 범위: iOS 앱의 1:1 채팅 `TEXT`·`INQUIRY_CARD`·`BOOKING_CARD` FCM 푸시와 채팅방 딥링크
+> 범위: iOS 앱의 1:1 채팅 `TEXT`·`INQUIRY_CARD`·`BOOKING_CARD` FCM 푸시, 사용자 단위 수신 설정, 채팅방 딥링크
 
 이 문서에서 말하는 기능은 예약 시각에 울리는 `alarm`이 아니라 새 채팅을 알려 주는 `notification`, 즉 **알림**이다.
 
@@ -15,6 +15,8 @@ iOS 프론트엔드가 바로 적용할 호출 시점·오류 처리·딥링크 
 현재 채팅은 MySQL 저장, REST 이력 조회, STOMP 실시간 전달을 제공한다. 하지만 앱이 백그라운드이거나 종료되면 WebSocket 연결만으로 사용자를 알릴 수 없다. 이 문서는 새 `TEXT`, `INQUIRY_CARD`, `BOOKING_CARD`가 저장됐을 때 FCM과 APNs를 거쳐 iOS 상단 알림을 표시하고, 사용자가 알림을 누르면 해당 채팅방으로 이동하는 기능을 정의한다.
 
 알림 목록을 서버에 저장하거나 읽음 상태를 관리하는 기능은 이번 범위에 포함하지 않는다. 푸시는 새 채팅이 있다는 힌트이며, 실제 메시지의 정본은 항상 MySQL의 채팅 메시지다.
+
+사용자는 채팅방별이 아닌 계정 전체의 채팅 푸시를 켜거나 끌 수 있다. 설정을 한 번도 변경하지 않은 사용자는 허용(`true`)으로 간주하고, 거부(`false`)인 동안에는 FCM을 호출하지 않는다.
 
 ## 1. 핵심 결정
 
@@ -32,6 +34,8 @@ iOS 프론트엔드가 바로 적용할 호출 시점·오류 처리·딥링크 
 | 표시 시각 | 원인 메시지가 MySQL에 실제 저장된 `sentAt` |
 | 메시지 미리보기 | 원문과 번역문을 푸시에 포함하지 않음 |
 | 알림 클릭 | `data.type`과 `data.roomId`를 이용해 채팅방 이동 |
+| 채팅 푸시 수신 설정 | 사용자 단위 `chatPushEnabled`; 설정 행이 없으면 `true` |
+| 설정 거부 처리 | `false`이면 모든 설치본으로의 채팅 FCM 발송을 건너뜀 |
 | 알림 목록 | 만들지 않음 |
 | 알림 읽음 처리 | 만들지 않음 |
 | 알림 전용 WebSocket | 만들지 않음 |
@@ -66,6 +70,8 @@ messageType = BOOKING_CARD
 - 새 `TEXT`·`INQUIRY_CARD`·`BOOKING_CARD` 커밋 후 수신자 결정
 - 수신자의 활성 FCM 토큰 조회
 - Firebase Admin SDK를 이용한 FCM 발송
+- 사용자 단위 채팅 푸시 수신 설정 조회·변경
+- 채팅 푸시가 꺼져 있으면 모든 등록 기기의 FCM 발송 생략
 - 앱이 background·종료 상태일 때 APNs 알림 표시
 - 알림 클릭 후 `roomId` 채팅방 딥링크
 - 만료되거나 잘못된 FCM 토큰 정리
@@ -78,7 +84,8 @@ messageType = BOOKING_CARD
 - 채팅 메시지 읽음 커서와 안 읽음 수
 - 앱 아이콘 배지
 - 인앱 알림함과 알림 전용 WebSocket
-- 전역 알림 on/off와 방별 음소거
+- 채팅방별 알림 음소거
+- 채팅 외 알림 종류별 수신 설정
 - Android Push와 Web Push
 - 약관 변경, 매물 승인·반려 등 채팅 외 알림
 - 메시지 원문·번역문 미리보기
@@ -94,7 +101,8 @@ flowchart LR
     BOOKING[입주 신청 이벤트] --> CHAT
     CHAT -->|메시지 저장| DB[(MySQL)]
     CHAT -->|커밋 후 알림 후보 이벤트| NOTIFICATION[Notification 모듈]
-    NOTIFICATION -->|수신자 기기 조회| DEVICES[(push_devices)]
+    NOTIFICATION -->|사용자 수신 설정 조회| PREFS[(notification_preferences)]
+    NOTIFICATION -->|허용된 수신자의 기기 조회| DEVICES[(push_devices)]
     NOTIFICATION -->|Firebase Admin SDK| FCM[FCM]
     FCM --> APNS[APNs]
     APNS --> RECEIVER[수신자 iOS]
@@ -201,6 +209,73 @@ DELETE /api/v1/users/me/push-devices/{installationId}
 
 FCM은 Kohere의 `userId`를 알지 못한다. 새 채팅이 발생했을 때 백엔드가 수신자의 휴대폰 주소를 찾을 수 있도록 사용자와 FCM 토큰의 관계를 DB에 보관한다.
 
+### 5.5 사용자 단위 채팅 푸시 설정
+
+`notification_preferences`는 사용자가 채팅 푸시를 받을지 저장한다. 채팅방별 설정이 아니며, 한 사용자의 모든 채팅과 모든 등록 기기에 공통으로 적용한다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `user_id` | 설정 소유 사용자이며 테이블의 기본 키 |
+| `chat_push_enabled` | 채팅 푸시 허용 여부, DB 기본값 `true` |
+| `created_at` | 설정 행 생성 시각 |
+| `updated_at` | 마지막 변경 시각 |
+
+저장과 조회 규칙:
+
+- 설정 행이 없는 기존·신규 사용자는 `true`로 판단한다.
+- 조회만 했을 때는 DB 행을 생성하지 않는다.
+- `PATCH`로 `false`를 보내면 행을 생성하거나 기존 행을 `false`로 갱신한다.
+- 이후 `true`를 보내면 행을 삭제하지 않고 `true`로 갱신한다.
+- 여러 기기에서 동시에 변경하면 서버가 마지막으로 처리한 값이 최종 설정이다.
+- 회원이 탈퇴하면 해당 사용자의 설정 행을 삭제한다.
+
+현재 설정 조회:
+
+```http
+GET /api/v1/users/me/notification-preferences
+Authorization: Bearer <accessToken>
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "chatPushEnabled": true
+  },
+  "error": null
+}
+```
+
+설정 변경:
+
+```http
+PATCH /api/v1/users/me/notification-preferences
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+```
+
+```json
+{
+  "chatPushEnabled": false
+}
+```
+
+변경이 성공하면 저장된 값을 `200 OK`로 다시 반환한다. `chatPushEnabled`가 누락되거나 `null`이면 `400 Bad Request`다.
+
+```json
+{
+  "success": true,
+  "data": {
+    "chatPushEnabled": false
+  },
+  "error": null
+}
+```
+
+알림을 꺼도 `push_devices`의 FCM 토큰은 삭제하지 않는다. 앱은 토큰 등록·갱신을 계속하고, 백엔드는 발송 직전에 설정을 확인한다. 사용자가 다시 `true`로 바꾸면 그 이후 새 채팅부터 푸시를 재개하며, 꺼져 있던 동안 생략한 푸시는 재발송하지 않는다.
+
+이 값은 백엔드 DB의 계정 설정이므로 앱 종료·기기 재부팅·로그아웃 후 재로그인·FCM 토큰 변경에도 유지된다. iOS 시스템 알림 권한과는 별개다. 백엔드 설정이 `true`여도 iOS에서 앱 알림을 막았다면 표시되지 않는다.
+
 ## 6. 채팅 메시지와 푸시 연결
 
 ### 6.1 발송 후보 생성
@@ -239,6 +314,7 @@ FCM은 Kohere의 `userId`를 알지 못한다. 새 채팅이 발생했을 때 �
 - 연속 중복 문의로 `INQUIRY_CARD`를 새로 저장하지 않음
 - 같은 `bookingId`의 `BOOKING_CARD`가 이미 저장돼 있음
 - 발신자 자신의 기기
+- 수신자의 `chatPushEnabled`가 `false`
 - 수신자에게 등록된 활성 FCM 토큰이 없음
 - Firebase가 비활성화된 local/test 환경
 
@@ -332,6 +408,7 @@ payload에 넣지 않는 값:
 | background | APNs가 iOS 상단 알림 표시 |
 | 앱 종료 | APNs가 iOS 상단 알림 표시 |
 | 알림 권한 거부 | OS 알림을 표시하지 못하지만 채팅 메시지는 DB에 정상 저장 |
+| 백엔드 채팅 푸시 설정 `false` | 앱 상태와 관계없이 새 채팅 FCM을 발송하지 않음 |
 | 로그아웃 | 해당 installation 토큰 삭제 후 사용자 푸시 중단 |
 
 푸시는 전송 보장 채널이 아니다. FCM이 요청을 수락해도 기기가 반드시 표시했다는 뜻은 아니다. 푸시를 놓쳐도 앱을 열면 MySQL에 저장된 채팅 메시지를 REST 이력으로 확인할 수 있다.
@@ -359,6 +436,7 @@ payload에 넣지 않는 값:
 ## 11. 보안과 개인정보
 
 - 기기 등록·삭제 API는 인증된 앱 사용자만 호출한다.
+- 알림 설정 조회·변경 API는 인증과 온보딩을 완료한 `ROLE_USER`만 호출한다.
 - 사용자 ID는 요청 body에서 받지 않고 JWT에서만 가져온다.
 - FCM 토큰은 비밀번호는 아니지만 특정 앱 설치본의 발송 주소이므로 민감하게 취급한다.
 - 토큰 원문을 로그, 에러 응답, 추적 태그에 남기지 않는다.
@@ -421,6 +499,19 @@ payload에 넣지 않는 값:
 - FCM 토큰 회전과 앱 재설치 후 새 토큰 등록
 - 로그아웃한 기기로 이전 사용자의 푸시가 가지 않음
 
+### 12.5 사용자 채팅 푸시 설정
+
+- 설정 행이 없는 신규·기존 사용자에게 `true` 반환
+- `GET`은 기본값을 반환하더라도 불필요한 DB 행을 생성하지 않음
+- `PATCH false` 시 사용자 행 생성 또는 갱신
+- `false`에서 `true`로 재변경하면 같은 행 갱신
+- 누락되거나 `null`인 `chatPushEnabled`는 `400`
+- `false`인 수신자에게는 기기 수와 관계없이 FCM 호출 없음
+- `true`로 돌려도 거부 기간의 푸시를 재발송하지 않음
+- 사용자별 설정 격리와 동시 변경의 last-write-wins 확인
+- 회원 탈퇴 시 해당 사용자의 설정 행 삭제
+- 비로그인은 `401`, 온보딩 미완료는 `403`
+
 ## 13. 단계별 구현 계획
 
 각 단계는 별도 이슈 또는 PR로 나누고 자동 테스트를 통과한 뒤 다음 단계로 진행한다.
@@ -431,10 +522,11 @@ payload에 넣지 않는 값:
 | 1. 기기 토큰 관리 | `push_devices`, 등록·갱신·삭제 API, 사용자별 조회 | 멱등 등록·계정 변경·로그아웃 테스트 통과 |
 | 2. 채팅 이벤트 | 신규 `TEXT`·`INQUIRY_CARD`·`BOOKING_CARD` 커밋 후 수신자 알림 후보 이벤트 발행 | 완료: 종류별 수신자·중복·실패 테스트 통과 |
 | 3. FCM 발송 | Firebase sender, payload 조립, 토큰별 결과·무효 토큰 정리 | 코드·fake adapter 테스트 완료, dev 실제 발송 확인 전 |
-| 4. iOS 연동 | 권한·토큰 등록·foreground 처리·딥링크 | background·종료 상태 실제 기기 E2E 통과 |
-| 5. 운영 보강 | 미완료 이벤트 재처리, 지표·알람, stale token 정리 | 장애·재시작 시나리오와 runbook 확인 |
+| 4. 사용자 수신 설정 | `notification_preferences`, GET/PATCH API, 발송 전 허용 확인 | 완료: 기본값·변경·발송 차단·보안 테스트 통과 |
+| 5. iOS 연동 | 권한·토큰 등록·수신 설정·foreground 처리·딥링크 | background·종료 상태 실제 기기 E2E 통과 |
+| 6. 운영 보강 | 미완료 이벤트 재처리, 지표·알람, stale token 정리 | 장애·재시작 시나리오와 runbook 확인 |
 
-Firebase 초기 설정과 아래 두 백엔드 구현 단위가 준비됐다. 남은 완료 조건은 dev Firebase/APNs 연결과 실제 iPhone 검증이다.
+Firebase 초기 설정과 아래 세 백엔드 구현 단위가 준비됐다. 남은 완료 조건은 dev Firebase/APNs 연결과 실제 iPhone 검증이다.
 
 ### 13.1 PR 1: 기기 토큰 관리 — 구현됨
 
@@ -459,7 +551,18 @@ Firebase 초기 설정과 아래 두 백엔드 구현 단위가 준비됐다. �
 - FCM의 영구 무효 토큰 응답만 삭제하고 일시 오류와 프로젝트 설정 오류에는 토큰을 유지한다.
 - 채팅 저장과 FCM 실패 분리, payload 계약, 다중 기기 부분 실패, Firebase 비활성화 테스트를 추가한다.
 
-### 13.3 iOS와 배포 확인
+### 13.3 PR 3: 사용자 단위 채팅 푸시 수신 설정 — 구현됨
+
+- 다음 Flyway 번호로 `notification_preferences` 테이블을 추가한다.
+- notification 모듈에 설정 domain, repository port, JPA adapter를 추가한다.
+- 설정 행이 없으면 `true`를 반환하고, 변경 시 사용자 행을 upsert하는 application service를 추가한다.
+- `GET/PATCH /api/v1/users/me/notification-preferences`와 요청·응답 DTO를 추가한다.
+- `SecurityConfig`에서 설정 API를 `ROLE_USER` 전용으로 고정한다.
+- `ChatMessagePushListener`가 기기를 조회하기 전에 수신 설정을 확인하고, `false`면 정상 완료로 종료한다.
+- 회원 탈퇴 이벤트를 처리할 때 해당 사용자의 설정 행도 삭제한다.
+- DB·service·REST 보안·listener·Swagger 문서 테스트를 추가한다.
+
+### 13.4 iOS와 배포 확인
 
 - 앱이 알림 권한을 요청하고 `installationId`와 FCM 토큰을 등록한다.
 - 로그아웃 전에 현재 installation 삭제 API를 호출한다.
@@ -473,6 +576,8 @@ Firebase 초기 설정과 아래 두 백엔드 구현 단위가 준비됐다. �
 - [x] 백엔드 기기 식별에 `installationId` 사용
 - [ ] iOS 앱이 `installationId`를 생성·보관하는 방식 확정
 - [ ] 기기 등록·삭제 API 계약을 앱 개발자와 공유
+- [ ] 사용자 단위 `chatPushEnabled` 조회·변경 API 계약을 앱 개발자와 공유
+- [x] 설정 행이 없으면 `true`로 판단하는 기본 정책 확정
 - [x] `CHAT_MESSAGE → title=채팅`과 세 메시지 종류별 `listingTitle` 기반 body 문구 확정
 - [x] 내부 이벤트에는 `messageType`을 두고 FCM `data`에서는 제외
 - [x] 원래 메시지 저장 시각을 `data.sentAt`으로 전달
