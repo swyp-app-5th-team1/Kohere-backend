@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.kohere.TestcontainersConfiguration;
 import com.kohere.chat.ChatMessageCreatedEvent;
 import com.kohere.chat.ChatMessageKind;
+import com.kohere.notification.application.NotificationPreferenceService;
 import com.kohere.notification.application.PushMessage;
 import com.kohere.notification.application.PushMessageSender;
 import com.kohere.notification.application.PushSendResult;
@@ -49,6 +51,7 @@ class ChatPushNotificationIntegrationTest {
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private PushDeviceRepository pushDeviceRepository;
+  @Autowired private NotificationPreferenceService preferenceService;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @MockitoBean private PushMessageSender messageSender;
@@ -59,6 +62,7 @@ class ChatPushNotificationIntegrationTest {
     await().atMost(Duration.ofSeconds(5)).until(() -> count("event_publication") == 0);
     jdbcTemplate.update("DELETE FROM event_publication");
     jdbcTemplate.update("DELETE FROM push_devices");
+    jdbcTemplate.update("DELETE FROM notification_preferences");
   }
 
   /** 공통 chat 이벤트가 두 등록 기기로 전달되고 provider가 해지했다고 답한 한 토큰만 실제 DB에서 제거되는지 확인한다. */
@@ -100,6 +104,24 @@ class ChatPushNotificationIntegrationTest {
         .containsEntry("messageId", "125")
         .doesNotContainKey("messageType");
     assertThat(pushDeviceRepository.findByFcmToken("sent-token")).isPresent();
+  }
+
+  /** 수신자가 채팅 푸시를 끄면 커밋된 이벤트는 완료하되 등록 기기가 있어도 provider를 호출하지 않는다. */
+  @Test
+  @DisplayName("채팅 푸시를 거부한 수신자에게는 FCM을 발송하지 않는다")
+  void skipsCommittedEventWhenRecipientDisabledChatPush() {
+    registerDevice(1L, "registered-token");
+    preferenceService.updateChatPushEnabled(RECIPIENT_ID, false);
+
+    new TransactionTemplate(transactionManager)
+        .executeWithoutResult(ignored -> eventPublisher.publishEvent(event()));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(count("event_publication")).isZero());
+
+    verifyNoInteractions(messageSender);
+    assertThat(pushDeviceRepository.findByFcmToken("registered-token")).isPresent();
   }
 
   /** 실제 JPA adapter를 통해 수신자의 발송 대상 설치본을 저장한다. */

@@ -23,12 +23,23 @@ import org.springframework.stereotype.Component;
 public class ChatMessagePushListener {
 
   private final PushDeviceRepository pushDeviceRepository;
+  private final NotificationPreferenceService preferenceService;
   private final ChatPushMessageFactory messageFactory;
   private final PushMessageSender messageSender;
 
   /** 수신자의 모든 활성 기기에 한 번씩 발송하고 FCM이 명확히 해지됐다고 답한 토큰만 삭제한다. */
   @ApplicationModuleListener(id = "notification.push-on-chat-message-created")
   public void onChatMessageCreated(ChatMessageCreatedEvent event) {
+    if (!preferenceService.isChatPushEnabled(event.recipientUserId())) {
+      log.info(
+          "Chat push skipped by recipient preference: eventId={}, roomId={}, messageId={}, recipientUserId={}",
+          event.eventId(),
+          event.roomId(),
+          event.messageId(),
+          event.recipientUserId());
+      return;
+    }
+
     List<PushDevice> devices = pushDeviceRepository.findAllByUserId(event.recipientUserId());
     if (devices.isEmpty()) {
       log.info(

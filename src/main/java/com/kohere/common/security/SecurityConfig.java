@@ -231,6 +231,10 @@ public class SecurityConfig {
                     // 하위 경로를 덮지 않으므로 ROLE_ONBOARDING이 anyRequest().authenticated()로 통과하지 않게 명시한다.
                     .requestMatchers("/api/v1/users/me/push-devices/*")
                     .hasRole("USER")
+                    // 계정 전체의 채팅 푸시 수신 설정도 사용자 개인 설정이므로 온보딩을 완료한 사용자만
+                    // 조회·변경할 수 있다. 정확 경로만 열어 향후 하위 관리 API가 자동으로 노출되지 않게 한다.
+                    .requestMatchers("/api/v1/users/me/notification-preferences")
+                    .hasRole("USER")
                     // (4) 게스트 허용(permitAll) — 회원·비회원이 함께 닿는다(#181). 만료 토큰이 조용히 게스트로 강등되지
                     // 않게 막는 가드는 JwtAuthenticationFilter에 있다(공개 티어 PublicPaths만 예외).
                     // 생활 팁 — 비회원 허용(US-8·08-life-tips.md). 게스트는 users 행이 없어 표시 언어를 en으로 고정하고,

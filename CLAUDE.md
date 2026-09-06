@@ -4,7 +4,7 @@
 
 ## 프로젝트
 
-**Kohere** — 외국인 맞춤 주거 유형 탐색 서비스(모바일 앱)의 백엔드. 5단계 진단으로 매물을 추천하고 임대인과 인앱 채팅으로 연결한다. 개요·범위는 [docs/project/project-brief.md](docs/project/project-brief.md).
+**Kohere** — 외국인 맞춤 주거 유형 탐색 서비스(모바일 앱)의 백엔드. 6단계 진단으로 매물을 추천하고 임대인과 인앱 채팅으로 연결한다. 개요·범위는 [docs/project/project-brief.md](docs/project/project-brief.md).
 
 ## 스택
 
@@ -27,7 +27,7 @@ CI([.github/workflows/ci.yml](.github/workflows/ci.yml))가 PR마다 `spotlessCh
 
 ## 아키텍처 (필독: [docs/convention/code-style.md](docs/convention/code-style.md))
 
-- **패키지 = 모듈(Bounded Context)**: `com.kohere.<module>` — `auth` · `user` · `listing` · `diagnosis` · `booking` · `chat` · `community` · `gamification` · `report` · `common`(공유 커널). 결정: [ADR-0001](docs/adr/0001-bounded-context-module-decomposition.md).
+- **패키지 = 모듈(Bounded Context)**: `com.kohere.<module>` — `auth` · `user` · `listing` · `diagnosis` · `booking` · `chat` · `notification` · `report` · `community` · `gamification` · `lifetip` · `common`(공유 커널). 결정: [ADR-0001](docs/adr/0001-bounded-context-module-decomposition.md).
 - 각 모듈 내부는 **DDD 4계층**: `presentation → application → domain ← infrastructure`. 의존은 항상 도메인을 향한다. Repository 인터페이스는 `domain`, 구현은 `infrastructure`.
 - **모듈 간 직접 호출·엔티티 공유 금지** → **도메인 이벤트(Application Events)** 로 통신(예: `booking` → `chat`의 `BookingCreatedEvent`). 결정: [ADR-0002](docs/adr/0002-inter-module-communication-via-events.md).
 - 모듈 내부 타입은 package-private, 노출할 것만 `public`. `package-info.java`의 `@ApplicationModule`로 허용 의존을 화이트리스트로 선언.
@@ -46,7 +46,7 @@ CI([.github/workflows/ci.yml](.github/workflows/ci.yml))가 PR마다 `spotlessCh
 
 | 찾는 것 | 위치 |
 | --- | --- |
-| 도메인별 엔드포인트 상세 스펙 | [docs/api/specs/](docs/api/specs/README.md) (`01-auth-onboarding` … `07-reports`) |
+| 도메인별 엔드포인트 상세 스펙 | [docs/api/specs/](docs/api/specs/README.md) (`01-auth-onboarding` … `08-life-tips`) |
 | 유저 스토리 + 인수 조건(AC) | [docs/requirements/user-stories.md](docs/requirements/user-stories.md) |
 | 시퀀스 다이어그램(사용자→앱→보안 필터→모듈→저장소) | [docs/architecture/sequence-diagrams/](docs/architecture/sequence-diagrams/README.md) |
 | 아키텍처 결정 기록 | [docs/adr/](docs/adr/README.md) |

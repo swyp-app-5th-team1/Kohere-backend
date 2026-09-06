@@ -25,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ChatMessagePushListenerTest {
 
   @Mock private PushDeviceRepository pushDeviceRepository;
+  @Mock private NotificationPreferenceService preferenceService;
   @Mock private ChatPushMessageFactory messageFactory;
   @Mock private PushMessageSender messageSender;
 
@@ -33,6 +34,7 @@ class ChatMessagePushListenerTest {
   @DisplayName("수신자 기기가 없으면 FCM 발송을 건너뛴다")
   void skipsRecipientWithoutDevice() {
     ChatMessageCreatedEvent event = event();
+    given(preferenceService.isChatPushEnabled(event.recipientUserId())).willReturn(true);
     given(pushDeviceRepository.findAllByUserId(event.recipientUserId())).willReturn(List.of());
     ChatMessagePushListener listener = listener();
 
@@ -41,11 +43,26 @@ class ChatMessagePushListenerTest {
     verifyNoInteractions(messageFactory, messageSender);
   }
 
+  /** 수신자가 계정 전체의 채팅 푸시를 끄면 기기 조회와 provider 호출까지 모두 생략한다. */
+  @Test
+  @DisplayName("수신 설정이 꺼져 있으면 모든 FCM 발송을 건너뛴다")
+  void skipsRecipientWhoDisabledChatPush() {
+    ChatMessageCreatedEvent event = event();
+    given(preferenceService.isChatPushEnabled(event.recipientUserId())).willReturn(false);
+    ChatMessagePushListener listener = listener();
+
+    listener.onChatMessageCreated(event);
+
+    verify(preferenceService).isChatPushEnabled(event.recipientUserId());
+    verifyNoInteractions(pushDeviceRepository, messageFactory, messageSender);
+  }
+
   /** 여러 기기 결과 중 UNREGISTERED로 분류된 토큰만 삭제하고 다른 실패 토큰은 유지한다. */
   @Test
   @DisplayName("영구 무효 토큰만 DB에서 삭제한다")
   void deletesOnlyInvalidToken() {
     ChatMessageCreatedEvent event = event();
+    given(preferenceService.isChatPushEnabled(event.recipientUserId())).willReturn(true);
     List<PushDevice> devices =
         List.of(
             device(1L, "sent-token"),
@@ -77,7 +94,8 @@ class ChatMessagePushListenerTest {
 
   /** 테스트 대상 listener에 mock 저장소·factory·발송 포트를 연결한다. */
   private ChatMessagePushListener listener() {
-    return new ChatMessagePushListener(pushDeviceRepository, messageFactory, messageSender);
+    return new ChatMessagePushListener(
+        pushDeviceRepository, preferenceService, messageFactory, messageSender);
   }
 
   /** 상태별 provider 응답 fixture를 간단히 만든다. */
