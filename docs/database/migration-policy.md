@@ -114,7 +114,6 @@
 | `listings` | `listings-v4.json` | 2 |
 | `universities` | `universities.json` | 14 |
 | `diagnosisQuestions` | `diagnosis-questions.json` | 8 |
-| `diagnosisSuggestions` | `diagnosis-suggestions.json` | 1 |
 | `quizzes` | `quizzes.json` | 5 |
 | `lifeTipTopics` | `life-tip-topics.json` | 5 |
 | `lifeTips` | `life-tips.json` | 6 |

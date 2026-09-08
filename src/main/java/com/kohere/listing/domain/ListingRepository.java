@@ -67,17 +67,23 @@ public interface ListingRepository {
    * 구현에서 {@code roomOffers} 배열의 단일 원소 기준으로 검사한다.
    */
   PageResponse<Listing> recommend(
-      String region,
-      Integer monthlyRentMin,
-      Integer monthlyRentMax,
-      Set<ConditionTag> conditions,
-      Set<String> includedUniversityCodes,
-      Set<String> excludedUniversityCodes,
-      String district,
-      String arcStatus,
-      int page,
-      int size,
-      String sort);
+      ListingRecommendationCondition condition, int page, int size, String sort);
+
+  /**
+   * 같은 조건으로 지도 마커 후보를 조회한다. 페이지네이션 없이 <b>상한까지</b> 반환하고 전체 매칭 수를 함께 준다.
+   *
+   * <p>{@link #recommend}와 <b>같은 조건 객체를 받아 같은 필터를 만든다</b> — 지도와 목록이 다른 매물을 가리키면 안 되기 때문이다.
+   *
+   * <p>페이지 조회와 달리 이 메서드는 페이지 크기 상한(100)에 걸리지 않는다. 그것이 이 메서드가 따로 있는 이유다 — {@code recommend}에 큰
+   * {@code size}를 넘겨도 저장소가 조용히 깎으므로 마커를 100개까지밖에 못 받는다.
+   *
+   * <p><b>상한을 넘어도 빈 목록을 돌려주지 않는다.</b> 초과분을 잘라 상한까지 채운다 — 호출자가 오류를 던지지 않기 때문에 빈 목록을 주면 지도가 통째로 비어
+   * 버린다.
+   *
+   * @param limit 반환할 마커 최대 개수
+   * @return 상한까지의 매물과 절단 전 전체 매칭 수
+   */
+  ListingMapSearchResult recommendForMap(ListingRecommendationCondition condition, int limit);
 
   /**
    * 저장 전에 식별자를 하나 발급한다.

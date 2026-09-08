@@ -1,7 +1,6 @@
 package com.kohere.diagnosis.infrastructure;
 
 import com.kohere.diagnosis.domain.ArcStatus;
-import com.kohere.diagnosis.domain.DiagnosisCondition;
 import com.kohere.diagnosis.domain.District;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
@@ -61,7 +60,10 @@ public class DiagnosisFlowSessionDocument {
     private Purpose purpose;
     private UniversityGroup university;
     private District district;
-    private Set<DiagnosisCondition> conditions;
+
+    /** 조건 코드 문자열. 정본 진단 문서와 같은 이유로 enum이 아니다({@link DiagnosisConditionCodes}). */
+    private Set<String> conditions;
+
     private Integer monthlyRentMin;
     private Integer monthlyRentMax;
     private ArcStatus arcStatus;

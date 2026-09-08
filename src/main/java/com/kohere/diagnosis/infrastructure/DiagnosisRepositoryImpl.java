@@ -38,13 +38,6 @@ public class DiagnosisRepositoryImpl implements DiagnosisRepository {
   }
 
   @Override
-  public Optional<Diagnosis> findInProgressByUserId(Long userId) {
-    return mongoRepository
-        .findFirstByUserIdAndStatus(userId, DiagnosisStatus.IN_PROGRESS)
-        .map(DiagnosisRepositoryImpl::toDomain);
-  }
-
-  @Override
   public Optional<Diagnosis> findLatestCompletedByUserId(Long userId) {
     return mongoRepository
         .findFirstByUserIdAndStatusOrderBySubmittedAtDesc(userId, DiagnosisStatus.COMPLETED)
@@ -77,7 +70,7 @@ public class DiagnosisRepositoryImpl implements DiagnosisRepository {
         .purpose(d.getPurpose())
         .university(d.getUniversity())
         .district(d.getDistrict())
-        .conditions(d.getConditions())
+        .conditions(DiagnosisConditionCodes.toCodes(d.getConditions()))
         .monthlyRentMin(d.getMonthlyRentMin())
         .monthlyRentMax(d.getMonthlyRentMax())
         .arcStatus(d.getArcStatus())
@@ -95,7 +88,7 @@ public class DiagnosisRepositoryImpl implements DiagnosisRepository {
         .purpose(e.getPurpose())
         .university(e.getUniversity())
         .district(e.getDistrict())
-        .conditions(e.getConditions())
+        .conditions(DiagnosisConditionCodes.toDomain(e.getConditions()))
         .monthlyRentMin(e.getMonthlyRentMin())
         .monthlyRentMax(e.getMonthlyRentMax())
         .arcStatus(e.getArcStatus())

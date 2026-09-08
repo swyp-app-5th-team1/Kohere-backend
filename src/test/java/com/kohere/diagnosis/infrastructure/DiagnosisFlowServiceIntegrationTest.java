@@ -1,6 +1,7 @@
 package com.kohere.diagnosis.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -20,11 +21,14 @@ import com.kohere.diagnosis.application.DiagnosisQuestionTranslator;
 import com.kohere.diagnosis.application.DiagnosisRecommendationReader;
 import com.kohere.diagnosis.application.dto.DiagnosisFlowResponse;
 import com.kohere.diagnosis.application.dto.FlowResultCode;
+import com.kohere.diagnosis.application.dto.QuestionResponse;
 import com.kohere.diagnosis.application.dto.RecommendationResultCode;
 import com.kohere.diagnosis.application.dto.V2RecommendationResponse;
+import com.kohere.diagnosis.domain.Diagnosis;
 import com.kohere.diagnosis.domain.DiagnosisAccessDeniedException;
 import com.kohere.diagnosis.domain.DiagnosisFlowSessionNotFoundException;
 import com.kohere.diagnosis.domain.DiagnosisNotFoundException;
+import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.Region;
 import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.OptionSpec;
@@ -32,6 +36,8 @@ import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
+import com.kohere.listing.api.RecommendationCriteria;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
 import java.util.List;
@@ -40,6 +46,7 @@ import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.data.mongo.DataMongoTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -84,6 +91,7 @@ class DiagnosisFlowServiceIntegrationTest {
 
   @Autowired DiagnosisFlowService flowService;
   @Autowired DiagnosisMongoRepository diagnosisMongoRepository;
+  @Autowired DiagnosisRepository diagnosisRepository;
   @Autowired DiagnosisQuestionMongoRepository questionMongoRepository;
   @Autowired DiagnosisFlowSessionMongoRepository flowSessionMongoRepository;
   @Autowired MongoTemplate mongoTemplate;
@@ -99,6 +107,17 @@ class DiagnosisFlowServiceIntegrationTest {
     ensureSessionUniqueIndexes();
     seedCatalog();
     given(userAccountService.getLanguage(anyLong())).willReturn("en");
+    // ① 지역 게이트가 부르는 1-arg 기본 스텁. 이게 없으면 Mockito 기본값 null이 돌아와
+    // 게이트에서 NPE가 나고(regionRetry로 새는 것이 아니다), 빈 페이지면 매 흐름이 regionRetry로 빠져
+    // 다음 답이 pendingField와 어긋나 INVALID_INPUT이 된다. 0건 흐름을 보려는 테스트가 직접 덮어쓴다.
+    given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(view()));
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(
+            new RecommendedListingMarkersView(
+                List.of(
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000001", 37.5, 126.9)),
+                1L));
     given(listingRecommendationService.recommendByCriteria(any(), anyString()))
         .willAnswer(
             invocation ->
@@ -243,16 +262,17 @@ class DiagnosisFlowServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("DISCARDED 진단은 v1 진행 중 초안 조회에 잡히지 않는다(v1 흐름 오염 없음)")
-  void discardedIsInvisibleToV1InProgressLookup() {
+  @DisplayName("폐기 기록은 진행 중 초안으로 남지 않는다(diagnoses에는 종료 상태만 쌓인다)")
+  void discardedIsNeverLeftAsInProgress() {
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(emptyPage());
     flowService.start(24L);
     answer(24L, "region", "BUSAN");
     answer(24L, "regionRetry", "NO"); // → DISCARDED 저장
 
-    assertThat(
-            diagnosisMongoRepository.findFirstByUserIdAndStatus(24L, DiagnosisStatus.IN_PROGRESS))
-        .isEmpty();
+    assertThat(diagnosisMongoRepository.findAll())
+        .extracting(DiagnosisDocument::getStatus)
+        .doesNotContain(DiagnosisStatus.IN_PROGRESS)
+        .containsExactly(DiagnosisStatus.DISCARDED);
   }
 
   private DiagnosisDocument onlyDiagnosisOf(long userId) {
@@ -590,9 +610,191 @@ class DiagnosisFlowServiceIntegrationTest {
         .hasSize(1);
   }
 
+  @Test
+  @DisplayName("마커 조회는 미확정 진단을 404로 막는다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
+  void markersRejectUnconfirmedDiagnosis() {
+    // 공개 API로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 준다) — 저장소에 직접 심는다.
+    Long draftId = diagnosisRepository.save(Diagnosis.startInProgress(60L)).getId();
+
+    assertThatThrownBy(() -> flowService.getRecommendationMarkers(60L, null, draftId))
+        .isInstanceOf(DiagnosisNotFoundException.class);
+    // 페이지 조회는 이 게이트가 없다 — v2-3 공개 계약을 이번에 바꾸지 않았다.
+    assertThatNoException()
+        .isThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null));
+  }
+
+  @Test
+  @DisplayName("마커 조회는 페이지 조회와 같은 소유권 규칙을 쓴다 — 타인은 403")
+  void markersRejectStranger() {
+    DiagnosisFlowResponse completed = runStudyFlow(61L);
+    assertThatThrownBy(
+            () -> flowService.getRecommendationMarkers(62L, null, completed.diagnosisId()))
+        .isInstanceOf(DiagnosisAccessDeniedException.class);
+  }
+
   // --- helpers ---
 
   /** 게스트 경로의 답 1건 — 회원 자리({@code userId})가 비고 세션 키가 신원이다. */
+  // ---------------------------------------------------------------------------------------------
+  // 공유 컴포넌트 회귀 가드 — v1 쓰기 경로로 이 로직을 구동하던 테스트가 사라지므로 v2 흐름으로 옮겼다.
+  // DiagnosisCriteriaMapper·DiagnosisAnswerApplier·DiagnosisQuestionTranslator·SequenceGenerator는
+  // v2가 계속 쓰는데, 여기 말고는 이들을 실제로 돌려 보는 자리가 없다.
+  // ---------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName("추천 조건은 대학 그룹을 개별 코드로 펼치고 월세 하한·상한·기본 정렬을 함께 전달한다")
+  void recommendationCriteriaExpandsUniversityGroupAndRentRange() {
+    DiagnosisFlowResponse completed = runStudyFlow(30L);
+
+    flowService.getRecommendations(30L, null, completed.diagnosisId(), 0, 20, null);
+
+    ArgumentCaptor<RecommendationCriteria> captor =
+        ArgumentCaptor.forClass(RecommendationCriteria.class);
+    verify(listingRecommendationService).recommendByCriteria(captor.capture(), anyString());
+    RecommendationCriteria criteria = captor.getValue();
+    assertThat(criteria.region()).isEqualTo("SEOUL");
+    assertThat(criteria.monthlyRentMin()).isEqualTo(200000);
+    assertThat(criteria.monthlyRentMax()).isEqualTo(500000);
+    assertThat(criteria.conditions()).containsExactly("FEMALE_ONLY");
+    // 그룹 코드가 아니라 멤버 대학 코드로 펼쳐져야 listing이 nearbyUniversityCodes와 ANY 매칭할 수 있다.
+    assertThat(criteria.includedUniversityCodes())
+        .containsExactlyInAnyOrder("SNU", "CAU", "SOONGSIL");
+    assertThat(criteria.excludedUniversityCodes()).isEmpty();
+    assertThat(criteria.district()).isNull();
+    assertThat(criteria.sort()).isEqualTo("recommended,desc");
+  }
+
+  @Test
+  @DisplayName("⑥ ARC 미발급(NO_ARC)은 conditions를 건드리지 않고 arcStatus로만 전달된다")
+  void arcNoArcPassesArcStatusToCriteriaWithoutTouchingConditions() {
+    flowService.start(31L);
+    answer(31L, "region", "SEOUL");
+    answer(31L, "purpose", "STUDY");
+    answer(31L, "university", "SNU_CAU_SOONGSIL");
+    flowService.next(
+        31L, null, new AnswerRequest("conditions", null, Set.of("FEMALE_ONLY"), null, null));
+    flowService.next(31L, null, new AnswerRequest("monthlyRent", null, null, 200000, 500000));
+    DiagnosisFlowResponse completed = answer(31L, "arcStatus", "NO_ARC");
+
+    flowService.getRecommendations(31L, null, completed.diagnosisId(), 0, 20, null);
+
+    ArgumentCaptor<RecommendationCriteria> captor =
+        ArgumentCaptor.forClass(RecommendationCriteria.class);
+    verify(listingRecommendationService).recommendByCriteria(captor.capture(), anyString());
+    // ⑥은 ④와 완전히 분리된 축이다 — listing이 arcStatus로 arcRequired=NOT_REQUIRED를 좁히고,
+    // conditions에는 사용자가 고른 ④ 답만 남는다(NO_ARC를 conditions에 섞지 않는다).
+    assertThat(captor.getValue().arcStatus()).isEqualTo("NO_ARC");
+    assertThat(captor.getValue().conditions()).containsExactly("FEMALE_ONLY");
+  }
+
+  @Test
+  @DisplayName("⑥ ARC 발급 완료(ARC_ISSUED)도 arcStatus 그대로 전달되고 conditions를 늘리지 않는다")
+  void arcIssuedPassesArcStatusToCriteria() {
+    DiagnosisFlowResponse completed = runStudyFlow(32L);
+
+    flowService.getRecommendations(32L, null, completed.diagnosisId(), 0, 20, null);
+
+    ArgumentCaptor<RecommendationCriteria> captor =
+        ArgumentCaptor.forClass(RecommendationCriteria.class);
+    verify(listingRecommendationService).recommendByCriteria(captor.capture(), anyString());
+    assertThat(captor.getValue().arcStatus()).isEqualTo("ARC_ISSUED");
+    assertThat(captor.getValue().conditions()).containsExactly("FEMALE_ONLY");
+  }
+
+  @Test
+  @DisplayName("잘못된 enum·조건 최대 초과·목적 불일치 답은 INVALID_INPUT")
+  void answerValidation() {
+    flowService.start(33L);
+    assertThatThrownBy(() -> answer(33L, "region", "MARS"))
+        .isInstanceOf(InvalidInputException.class);
+
+    flowService.start(34L);
+    answer(34L, "region", "SEOUL");
+    answer(34L, "purpose", "STUDY");
+    answer(34L, "university", "SNU_CAU_SOONGSIL");
+    assertThatThrownBy(
+            () ->
+                flowService.next(
+                    34L,
+                    null,
+                    new AnswerRequest(
+                        "conditions",
+                        null,
+                        Set.of("FEMALE_ONLY", "PRIVATE_BATH", "ENGLISH_OK", "MEALS_INCLUDED"),
+                        null,
+                        null)))
+        .isInstanceOf(InvalidInputException.class);
+
+    // ② NON_STUDY를 고르면 ③ 슬롯은 district다 — university 답은 목적과 어긋나 거절된다.
+    flowService.start(35L);
+    answer(35L, "region", "SEOUL");
+    answer(35L, "purpose", "NON_STUDY");
+    assertThatThrownBy(() -> answer(35L, "university", "SNU_CAU_SOONGSIL"))
+        .isInstanceOf(InvalidInputException.class);
+  }
+
+  @Test
+  @DisplayName("④ conditions에 주거 조건이 아닌 NO_ARC를 직접 넣으면 INVALID_INPUT")
+  void conditionsRejectNoArcDirectSelection() {
+    flowService.start(36L);
+    answer(36L, "region", "SEOUL");
+    answer(36L, "purpose", "STUDY");
+    answer(36L, "university", "SNU_CAU_SOONGSIL");
+    assertThatThrownBy(
+            () ->
+                flowService.next(
+                    36L, null, new AnswerRequest("conditions", null, Set.of("NO_ARC"), null, null)))
+        .isInstanceOf(InvalidInputException.class);
+  }
+
+  @Test
+  @DisplayName("문항은 표시 언어로 번역되고, 미지원 언어는 영어로 폴백한다")
+  void questionTranslationFallsBackToEnglish() {
+    questionMongoRepository.deleteAll();
+    questionMongoRepository.save(
+        DiagnosisQuestionDocument.builder()
+            .field("region")
+            .active(true)
+            .question(Map.of("en", "Select region", "ko", "지역 선택"))
+            .select(SelectSpec.builder().type("SINGLE").max(1).build())
+            .options(
+                List.of(
+                    OptionSpec.builder()
+                        .code("SEOUL")
+                        .label(Map.of("en", "Seoul", "ko", "서울"))
+                        .build()))
+            .build());
+
+    given(userAccountService.getLanguage(40L)).willReturn("ko");
+    DiagnosisFlowResponse ko = flowService.start(40L);
+    assertThat(ko.question().field()).isEqualTo("region");
+    assertThat(ko.question().question()).isEqualTo("지역 선택");
+    assertThat(ko.question().options()).extracting(QuestionResponse.Option::label).contains("서울");
+
+    // ja는 문서에 없는 언어 키다 — 빈 문자열이 아니라 en 값으로 떨어져야 한다.
+    given(userAccountService.getLanguage(41L)).willReturn("ja");
+    DiagnosisFlowResponse fallback = flowService.start(41L);
+    assertThat(fallback.question().question()).isEqualTo("Select region");
+    assertThat(fallback.question().options())
+        .extracting(QuestionResponse.Option::label)
+        .contains("Seoul");
+  }
+
+  @Test
+  @DisplayName("진단 id는 순차 발급되고 재진단은 기존 진단을 덮어쓰지 않는다")
+  void sequentialIdAndRediagnosisKeepsPrevious() {
+    Long first = runStudyFlow(42L).diagnosisId();
+    // 재진단 = /start 재호출. 세션만 갈아끼우고 확정된 진단은 건드리지 않는다.
+    Long second = runStudyFlow(42L).diagnosisId();
+
+    assertThat(second).isGreaterThan(first);
+    assertThat(diagnosisMongoRepository.findAll())
+        .extracting(DiagnosisDocument::getId)
+        .containsExactlyInAnyOrder(first, second);
+  }
+
+  // --- helpers ---
+
   private DiagnosisFlowResponse guestAnswer(String guestKey, String field, String code) {
     return flowService.next(null, guestKey, new AnswerRequest(field, code, null, null, null));
   }

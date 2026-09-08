@@ -9,8 +9,6 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 /** 진단 Spring Data MongoDB 리포지토리(infrastructure 내부). 어댑터에서만 사용한다. */
 interface DiagnosisMongoRepository extends MongoRepository<DiagnosisDocument, Long> {
 
-  Optional<DiagnosisDocument> findFirstByUserIdAndStatus(Long userId, DiagnosisStatus status);
-
   Optional<DiagnosisDocument> findFirstByUserIdAndStatusOrderBySubmittedAtDesc(
       Long userId, DiagnosisStatus status);
 

@@ -16,9 +16,6 @@ public interface DiagnosisRepository {
   /** id로 단건 조회(소유권 검증은 응용 계층). */
   Optional<Diagnosis> findById(Long id);
 
-  /** 사용자의 진행 중(IN_PROGRESS) 진단 초안 조회(단계별 답 저장 대상). */
-  Optional<Diagnosis> findInProgressByUserId(Long userId);
-
   /** 사용자의 최근 완료(COMPLETED) 진단 단건(submittedAt 내림차순 최상위). */
   Optional<Diagnosis> findLatestCompletedByUserId(Long userId);
 

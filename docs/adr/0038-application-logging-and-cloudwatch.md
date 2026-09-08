@@ -115,7 +115,7 @@ Proposed
 | `BOOKING_CREATED` | `bookingId`, `listingId`, `roomOfferId`, `moveInDate` | `BookingService.createBooking` |
 | `USER_BLOCKED` | `blockedUserId`, `bookingId` | `BookingService.blockBooking` |
 | `BOOKING_REPORTED` | `reportId`, `reportedUserId`, `reasonCode` | `BookingService.reportBooking` |
-| `DIAGNOSIS_COMPLETED` | `diagnosisId`, 추천 결과 유형 | `POST /api/v1/diagnoses` |
+| `DIAGNOSIS_COMPLETED` | `diagnosisId`, 추천 결과 유형 | `POST /api/v2/diagnoses/next` (마지막 슬롯 자동 확정) |
 | `DIAGNOSIS_STEP_ADVANCED` | `sessionId`, `step`, 선택지·분기 | `DiagnosisFlowService.next` — 게스트도 닿아 `userId`가 `anonymous`일 수 있고 그때는 `guestSessionId`가 유일한 축이다 |
 | `PROFILE_UPDATED` | 바뀐 필드명 목록만(값은 PII), `lang`은 값까지(번역을 좌우) | `UserService.updateMyProfile` |
 | `LISTING_REGISTERED` | `listingId`, `roomOfferCount`, `status`(항상 `PENDING`) | 매물 등록 서비스(`POST /api/v2/listings`) — 발급된 `listingId`가 경로에 없어 접근 로그로 복원되지 않는다 |

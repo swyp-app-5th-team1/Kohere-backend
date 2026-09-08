@@ -1,7 +1,6 @@
 package com.kohere.diagnosis.infrastructure;
 
 import com.kohere.diagnosis.domain.ArcStatus;
-import com.kohere.diagnosis.domain.DiagnosisCondition;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.District;
 import com.kohere.diagnosis.domain.Purpose;
@@ -52,7 +51,14 @@ public class DiagnosisDocument {
   private Purpose purpose;
   private UniversityGroup university;
   private District district;
-  private Set<DiagnosisCondition> conditions;
+
+  /**
+   * ④ 주거 조건 코드. <b>도메인 enum이 아니라 문자열로 든다</b> — 삭제된 enum 상수가 든 문서가 실재해서(0004가 백필한 {@code NO_ARC}),
+   * enum으로 선언하면 문서 매핑 단계의 {@code Enum.valueOf}가 던져 조회가 통째로 500이 된다. 문자열↔도메인 변환과 미등록 코드 폐기는 {@link
+   * DiagnosisConditionCodes}가 한 벌로 맡는다. 저장 모양은 enum을 그대로 쓰던 때와 동일하다.
+   */
+  private Set<String> conditions;
+
   private Integer monthlyRentMin;
   private Integer monthlyRentMax;
   private ArcStatus arcStatus;

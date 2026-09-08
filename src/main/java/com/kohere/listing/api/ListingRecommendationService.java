@@ -30,4 +30,19 @@ public interface ListingRecommendationService {
    */
   PageResponse<RecommendedListingView> recommendByCriteria(
       RecommendationCriteria criteria, String language);
+
+  /**
+   * 같은 조건에 맞는 매물의 <b>지도 마커만</b> 페이지 없이 반환한다(서버 상한까지).
+   *
+   * <p>지도 화면이 조건에 맞는 매물 전체를 한 번에 찍기 위한 경로다. 페이지 조회는 크기 상한이 있어 그 이상을 받을 수 없고, 카드 정보까지 함께 실려 응답이
+   * 불필요하게 커진다. 매칭 조건은 {@link #recommendByCriteria}와 <b>완전히 동일</b>하다 — 같은 진단이면 같은 매물 집합이다.
+   *
+   * <p>표시 언어를 받지 않는다. 마커에는 번역할 라벨이 하나도 없다.
+   *
+   * <p>{@code criteria}의 페이지네이션·정렬 필드는 무시한다.
+   *
+   * @param criteria 매칭 조건(페이지·정렬 필드는 쓰이지 않는다)
+   * @return 상한까지의 마커와 절단 전 전체 매칭 수
+   */
+  RecommendedListingMarkersView recommendMarkersByCriteria(RecommendationCriteria criteria);
 }

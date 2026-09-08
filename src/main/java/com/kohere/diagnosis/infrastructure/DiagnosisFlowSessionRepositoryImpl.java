@@ -88,7 +88,7 @@ public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionR
             .purpose(d.getPurpose())
             .university(d.getUniversity())
             .district(d.getDistrict())
-            .conditions(d.getConditions())
+            .conditions(DiagnosisConditionCodes.toCodes(d.getConditions()))
             .monthlyRentMin(d.getMonthlyRentMin())
             .monthlyRentMax(d.getMonthlyRentMax())
             .arcStatus(d.getArcStatus())
@@ -117,7 +117,7 @@ public class DiagnosisFlowSessionRepositoryImpl implements DiagnosisFlowSessionR
           .purpose(dd.getPurpose())
           .university(dd.getUniversity())
           .district(dd.getDistrict())
-          .conditions(dd.getConditions() == null ? new LinkedHashSet<>() : dd.getConditions())
+          .conditions(DiagnosisConditionCodes.toDomain(dd.getConditions()))
           .monthlyRentMin(dd.getMonthlyRentMin())
           .monthlyRentMax(dd.getMonthlyRentMax())
           .arcStatus(dd.getArcStatus());

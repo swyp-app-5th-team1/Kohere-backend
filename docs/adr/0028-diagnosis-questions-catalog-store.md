@@ -13,6 +13,8 @@ Accepted
 
 > [ADR-0005](./0005-polyglot-persistence.md)가 `diagnosis` 모듈의 영속을 MongoDB로 정했다. 본 ADR은 그 위에서 "**진단 문항·선택지 카탈로그를 어디에 어떤 형태로 저장하고 어떻게 제공할지**"(US-2-5, `GET /api/v1/diagnoses/questions/{step}` — 단계별 조회)를 결정한다. 카탈로그는 **데이터만** 담고(분기 메타 없음), ③ 분기는 비즈니스 로직(서비스가 저장된 답으로 결정)이다. 진행 중 답의 서버 저장(`POST /api/v1/diagnoses/answers` → in-progress 진단)은 별도 흐름이며 본 ADR은 카탈로그 저장·제공에 집중한다. 번역(i18n)은 후속 [ADR-0029](./0029-diagnosis-i18n-strategy.md)에서 다룬다.
 
+> **개정(2026-09-08, [#314](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/314))**: **문항 제공 경로가 바뀌었다.** 아래 본문이 전제하는 단계별 조회(`GET /api/v1/diagnoses/questions/{step}`)와 답 저장(`POST /api/v1/diagnoses/answers`), 확정(`POST /api/v1/diagnoses`)은 **제거됐고**, 문항은 서버 주도 흐름(`POST /api/v2/diagnoses/start`·`/next`) 응답의 `question` payload로 내려간다. 문항을 고르는 주체도 **클라이언트가 지정하는 `step`에서 서버가 들고 있는 `pendingField`로** 옮겨 갔다. **핵심 결정은 그대로 유효하다** — 카탈로그를 MongoDB `diagnosisQuestions`에 **데이터만** 두고(분기 메타 없음), ③ 분기는 서비스가 저장된 `purpose`로 결정하며, 선택지 `code`는 답 검증 enum과 동일 출처다. 관련 유저 스토리는 **US-2-7**이다(US-2-5는 그 스토리에 흡수됐다).
+
 ## Context
 
 - 진단은 6단계 문항으로 구성된다: ① 지역 `region` / ② 입국 목적(유학 여부) `purpose` / ③ 대학(그룹)·지역 (`university` 또는 `district`) / ④ 주거 조건 `conditions[]` / ⑤ 월세 범위 `monthlyRentMin`·`monthlyRentMax` / ⑥ ARC `arcStatus`. 각 문항은 문항 표시 텍스트(`question`), 선택지 코드·라벨 목록, 선택 제약(단일/다중·최대 개수)을 가진다(분기 메타는 두지 않는다 — 분기는 서비스가 결정). ⑤ 월세 범위는 선택지 목록이 아니라 두 숫자 입력(`NUMBER_RANGE`)으로, code-enum 1:1 불변식의 예외다. 표시 문자열(번역)은 도큐먼트 안에 **언어 코드를 키로 하는 맵**으로 임베드한다.

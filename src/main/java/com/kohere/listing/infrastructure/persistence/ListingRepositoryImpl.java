@@ -7,6 +7,7 @@ import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
+import com.kohere.listing.domain.ListingRecommendationCondition;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
@@ -177,46 +178,73 @@ public class ListingRepositoryImpl implements ListingRepository {
    */
   @Override
   public PageResponse<Listing> recommend(
-      String region,
-      Integer monthlyRentMin,
-      Integer monthlyRentMax,
-      Set<ConditionTag> conditions,
-      Set<String> includedUniversityCodes,
-      Set<String> excludedUniversityCodes,
-      String district,
-      String arcStatus,
-      int page,
-      int size,
-      String sort) {
+      ListingRecommendationCondition condition, int page, int size, String sort) {
+    return findPage(recommendCriteria(condition), page, size, sortBy(sort));
+  }
+
+  @Override
+  public ListingMapSearchResult recommendForMap(
+      ListingRecommendationCondition condition, int limit) {
+    int safeLimit = Math.max(1, limit);
+    Criteria criteria = recommendCriteria(condition);
+
+    long totalElements = mongoTemplate.count(new Query(criteria), ListingDocument.class);
+    // searchForMap의 조기 반환(초과 시 빈 목록)을 복사하지 말 것 — 그쪽은 호출자가 곧바로 400을 던져
+    // 빈 목록이 사용자에게 닿지 않지만, 이 경로는 오류를 던지지 않아 지도가 통째로 비어 버린다.
+    Query query = new Query(criteria).with(markerSort()).limit(safeLimit);
+    List<Listing> content =
+        mongoTemplate.find(query, ListingDocument.class).stream()
+            .map(ListingMongoMapper::toDomain)
+            .toList();
+
+    return new ListingMapSearchResult(content, totalElements);
+  }
+
+  /**
+   * 진단 조건을 지역·학교·예산·방 태그 조건으로 조합한다. <b>페이지 조회와 마커 조회가 이 한 벌을 공유하는 것이 "두 경로가 같은 매물 집합을 낸다"는 보장이다</b>
+   * — 사본을 두면 한쪽만 고쳐져 지도와 목록이 다른 매물을 가리킨다.
+   *
+   * <p>진단의 대학 그룹은 여기 도달하기 전에 개별 대학 코드 집합으로 펼쳐져 있다. 따라서 listing은 그룹 이름을 해석하지 않고, 저장된 {@code
+   * nearbyUniversityCodes}가 전달받은 코드 중 하나라도 포함하는지({@code includedUniversityCodes}) 또는 하나도 포함하지
+   * 않는지({@code excludedUniversityCodes} — "그 외 대학")만 확인한다. 후자는 진단 지역의 {@code ETC}를 명시 5구의 여집합으로 푸는
+   * {@link #addDistrictCriteria}와 같은 규칙이다.
+   *
+   * <p>월세와 방 태그, 즉시 입주 재고 조건은 모두 같은 {@code roomOffers[]} 원소가 만족해야 한다. 서로 다른 방 상품의 가격과 태그가 섞여 매칭되는
+   * 것을 막기 위해 {@code $elemMatch} 안에서 월세 하한/상한과 roomOffer 태그 조건을 함께 묶는다.
+   */
+  private static Criteria recommendCriteria(ListingRecommendationCondition condition) {
     List<Criteria> rootCriteria = new ArrayList<>();
     rootCriteria.add(Criteria.where("status").is(Listing.ListingStatus.PUBLISHED.name()));
-    if (region != null && !region.isBlank()) {
-      rootCriteria.add(Criteria.where("address.city").is(region));
+    // 좌표가 없는 매물은 지도에 찍을 수 없고 카드 응답도 좌표를 무방비로 읽는다.
+    rootCriteria.add(Criteria.where("location").ne(null));
+    if (condition.region() != null && !condition.region().isBlank()) {
+      rootCriteria.add(Criteria.where("address.city").is(condition.region()));
     }
-    if (includedUniversityCodes != null && !includedUniversityCodes.isEmpty()) {
-      rootCriteria.add(Criteria.where("nearbyUniversityCodes").in(includedUniversityCodes));
+    if (!condition.includedUniversityCodes().isEmpty()) {
+      rootCriteria.add(
+          Criteria.where("nearbyUniversityCodes").in(condition.includedUniversityCodes()));
     }
-    if (excludedUniversityCodes != null && !excludedUniversityCodes.isEmpty()) {
+    if (!condition.excludedUniversityCodes().isEmpty()) {
       // "그 외 대학"은 목록에 든 대학 어느 곳과도 인접하지 않은 매물이다. 배열 필드의 $nin은
       // 원소가 하나도 겹치지 않을 때 참이라 빈 배열(대학가 밖 매물)도 함께 잡힌다.
-      rootCriteria.add(Criteria.where("nearbyUniversityCodes").nin(excludedUniversityCodes));
+      rootCriteria.add(
+          Criteria.where("nearbyUniversityCodes").nin(condition.excludedUniversityCodes()));
     }
-    addDistrictCriteria(rootCriteria, district);
-    if (NO_ARC_ANSWER.equals(arcStatus)) {
+    addDistrictCriteria(rootCriteria, condition.district());
+    if (NO_ARC_ANSWER.equals(condition.arcStatus())) {
       rootCriteria.add(Criteria.where("arcRequired").is(ArcRequirement.NOT_REQUIRED.name()));
     }
 
     List<Criteria> roomOfferCriteria = new ArrayList<>();
     roomOfferCriteria.add(Criteria.where("status").is(Listing.RoomOfferStatus.ACTIVE.name()));
-    if (monthlyRentMin != null) {
-      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").gte(monthlyRentMin));
+    if (condition.monthlyRentMin() != null) {
+      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").gte(condition.monthlyRentMin()));
     }
-    if (monthlyRentMax != null) {
-      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(monthlyRentMax));
+    if (condition.monthlyRentMax() != null) {
+      roomOfferCriteria.add(Criteria.where("pricing.monthlyRent").lte(condition.monthlyRentMax()));
     }
-    Set<ConditionTag> requestedConditions = conditions == null ? Set.of() : conditions;
 
-    Set<ConditionTag> roomOfferConditions = roomOfferConditions(requestedConditions);
+    Set<ConditionTag> roomOfferConditions = roomOfferConditions(condition.conditions());
     if (!roomOfferConditions.isEmpty()) {
       roomOfferCriteria.add(
           Criteria.where("filterTags").all(roomOfferConditions.stream().map(Enum::name).toList()));
@@ -225,8 +253,12 @@ public class ListingRepositoryImpl implements ListingRepository {
         Criteria.where("roomOffers")
             .elemMatch(new Criteria().andOperator(roomOfferCriteria.toArray(Criteria[]::new))));
 
-    Criteria criteria = new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
-    return findPage(criteria, page, size, sortBy(sort));
+    return new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
+  }
+
+  /** 마커 정렬. 기본 정렬에 유니크 타이브레이커를 더한다 — 상한에 걸려 잘릴 때 동점 구간의 순서가 호출마다 흔들리면 새로고침할 때마다 경계의 마커가 바뀐다. */
+  private static Sort markerSort() {
+    return defaultSort().and(Sort.by(Sort.Direction.ASC, "_id"));
   }
 
   /** 저장 전에 쓸 ObjectId를 미리 발급한다. 저장 시 발급하는 값과 같은 형식이라 이후 조회·매핑이 달라지지 않는다. */

@@ -3,6 +3,7 @@ package com.kohere.diagnosis.application;
 import com.kohere.common.exception.InvalidInputException;
 import com.kohere.diagnosis.application.dto.DiagnosisFlowResponse;
 import com.kohere.diagnosis.application.dto.QuestionResponse;
+import com.kohere.diagnosis.application.dto.V2RecommendationMapResponse;
 import com.kohere.diagnosis.application.dto.V2RecommendationResponse;
 import com.kohere.diagnosis.domain.Diagnosis;
 import com.kohere.diagnosis.domain.DiagnosisFlowSession;
@@ -157,6 +158,21 @@ public class DiagnosisFlowService {
       Long userId, String guestSessionId, Long diagnosisId, int page, int size, String sort) {
     return V2RecommendationResponse.from(
         recommendationReader.read(userId, guestSessionId, diagnosisId, page, size, sort));
+  }
+
+  /**
+   * 확정 진단의 추천 매물 지도 마커를 페이지 없이 조회한다(서버 상한까지).
+   *
+   * <p>매칭 조건은 {@link #getRecommendations}와 완전히 같고 응답에서 카드 정보가 빠질 뿐이다. 지도는 조건에 맞는 매물을 한 번에 다 찍어야 하는데
+   * 페이지 조회로는 한 페이지 크기를 넘길 수 없다.
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
+   * @param guestSessionId 게스트가 {@code X-Guest-Session-Id}로 에코한 키(회원은 {@code null})
+   */
+  public V2RecommendationMapResponse getRecommendationMarkers(
+      Long userId, String guestSessionId, Long diagnosisId) {
+    return V2RecommendationMapResponse.from(
+        recommendationReader.readMarkers(userId, guestSessionId, diagnosisId));
   }
 
   // --- ① 지역 0건 예외질문 응답 처리(예=재시도 / 아니오=종료) ---

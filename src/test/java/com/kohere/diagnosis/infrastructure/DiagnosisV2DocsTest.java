@@ -14,6 +14,11 @@ import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_403;
 import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_404;
 import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_DESCRIPTION;
 import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATIONS_SUMMARY;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATION_MAP_401;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATION_MAP_403;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATION_MAP_404;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATION_MAP_DESCRIPTION;
+import static com.kohere.docs.DiagnosisDocsFields.V2_RECOMMENDATION_MAP_SUMMARY;
 import static com.kohere.docs.DiagnosisDocsFields.V2_START_401;
 import static com.kohere.docs.DiagnosisDocsFields.V2_START_DESCRIPTION;
 import static com.kohere.docs.DiagnosisDocsFields.V2_START_SUMMARY;
@@ -24,6 +29,7 @@ import static com.kohere.docs.DiagnosisDocsFields.recommendationQueryParameters;
 import static com.kohere.docs.DiagnosisDocsFields.startResponseFields;
 import static com.kohere.docs.DiagnosisDocsFields.v2DiagnosisIdPathParameters;
 import static com.kohere.docs.DiagnosisDocsFields.v2RecommendationFields;
+import static com.kohere.docs.DiagnosisDocsFields.v2RecommendationMapFields;
 import static com.kohere.docs.DocsTokens.bearer;
 import static com.kohere.docs.DocsTokens.expiredAccessToken;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +63,7 @@ import com.kohere.diagnosis.infrastructure.DiagnosisQuestionDocument.SelectSpec;
 import com.kohere.docs.ApiDocsTags;
 import com.kohere.listing.api.ListingCodeLabelView;
 import com.kohere.listing.api.ListingRecommendationService;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
 import io.jsonwebtoken.Jwts;
@@ -163,6 +170,15 @@ class DiagnosisV2DocsTest {
     given(userAccountService.getLanguage(anyLong())).willReturn("ko");
     // 기본은 "그 지역에 매물이 있음" — ① 지역 조기 게이트를 통과시킨다. 0건 경로를 보는 테스트가 개별로 덮어쓴다.
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(pageOf(SAMPLE_VIEW));
+    // 마커 포트 기본 스텁. 없으면 Mockito 기본값 null이 돌아와 NPE(500)가 나는데,
+    // 그러면 스니펫이 캡처되지 않아 오퍼레이션이 Swagger에서 통째로 사라진다(빌드는 통과한다).
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(
+            new RecommendedListingMarkersView(
+                List.of(
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000001", 37.555134, 126.936893)),
+                1L));
     given(listingRecommendationService.recommendByCriteria(any(), anyString()))
         .willAnswer(
             invocation ->
@@ -373,6 +389,72 @@ class DiagnosisV2DocsTest {
   }
 
   /**
+   * 지도 화면이 쓰는 마커 전용 조회. 페이지 조회와 <b>같은 매칭 조건</b>이되 좌표만 내려간다.
+   *
+   * <p>매칭 있음과 0건 두 스니펫이 <b>같은 필드 헬퍼 하나</b>를 쓴다 — 같은 {@code (path, 200)}에 기술자를 두 벌 두면 스키마가 둘 생기고 파일
+   * 순회 순서에 따라 하나가 조용히 버려진다.
+   */
+  @Test
+  void generatesV2RecommendationMapSnippets() throws Exception {
+    long userId = 40L;
+    String token = jwtTokenService.issueAccessToken(userId);
+    long diagnosisId = createCompletedDiagnosis(token);
+
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(
+            new RecommendedListingMarkersView(
+                List.of(
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000001", 37.555134, 126.936893),
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000002", 37.497942, 127.027621)),
+                137L));
+
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", diagnosisId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        // 좌표 축이 뒤바뀌어도 둘 다 double이라 타입으로는 안 잡힌다 — 값으로 못 박는다.
+        .andExpect(jsonPath("$.data.markers[0].listingId").value("6858e2000000000000000001"))
+        .andExpect(jsonPath("$.data.markers[0].lat").value(37.555134))
+        .andExpect(jsonPath("$.data.markers[0].lng").value(126.936893))
+        // total이 markers 길이보다 크면 상한에 걸려 잘린 것이다.
+        .andExpect(jsonPath("$.data.total").value(137))
+        .andDo(
+            document(
+                "diagnosis-v2-recommendations-map",
+                resourceDetails()
+                    .tag(ApiDocsTags.DIAGNOSIS)
+                    .summary(V2_RECOMMENDATION_MAP_SUMMARY)
+                    .description(V2_RECOMMENDATION_MAP_DESCRIPTION),
+                pathParameters(v2DiagnosisIdPathParameters()),
+                responseFields(v2RecommendationMapFields())));
+
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(new RecommendedListingMarkersView(List.of(), 0L));
+
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", diagnosisId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.total").value(0))
+        // 0건이면 원소가 통째로 없다(값이 null인 것이 아니다) — 원소 기술자를 optional로 낮춘 대가를 되메운다.
+        .andExpect(jsonPath("$.data.markers").isEmpty())
+        .andExpect(jsonPath("$.data.markers[0]").doesNotExist())
+        .andDo(
+            document(
+                "diagnosis-v2-recommendations-map-empty",
+                resourceDetails()
+                    .tag(ApiDocsTags.DIAGNOSIS)
+                    .summary(V2_RECOMMENDATION_MAP_SUMMARY)
+                    .description(V2_RECOMMENDATION_MAP_DESCRIPTION),
+                pathParameters(v2DiagnosisIdPathParameters()),
+                responseFields(v2RecommendationMapFields())));
+  }
+
+  /**
    * ① 지역 0건 예외질문(서버가 미리 필터링하는 유일한 지점)과 그 예/아니오 응답의 흐름 제어 코드.
    *
    * <p>예외질문 자체는 별도 결과코드가 아니라 카탈로그의 <b>일반 질문</b>({@code field=regionRetry})으로 내려가고, 그 응답에만 클라이언트가 행할
@@ -533,6 +615,32 @@ class DiagnosisV2DocsTest {
                 pathParameters(v2DiagnosisIdPathParameters()),
                 queryParameters(recommendationQueryParameters()),
                 responseFields(v2RecommendationFields())));
+
+    // ④ 지도 마커도 같은 헤더만으로 소유권을 증명한다 — 게스트가 닿는 네 번째 엔드포인트다.
+    given(listingRecommendationService.recommendMarkersByCriteria(any()))
+        .willReturn(
+            new RecommendedListingMarkersView(
+                List.of(
+                    new RecommendedListingMarkersView.Marker(
+                        "6858e2000000000000000001", 37.555134, 126.936893)),
+                1L));
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", diagnosisId)
+                .header(GUEST_SESSION_HEADER, guestKey))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers[0].listingId").value("6858e2000000000000000001"))
+        .andExpect(jsonPath("$.data.total").value(1))
+        .andDo(
+            document(
+                "diagnosis-v2-recommendations-map-guest",
+                resourceDetails()
+                    .tag(ApiDocsTags.DIAGNOSIS)
+                    .summary(V2_RECOMMENDATION_MAP_SUMMARY)
+                    .description(V2_RECOMMENDATION_MAP_DESCRIPTION),
+                requestHeaders(guestSessionHeader()),
+                pathParameters(v2DiagnosisIdPathParameters()),
+                responseFields(v2RecommendationMapFields())));
   }
 
   /** 스펙 §v2의 "발생 가능한 에러"를 엔드포인트별로 실제 트리거해 스니펫으로 생성하고 status·error.code를 단정한다. */
@@ -661,10 +769,44 @@ class DiagnosisV2DocsTest {
         V2_RECOMMENDATIONS_DESCRIPTION,
         v2DiagnosisIdPathParameters(),
         V2_RECOMMENDATIONS_401);
+
+    // ===== GET /{id}/recommendations/map =====
+    performWithPathParams(
+        get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", ownedId)
+            .header(GUEST_SESSION_HEADER, "anonymous-not-the-owner"),
+        status().isForbidden(),
+        "FORBIDDEN",
+        "diagnosis-v2-recommendations-map-forbidden",
+        V2_RECOMMENDATION_MAP_SUMMARY,
+        V2_RECOMMENDATION_MAP_DESCRIPTION,
+        v2DiagnosisIdPathParameters(),
+        V2_RECOMMENDATION_MAP_403);
+
+    performWithPathParams(
+        get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", 9_999_999L)
+            .header(HttpHeaders.AUTHORIZATION, bearer(ownerToken)),
+        status().isNotFound(),
+        "DIAGNOSIS_NOT_FOUND",
+        "diagnosis-v2-recommendations-map-not-found",
+        V2_RECOMMENDATION_MAP_SUMMARY,
+        V2_RECOMMENDATION_MAP_DESCRIPTION,
+        v2DiagnosisIdPathParameters(),
+        V2_RECOMMENDATION_MAP_404);
+
+    performWithPathParams(
+        get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", ownedId)
+            .header(HttpHeaders.AUTHORIZATION, bearer(expiredToken)),
+        status().isUnauthorized(),
+        "TOKEN_EXPIRED",
+        "diagnosis-v2-recommendations-map-token-expired",
+        V2_RECOMMENDATION_MAP_SUMMARY,
+        V2_RECOMMENDATION_MAP_DESCRIPTION,
+        v2DiagnosisIdPathParameters(),
+        V2_RECOMMENDATION_MAP_401);
   }
 
   /**
-   * 게이트 해제 계약(#181) — {@code Authorization} 헤더 <b>없이</b> v2 세 엔드포인트가 모두 2xx다.
+   * 게이트 해제 계약(#181) — {@code Authorization} 헤더 <b>없이</b> v2 네 엔드포인트가 모두 2xx다.
    *
    * <p>표시 언어가 {@code en}인 것만 보면 부족하다 — {@code getLanguage}를 부르고 예외를 삼키는 구현도 통과한다. 게스트는 {@code
    * users} 행이 없어 호출 자체가 404이므로 <b>한 번도 부르지 않음</b>을 함께 못 박는다(회원 스텁은 ko라 en 응답이 곧 미호출의 방증이기도 하다).
@@ -701,6 +843,14 @@ class DiagnosisV2DocsTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.data.resultCode").value("MATCHED"))
         .andExpect(jsonPath("$.data.content[0].listingId").value("6858e2000000000000000001"));
+
+    // ④ 지도 마커도 같은 헤더만으로 통과한다 — 게스트에게 열린 네 번째 엔드포인트다.
+    mockMvc
+        .perform(
+            get("/api/v2/diagnoses/{diagnosisId}/recommendations/map", diagnosisId)
+                .header(GUEST_SESSION_HEADER, guestKey))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.markers[0].listingId").value("6858e2000000000000000001"));
 
     verify(userAccountService, never()).getLanguage(anyLong());
   }

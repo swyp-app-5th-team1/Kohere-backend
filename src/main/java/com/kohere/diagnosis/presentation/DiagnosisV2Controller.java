@@ -5,6 +5,7 @@ import com.kohere.common.security.AuthPrincipal;
 import com.kohere.common.security.AuthPrincipals;
 import com.kohere.diagnosis.application.DiagnosisFlowService;
 import com.kohere.diagnosis.application.dto.DiagnosisFlowResponse;
+import com.kohere.diagnosis.application.dto.V2RecommendationMapResponse;
 import com.kohere.diagnosis.application.dto.V2RecommendationResponse;
 import com.kohere.diagnosis.presentation.dto.AnswerRequest;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>입력 바인딩·응답 래핑만 담당하고 로직은 {@link DiagnosisFlowService}에 위임한다.
  *
- * <p><b>인증은 선택이다</b>(#181) — 세 엔드포인트 모두 {@code permitAll}이라 비회원(게스트)도 호출한다. 토큰이 없으면
+ * <p><b>인증은 선택이다</b>(#181) — 네 엔드포인트 모두 {@code permitAll}이라 비회원(게스트)도 호출한다. 토큰이 없으면
  * {@code @AuthenticationPrincipal}이 주입하는 주체 자체가 {@code null}이므로 {@code principal.userId()}를 직접
  * 역참조하지 않고 {@link AuthPrincipals#userIdOrNull}로 꺼낸다(ADR-0010). 게스트의 요청 간 연속성은 {@code
  * X-Guest-Session-Id} 헤더가 잇는다 — 회원은 보내지 않으며, 실려 와도 응용 계층이 무시한다.
@@ -91,5 +92,23 @@ public class DiagnosisV2Controller {
     return ApiResponse.success(
         diagnosisFlowService.getRecommendations(
             AuthPrincipals.userIdOrNull(principal), guestSessionId, diagnosisId, page, size, sort));
+  }
+
+  /**
+   * 확정 진단의 추천 매물 지도 마커를 <b>페이지 없이</b> 조회한다. 매칭 조건은 위 추천 조회와 같고 응답에서 카드 정보가 빠질 뿐이다.
+   *
+   * <p>서버 상한(500건)을 넘으면 잘라서 준다 — 진단은 조건이 고정이라 클라이언트가 범위를 좁힐 수단이 없어 오류로 만들지 않는다. 잘렸는지는 {@code
+   * markers} 길이와 {@code total}을 비교해 안다.
+   *
+   * <p>이 경로만 <b>확정 진단</b>을 요구한다(미확정은 404) — 페이지 상한이 없어 조건이 빈 초안이 곧 전체 매물 조회가 되기 때문이다.
+   */
+  @GetMapping("/{diagnosisId}/recommendations/map")
+  public ApiResponse<V2RecommendationMapResponse> recommendationMarkers(
+      @AuthenticationPrincipal AuthPrincipal principal,
+      @RequestHeader(name = GUEST_SESSION_HEADER, required = false) String guestSessionId,
+      @PathVariable Long diagnosisId) {
+    return ApiResponse.success(
+        diagnosisFlowService.getRecommendationMarkers(
+            AuthPrincipals.userIdOrNull(principal), guestSessionId, diagnosisId));
   }
 }

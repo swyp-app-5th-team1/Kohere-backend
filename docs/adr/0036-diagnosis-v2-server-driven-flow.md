@@ -14,6 +14,12 @@ Proposed
 > 기존 v1 진단 질의응답([ADR-0028](./0028-diagnosis-questions-catalog-store.md): `GET /questions/{step}` + `POST /answers` + `POST /diagnoses`, 클라이언트가 `step`·확정 시점을 주도)은 그대로 둔다. 본 ADR은 issue #157의 요구(지역 매물 부재 시 재질의·종료, step 대신 서버 주도 next, 서버 자동 확정, 조정 제안 제거)를 **하위 호환이 깨지는 변경**으로 보고 `/api/v2`에 새 흐름으로 신설하는 결정이다.
 >
 > **서버가 주도하는 것은 질문과 분기까지다.** 진단 **시작**(`POST /start`)과 확정 후 **매물 조회 시점**(v1 `GET /diagnoses/{id}/recommendations`)은 클라이언트가 결정한다 — 서버는 결과코드로 "다음에 할 일"만 알린다.
+>
+> **개정(2026-09-08, [#314](https://github.com/swyp-app-5th-team1/Kohere-backend/issues/314))**: **v1 진단 쓰기·추천 4경로를 제거했다.** 본 ADR이 "그대로 둔다"고 적은 `GET /questions/{step}`·`POST /answers`·`POST /diagnoses`와 v1 추천은 더 이상 없으며, 아래 결정 4("기존 v1 로직은 건드리지 않고 버전을 올려 구현한다")는 신설 시점의 판단으로 남고 지금은 **v2가 진단의 유일한 쓰기 경로**다. 이력·최근·상세 조회 3종은 URL·응답을 그대로 유지한 채 존치한다(v2에 대체가 없다).
+>
+> 이에 따라 **결정 11(v1 `suggestions` 자산을 전역 삭제하지 않는다)은 폐기**한다 — 읽는 코드가 0이 되어 `diagnosisSuggestions` 컬렉션과 관련 클래스를 함께 지웠다. 본 ADR이 재검토 시점으로 예고한 "v1 은퇴"가 이것이다.
+>
+> **회귀 가드가 바뀌었다.** 아래에서 인용하는 `DiagnosisMongoIntegrationTest`·`DiagnosisDocsTest`(v1 전량)는 사라졌고, 공유 컴포넌트(`DiagnosisCriteriaMapper`·`DiagnosisAnswerApplier`·`DiagnosisQuestionTranslator`·순차 채번)의 커버리지는 **`DiagnosisFlowServiceIntegrationTest`** 로, 조회 3종 문서화는 **`DiagnosisDocsTest`(조회 전용으로 재작성)** 로 옮겼다.
 
 ## Context
 

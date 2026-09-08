@@ -34,6 +34,7 @@
 - 리소스 식별자는 경로 변수로(`/listings/{listingId}`), 조회 조건은 쿼리 파라미터로 둔다.
 - 컬렉션과 단건을 구분한다: `GET /listings`(목록) ↔ `GET /listings/{id}`(단건).
 - 중첩은 **소유 관계가 분명할 때 1단계까지만** 허용한다. (`GET /posts/{postId}/comments`) 그 이상 깊어지면 쿼리 파라미터로 평탄화한다.
+- **표현(view) 접미사는 중첩으로 세지 않는다.** 경로 끝의 `/map`처럼 같은 컬렉션을 다른 모양으로 주는 세그먼트는 새 하위 리소스가 아니다 — `GET /api/v2/listings/map`, `GET /api/v2/diagnoses/{diagnosisId}/recommendations/map`이 그렇다. **표현을 쿼리 파라미터로 나누지 않는 이유는 취향이 아니라 문서 생성기 제약이다** — 같은 `(path, method, status)`에 응답 스키마가 둘 생기면 하나가 조용히 버려진다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) 병합 규칙).
 
 ### 2-1. 버전 정책
 
@@ -43,7 +44,7 @@
 
 | 리소스 | `/api/v1` | `/api/v2` |
 | --- | --- | --- |
-| 진단 | 클라이언트 주도 흐름 — 그대로 동작(회원 전용) | 서버 주도 흐름 `/api/v2/diagnoses/*` — 앱이 쓰는 흐름([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) |
+| 진단 | 조회 3종만 남는다(이력·최근·단건 상세, 회원 전용) — 쓰기·추천 4경로는 제거됐다 | 서버 주도 흐름 `/api/v2/diagnoses/*` — 진단의 정본 경로([ADR-0036](../adr/0036-diagnosis-v2-server-driven-flow.md)) |
 | 매물 등록·수정 | 없음 | `POST /api/v2/listings`([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)) · `PUT /api/v2/listings/{listingId}`(임대인 본인 매물 전체 교체) |
 | 매물 조회·찜·내 스코프 | **deprecated 스텁** — 아래 참조. `GET /api/v1/listings/places`만 그대로 동작한다([ADR-0040](../adr/0040-listing-query-api-v2-and-v1-sunset.md)) | **정본** — 목록·지도·키워드 검색·상세·찜 토글 `/api/v2/listings*`, `/api/v2/users/me/favorites`·`/api/v2/users/me/recent-listings`, 임대인 전용 내 매물 조회 `/api/v2/users/me/listings`·`/api/v2/users/me/listings/{listingId}` |
 | 그 외 전부 | 정본 | 없음 |
@@ -62,7 +63,11 @@
 
 **새 데이터로 옛 모양을 조립하지 않는다.** 없어진 필드를 `deposit: 0`·빈 재고 같은 값으로 채우면 구버전 앱이 날조된 값을 정상으로 표시한다. 빈 결과를 주면 구버전 앱은 "매물 없음" 화면을 보고 업데이트로 유도된다.
 
-구 버전 경로는 `deprecated`로 표기하되 **제거 시점은 정하지 않는다.** 스펙 문서·Swagger에는 「폐지됐다」 같은 변경 이력이 아니라 **현재 동작**("이 경로는 항상 빈 목록을 반환한다. 매물 데이터는 `/api/v2/listings`에서 조회한다")으로 적는다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) description 작성 규약).
+구 버전 경로는 `deprecated`로 표기하되 **제거 시점은 정하지 않는다.**
+
+**예외 — 쓰지 않는 것이 확인된 경로는 선별 제거한다.** 출시된 클라이언트가 그 경로를 호출하지 않음이 확인되면 스텁으로 남기지 않고 **경로 단위로 지운다**. 매물처럼 리소스 전체를 스텁으로 돌리는 것과 달리 **한 네임스페이스 안에서 경로마다 갈릴 수 있다** — 진단이 그 첫 사례다(쓰기·추천 4경로는 제거, 조회 3종은 존치). **잔존 경로는 스텁이 아니다** — 실데이터를 그대로 반환하며 `deprecated`를 붙이지 않는다. 대체가 있는 경로만 지우고, 대체가 없는 경로를 지우는 것은 기능 제거이므로 이 예외가 아니다.
+
+이 예외를 쓸 때 확인할 것: (a) 그 경로를 부르는 클라이언트가 없다는 근거(접근 로그·프런트 확인) (b) **쓰기 경로는 스텁이 오히려 위험하다** — 저장하지 않고 성공을 돌려주면 조용한 데이터 손실이 된다 (c) 삭제 후 그 경로의 실제 응답(형제 경로가 남아 있으면 404가 아니라 405·400일 수 있다)을 클라이언트 팀에 경로별로 알린다. 스펙 문서·Swagger에는 「폐지됐다」 같은 변경 이력이 아니라 **현재 동작**("이 경로는 항상 빈 목록을 반환한다. 매물 데이터는 `/api/v2/listings`에서 조회한다")으로 적는다([ADR-0017](../adr/0017-openapi-swagger-ui-from-restdocs.md) description 작성 규약).
 
 #### 버전을 올릴 때 함께 하는 것
 

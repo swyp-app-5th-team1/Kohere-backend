@@ -67,16 +67,4 @@ public enum DiagnosisFlowStep {
     }
     throw new IllegalArgumentException("정본 6슬롯에 없는 field입니다: " + field);
   }
-
-  /**
-   * 단계 번호(1..6)의 슬롯 — {@link #step()}의 역이다. v1이 클라가 지정한 {@code step}의 문항 {@code field}를 고를 때 쓴다.
-   */
-  public static DiagnosisFlowStep ofStep(int step) {
-    int index = step - 1;
-    DiagnosisFlowStep[] values = values();
-    if (index < 0 || index >= values.length) {
-      throw new IllegalArgumentException("step이 범위를 벗어났습니다: " + step);
-    }
-    return values[index];
-  }
 }

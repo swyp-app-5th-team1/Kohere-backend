@@ -39,7 +39,7 @@ Accepted
 | `tags` | 스니펫 태그의 **union** | `com.kohere.docs.ApiDocsTags` 상수로만 부여하고 **모든 스니펫**에 붙인다. 하나만 빠뜨리면 URI 첫 세그먼트(`api`)가 섞여 두 그룹에 중복 노출된다 |
 | 응답 스키마 | 합집합이 아니라 `(path, type)` 기준 **dedup·last-wins** | 같은 `(path, method, status)`를 캡처하는 스니펫은 **동일한 필드 헬퍼**를 호출한다. 파일이 달라도 마찬가지다 |
 | `examples` | identifier를 키로 **전부 생존** | 역할·상태 분기는 여기서 보여준다. 케이스 구분은 summary가 아니라 **identifier**로 한다 |
-| `operationId` | 그 오퍼레이션 스니펫 identifier들의 **공통 접두사**. 전역 유일이어야 한다 | 같은 리소스가 `/api/v1`·`/api/v2`에 병존하면 identifier를 갈라 놓는다. 안 나누면 두 오퍼레이션의 접두사가 같아져 `verifyOpenApiSpec`이 중복으로 빌드를 깬다. **정본 버전이 무접두사를 갖고 종료되는 쪽에 접두사를 붙인다** — 매물이 그렇다(`listings-list`=정본 v2 ↔ `v1-listings-list`=종료된 v1). 정본 쪽 identifier가 바뀌면 이미 발행된 Swagger Examples 키와 operationId가 통째로 갈리기 때문이다. summary·description 상수도 **버전별로 따로** 둔다 — path가 달라 병합되지 않으므로 공유하면 한쪽 설명이 반대쪽에 그대로 붙는다 |
+| `operationId` | 그 오퍼레이션 스니펫 identifier들의 **공통 접두사**. 전역 유일이어야 한다 | 같은 리소스가 `/api/v1`·`/api/v2`에 병존하면 identifier를 갈라 놓는다. 안 나누면 두 오퍼레이션의 접두사가 같아져 `verifyOpenApiSpec`이 중복으로 빌드를 깬다. **정본 버전이 무접두사를 갖고 종료되는 쪽에 접두사를 붙인다** — 매물이 그렇다(`listings-list`=정본 v2 ↔ `v1-listings-list`=종료된 v1). 정본 쪽 identifier가 바뀌면 이미 발행된 Swagger Examples 키와 operationId가 통째로 갈리기 때문이다. **종료된 버전을 삭제하더라도 정본 identifier는 개명하지 않는다** — 접두사 충돌이 사라졌다는 이유로 되돌리면 규약이 막으려던 바로 그 피해가 난다. 빌드 검사는 형식·붕괴·중복만 보므로 개명을 잡지 못한다. summary·description 상수도 **버전별로 따로** 둔다 — path가 달라 병합되지 않으므로 공유하면 한쪽 설명이 반대쪽에 그대로 붙는다 |
 | path 파라미터 | **첫 모델 하나**에서만(`extractPathParameters(firstModelForPathAndMethod)`) | 에러 스니펫에도 **같은 `pathParameters()`를 넘긴다**. 빠뜨리면 순서에 따라 설명이 사라진다 |
 | query·header 파라미터 | 전 모델 `flatMap` + `distinctBy(name)` **합집합** | 에러 스니펫에 다시 선언하지 않아도 성공 스니펫의 것이 남는다 |
 

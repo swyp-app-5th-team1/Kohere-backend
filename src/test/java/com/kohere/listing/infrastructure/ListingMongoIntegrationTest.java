@@ -10,6 +10,7 @@ import com.kohere.common.exception.InvalidInputException;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.application.ListingService;
 import com.kohere.listing.application.dto.FavoriteListingResponse;
@@ -28,6 +29,7 @@ import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingInvalidSortParamException;
 import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingNotFoundException;
+import com.kohere.listing.domain.ListingRecommendationCondition;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchCondition;
 import com.kohere.listing.domain.ListingSearchResult;
@@ -53,6 +55,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -1297,6 +1300,107 @@ class ListingMongoIntegrationTest {
   }
 
   /** diagnosis가 전달한 UI 필터 조건 코드로 매물 요약을 반환한다. */
+  @Test
+  @DisplayName("마커 조회는 페이지 크기 상한(100)에 걸리지 않는다")
+  void recommendMarkers_페이지크기_상한을_받지_않는다() {
+    // 페이지 조회는 저장소가 size를 100으로 조용히 깎는다(예외 없음). 큰 size를 넘겨도 100건만 오므로
+    // 100건 미만 시드로는 이 차이가 드러나지 않는다 — 그래서 반드시 100을 넘겨 시드한다.
+    seedMatchingListings(120);
+
+    RecommendedListingMarkersView markers =
+        listingRecommendationService.recommendMarkersByCriteria(seoulCriteria(0, 1000));
+
+    assertThat(markers.markers()).hasSize(120);
+    assertThat(markers.total()).isEqualTo(120L);
+  }
+
+  @Test
+  @DisplayName("마커 조회는 상한을 넘어도 빈 목록이 아니라 상한까지 채운다")
+  void recommendMarkers_상한초과시_절단한다() {
+    seedMatchingListings(12);
+
+    // 상한 자체는 서비스 상수라 저장소 포트로 직접 작게 주입해 절단 경로를 본다.
+    ListingMapSearchResult result = listingRepository.recommendForMap(seoulCondition(), 5);
+
+    // 초과 시 빈 목록을 돌려주는 구현(bbox 지도 조회의 조기 반환)을 복사하면 여기서 잡힌다.
+    assertThat(result.listings()).hasSize(5);
+    assertThat(result.total()).isEqualTo(12L);
+  }
+
+  @Test
+  @DisplayName("마커 좌표의 위도·경도가 뒤바뀌지 않는다")
+  void recommendMarkers_좌표축이_뒤바뀌지_않는다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    RecommendedListingMarkersView markers =
+        listingRecommendationService.recommendMarkersByCriteria(seoulCriteria(0, 20));
+
+    // lat != lng 단정으로는 스왑을 못 잡는다 — 서울 좌표는 둘 다 그럴듯한 두 자리 수다.
+    assertThat(markers.markers()).isNotEmpty();
+    assertThat(markers.markers().getFirst().lat()).isBetween(33.0, 39.0);
+    assertThat(markers.markers().getFirst().lng()).isBetween(124.0, 132.0);
+  }
+
+  @Test
+  @DisplayName("마커 조회와 페이지 조회는 같은 조건에서 같은 매물 집합을 낸다")
+  void recommendMarkers_페이지조회와_같은_집합이다() {
+    seedMatchingListings(30);
+
+    List<String> paged =
+        listingRecommendationService.recommendByCriteria(seoulCriteria(0, 100)).content().stream()
+            .map(RecommendedListingView::listingId)
+            .toList();
+    List<String> markerIds =
+        listingRecommendationService
+            .recommendMarkersByCriteria(seoulCriteria(0, 100))
+            .markers()
+            .stream()
+            .map(RecommendedListingMarkersView.Marker::listingId)
+            .toList();
+
+    // "기존 추천과 완전히 동일한 조건"이라는 요구의 직접 검증이다.
+    assertThat(markerIds).containsExactlyInAnyOrderElementsOf(paged);
+  }
+
+  @Test
+  @DisplayName("좌표 없는 매물은 추천에서 제외된다(응답 조립이 좌표를 무방비로 읽는다)")
+  void recommend_좌표없는_매물을_제외한다() {
+    seedMatchingListings(2);
+    Document noLocation = ListingTestSeeds.listingDocuments().getFirst();
+    noLocation.remove("_id");
+    noLocation.remove("location");
+    mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(noLocation);
+
+    assertThat(
+            listingRecommendationService
+                .recommendMarkersByCriteria(seoulCriteria(0, 100))
+                .markers())
+        .hasSize(2);
+    assertThat(listingRecommendationService.recommendByCriteria(seoulCriteria(0, 100)).content())
+        .hasSize(2);
+  }
+
+  /** 정본 매물 문서를 복제해 같은 조건에 매칭되는 매물 n건을 만든다(식별자만 새로 발급). */
+  private void seedMatchingListings(int count) {
+    Document template = ListingTestSeeds.listingDocuments().getFirst();
+    for (int i = 0; i < count; i++) {
+      Document copy = Document.parse(template.toJson());
+      copy.remove("_id");
+      mongoTemplate.getCollection(LISTINGS_COLLECTION).insertOne(copy);
+    }
+  }
+
+  /** 위 시드가 매칭되는 조건. 대학·조건 필터를 걸지 않아 복제본 전부가 걸린다. */
+  private static RecommendationCriteria seoulCriteria(int page, int size) {
+    return new RecommendationCriteria(
+        "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, null, page, size, null);
+  }
+
+  private static ListingRecommendationCondition seoulCondition() {
+    return new ListingRecommendationCondition(
+        "SEOUL", null, null, Set.of(), Set.of(), Set.of(), null, null);
+  }
+
   @Test
   void recommendByCriteria_조건코드로_매물요약을_반환한다() {
     ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);

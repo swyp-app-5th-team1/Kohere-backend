@@ -69,3 +69,6 @@ infra/terraform/modules/**/lambda/*.zip
 
 # restdocs-api-spec openapi3 태스크가 저장소 루트에 떨구는 중간 산출물(#151)
 rdmodel/
+
+# 일회성 계획서(커밋 대상 아님)
+diagnosis-recommendation-map-plan.md

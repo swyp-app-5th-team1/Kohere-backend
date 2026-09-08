@@ -8,6 +8,7 @@ import com.kohere.diagnosis.domain.DiagnosisNotFoundException;
 import com.kohere.diagnosis.domain.DiagnosisRepository;
 import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.listing.api.ListingRecommendationService;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.user.api.UserAccountService;
 import java.util.Set;
@@ -31,6 +32,12 @@ public class DiagnosisRecommendationReader {
 
   /** 추천 정렬 허용 키(스펙 §7). */
   private static final Set<String> SORT_KEYS = Set.of("recommended", "price", "distance");
+
+  /** 마커 조회가 조건 매퍼에 넘기는 자리 채우기 — 이 경로는 페이지를 나누지 않는다. */
+  private static final int IGNORED_PAGE = 0;
+
+  /** 위와 같다. 조건 매퍼가 값을 요구할 뿐 저장소까지 전달되지 않는다. */
+  private static final int IGNORED_SIZE = 1;
 
   /** 게스트 표시 언어(#181). users 행이 없어 조회할 수 없으므로 고정한다. */
   private static final String GUEST_LANGUAGE = "en";
@@ -56,6 +63,27 @@ public class DiagnosisRecommendationReader {
     requireOwner(diagnosis, userId, guestSessionId);
     return listingRecommendationService.recommendByCriteria(
         criteriaMapper.toCriteria(diagnosis, page, size, sort), resolveLanguage(userId));
+  }
+
+  /**
+   * 같은 진단 조건의 지도 마커를 페이지 없이 조회한다(서버 상한까지).
+   *
+   * <p><b>이 경로만 확정 진단을 요구한다.</b> 페이지 조회는 폐기 기록만 막는데, 여기는 페이지 크기 상한이 없어 조건이 빈 미완주 초안이 그대로 "조건 없는 전체
+   * 매물" 조회가 된다. 게이트 순서는 {@link DiagnosisAccessGuard}의 불변식을 따른다 — 상태(404)가 소유권(403)보다 먼저다.
+   *
+   * <p>페이지·정렬을 받지 않으므로 그 검증도 하지 않는다. {@code toCriteria}에 넘기는 페이지 인자는 이 경로에서 쓰이지 않는 자리 채우기이며, 그 사실이
+   * 코드에 남도록 명명 상수로 둔다.
+   *
+   * @param userId 회원이면 userId, 게스트면 {@code null}
+   * @param guestSessionId 게스트 세션 키(회원은 {@code null})
+   */
+  RecommendedListingMarkersView readMarkers(Long userId, String guestSessionId, Long diagnosisId) {
+    Diagnosis diagnosis =
+        diagnosisRepository.findById(diagnosisId).orElseThrow(DiagnosisNotFoundException::new);
+    DiagnosisAccessGuard.requireCompleted(diagnosis);
+    DiagnosisAccessGuard.requireOwner(diagnosis, userId, guestSessionId);
+    return listingRecommendationService.recommendMarkersByCriteria(
+        criteriaMapper.toCriteria(diagnosis, IGNORED_PAGE, IGNORED_SIZE, null));
   }
 
   /**

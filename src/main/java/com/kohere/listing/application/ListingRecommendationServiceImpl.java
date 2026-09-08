@@ -3,9 +3,12 @@ package com.kohere.listing.application;
 import com.kohere.common.response.PageResponse;
 import com.kohere.listing.api.ListingRecommendationService;
 import com.kohere.listing.api.RecommendationCriteria;
+import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingMapSearchResult;
+import com.kohere.listing.domain.ListingRecommendationCondition;
 import com.kohere.listing.domain.ListingRepository;
 import java.util.Collections;
 import java.util.Set;
@@ -22,6 +25,12 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ListingRecommendationServiceImpl implements ListingRecommendationService {
+
+  /**
+   * 마커 응답 상한. {@code ListingService.MAX_MAP_MARKERS}와 같은 값이며 근거도 같다 — 지도 SDK가 한 번에 받아 그릴 수 있는 마커
+   * 수다. 초과분은 오류가 아니라 절단이다(호출자가 조건을 좁힐 수단이 없다).
+   */
+  private static final int MAX_RECOMMENDATION_MARKERS = 500;
 
   private final ListingRepository listingRepository;
   private final ListingLocalizationService listingLocalizationService;
@@ -45,22 +54,48 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
     ListingLocalizationContext localization = listingLocalizationService.contextFor(language);
     PageResponse<Listing> listings =
         listingRepository.recommend(
-            criteria.region(),
-            criteria.monthlyRentMin(),
-            criteria.monthlyRentMax(),
-            parseConditionTags(criteria.conditions()),
-            criteria.includedUniversityCodes(),
-            criteria.excludedUniversityCodes(),
-            criteria.district(),
-            criteria.arcStatus(),
-            criteria.page(),
-            criteria.size(),
-            criteria.sort());
+            toCondition(criteria), criteria.page(), criteria.size(), criteria.sort());
     return PageResponse.of(
         listings.content().stream()
             .map(listing -> ListingResponseMapper.toRecommendedView(listing, localization))
             .toList(),
         listings.page());
+  }
+
+  /**
+   * 같은 조건으로 지도 마커만 조회한다. 표시 언어를 받지 않는 이유는 마커에 번역할 라벨이 하나도 없기 때문이다 — 로컬라이제이션 컨텍스트를 만들지 않는다.
+   *
+   * <p>{@code criteria}의 페이지네이션·정렬 필드는 <b>쓰지 않는다</b>. 이 경로는 페이지를 나누지 않고, 정렬은 절단 경계가 흔들리지 않도록 저장소가
+   * 고정한다.
+   */
+  @Override
+  public RecommendedListingMarkersView recommendMarkersByCriteria(RecommendationCriteria criteria) {
+    ListingMapSearchResult result =
+        listingRepository.recommendForMap(toCondition(criteria), MAX_RECOMMENDATION_MARKERS);
+    return new RecommendedListingMarkersView(
+        result.listings().stream()
+            // 축 순서는 ListingResponseMapper.toMapMarker와 같다 — 위도가 먼저다.
+            .map(
+                listing ->
+                    new RecommendedListingMarkersView.Marker(
+                        listing.getId(),
+                        listing.getLocation().latitude(),
+                        listing.getLocation().longitude()))
+            .toList(),
+        result.total());
+  }
+
+  /** 모듈 경계를 문자열로 넘어온 조건을 listing 도메인 조건 객체로 복원한다. */
+  private static ListingRecommendationCondition toCondition(RecommendationCriteria criteria) {
+    return new ListingRecommendationCondition(
+        criteria.region(),
+        criteria.monthlyRentMin(),
+        criteria.monthlyRentMax(),
+        parseConditionTags(criteria.conditions()),
+        criteria.includedUniversityCodes(),
+        criteria.excludedUniversityCodes(),
+        criteria.district(),
+        criteria.arcStatus());
   }
 
   /**

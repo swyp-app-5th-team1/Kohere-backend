@@ -92,7 +92,7 @@
 - **`GET /api/v1/listings/places`·`/addresses`·`/stations`(+`/stations/nearby`)만 예외**로 살아 있다. 외부 API(네이버 지역 검색 · NCP Geocoding · 카카오 로컬)만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places`·`addresses`·`stations` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
 - **Swagger에서 v1 오퍼레이션은 `deprecated` 배지로 구분된다.** OpenAPI `deprecated: true`가 실려 Swagger UI가 취소선과 배지를 붙인다. summary에는 버전 표기를 두지 않는다 — 경로가 이미 `/api/v1`을 보여준다.
 - **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
-- 진단 추천(`GET /api/v1/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 v1·v2 양쪽 모두 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
+- 진단 추천(`GET /api/v2/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 
 ## 상세
 
