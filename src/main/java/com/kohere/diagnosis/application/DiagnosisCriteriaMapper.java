@@ -8,8 +8,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
- * 진단 조건을 listing 공개 추천 쿼리의 값객체({@link RecommendationCriteria})로 변환한다. v1 추천 조회와 v2 서버 주도 흐름의 지역 조기
- * 게이트·최종 매칭이 공유한다.
+ * 진단 조건을 listing 공개 추천 쿼리의 값객체({@link RecommendationCriteria})로 변환한다. 흐름의 지역 조기 게이트와 확정 뒤 추천 조회가 함께
+ * 쓴다.
  *
  * <p>대학 그룹은 diagnosis 개념이므로 이 경계에서 개별 대학 코드로 펼친다({@code HONGIK_YONSEI_EWHA} → {@code HONGIK},
  * {@code YONSEI}, {@code EWHA}). {@code ETC}("그 외 대학")는 펼칠 멤버가 없는 대신 <b>목록 전체를 제외 조건으로</b> 넘긴다 —

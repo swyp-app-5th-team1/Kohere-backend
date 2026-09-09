@@ -112,8 +112,14 @@ GET {{baseUrl}}/api/v2/listings?page=0&size=20
 GET {{baseUrl}}/api/v2/listings?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON&conditions=FEMALE_ONLY&conditions=ADDRESS_REGISTRATION&maxBudget=500000&maxDeposit=500000&sort=PRICE_ASC&page=0&size=20
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
-### 5. 지도 마커 — 좌표만 내려준다(카드 정보는 상세에서 가져간다)
+### 5. 지도 마커 — 좌표만 내려준다(카드는 6번 또는 상세에서 가져간다)
 GET {{baseUrl}}/api/v2/listings/map?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON
+
+### 6. 마커 → 카드 — 5번에서 고른 listingId 만 카드로 받는다
+#    마커는 좌표만 주므로 카드가 필요하면 그 listingId 를 콤마로 이어 목록 API 에 넘긴다.
+#    목록의 현재 페이지 밖에 있어도 받을 수 있고, roomOffers[] 에는 함께 보낸 필터를 통과한 방만 담긴다.
+#    마커에서 부를 때는 bbox 와 sort 를 생략한다.
+GET {{baseUrl}}/api/v2/listings?listingIds={{listingId}},68e0000000000000000000b1&maxBudget=500000
 
 ### 7. 장소 후보 검색 — **이것만 `/api/v1`이다**. 네이버 지역 검색 결과라 매물 데이터를 쓰지 않는다
 #    네이버 자격증명(NAVER_SEARCH_CLIENT_ID/SECRET)이 없으면 502 UPSTREAM_ERROR가 정상이다.
@@ -653,3 +659,7 @@ GET {{baseUrl}}/api/v2/listings?sort=UNKNOWN
 @expiredToken = PASTE_EXPIRED_ACCESS_TOKEN
 GET {{baseUrl}}/api/v2/listings
 Authorization: Bearer {{expiredToken}}
+
+### 35. 400 INVALID_INPUT — listingIds 형식 위반(24자리 16진수가 아님)
+#    개수 초과(21개 이상)도 같은 코드다. 형식이 틀린 값을 조용히 버리지 않는다.
+GET {{baseUrl}}/api/v2/listings?listingIds=not-an-object-id

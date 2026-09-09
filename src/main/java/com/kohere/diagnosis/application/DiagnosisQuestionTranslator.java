@@ -9,8 +9,7 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
- * 진단 문항 카탈로그를 사용자 표시 언어로 조립·번역하고, ③(step 3) 대학/지역 분기 필드를 계산한다(US-2-5·US-2-6). v1 단계별 조회({@code GET
- * /questions/{step}})와 v2 서버 주도 흐름이 공유한다.
+ * 진단 문항 카탈로그를 사용자 표시 언어로 조립·번역하고, ③(step 3) 대학/지역 분기 필드를 계산한다. 서버 주도 흐름이 문항을 낼 때마다 쓴다.
  *
  * <p>표시 문자열({@code question}·{@code label})만 언어별로 고르고 선택지 {@code code}는 언어 무관 불변이다. 사용자 언어 키가 없으면
  * 영어({@code en})로 폴백한다(ADR-0029).

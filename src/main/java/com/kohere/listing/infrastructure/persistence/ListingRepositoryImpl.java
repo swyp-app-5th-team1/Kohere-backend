@@ -373,6 +373,10 @@ public class ListingRepositoryImpl implements ListingRepository {
           Criteria.where("type").in(condition.types().stream().map(Enum::name).toList()));
     }
 
+    if (!condition.listingIds().isEmpty()) {
+      rootCriteria.add(
+          Criteria.where("_id").in(condition.listingIds().stream().map(ObjectId::new).toList()));
+    }
     rootCriteria.add(Criteria.where("roomOffers").elemMatch(roomOfferCriteria(condition)));
     return new Criteria().andOperator(rootCriteria.toArray(Criteria[]::new));
   }

@@ -8,8 +8,7 @@ import java.util.List;
  * 완성이다.
  *
  * <p><b>이 enum이 순서의 유일한 정본이다</b> — 카탈로그({@code diagnosisQuestions})는 문구·선택지·번역만 담고 순서를 담지 않으며, 문항은
- * {@code field}로 조회한다. {@link #step()}(1..6)은 v1 {@code GET /questions/{step}}의 경로 파라미터를 {@code
- * field}로 옮기고({@link #ofStep(int)}) 응답에 표시하는 데만 쓰며, 위치에서 파생하므로 순서와 어긋날 수 없다.
+ * {@code field}로 조회한다. {@link #step()}(1..6)은 서버 주도 흐름 응답이 싣는 표시 번호일 뿐이며, 위치에서 파생하므로 순서와 어긋날 수 없다.
  *
  * <p>{@code UNIVERSITY_OR_DISTRICT}(step 3)만 문항이 둘이라 {@link #field()}가 {@code null}이다 — 저장된 {@code
  * purpose}로 {@code university}/{@code district}를 서버가 택일한다(ADR-0028). {@link #ofField(String)}은 그 둘을
@@ -31,11 +30,10 @@ public enum DiagnosisFlowStep {
   }
 
   /**
-   * v1 {@code GET /questions/{step}}의 단계 번호(1..6)이자 응답의 표시값. <b>정본 순서에서의 위치를 그대로 파생</b>하므로 순서와 어긋날
-   * 수 없다 — 별도 값으로 들고 있으면 "①~⑥ = N번째 질문"이라는 뜻이 깨진 채로도 컴파일된다.
+   * 응답이 싣는 단계 번호(1..6). <b>정본 순서에서의 위치를 그대로 파생</b>하므로 순서와 어긋날 수 없다 — 별도 값으로 들고 있으면 "①~⑥ = N번째
+   * 질문"이라는 뜻이 깨진 채로도 컴파일된다.
    *
-   * <p>진행에는 쓰이지 않는다({@link #next()}가 담당) — v1 경로 파라미터를 {@code field}로 옮기는 데({@link #ofStep(int)})와
-   * 응답 표시에만 쓴다.
+   * <p>진행에는 쓰이지 않는다({@link #next()}가 담당) — 화면 표시 전용이고, 이 번호로 문항을 조회하는 경로는 없다.
    */
   public int step() {
     return ordinal() + 1;

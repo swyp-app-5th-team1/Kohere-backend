@@ -16,7 +16,6 @@ import static org.springframework.restdocs.request.RequestDocumentation.paramete
 import com.kohere.diagnosis.application.dto.FlowResultCode;
 import com.kohere.diagnosis.application.dto.RecommendationResultCode;
 import com.kohere.diagnosis.domain.ArcStatus;
-import com.kohere.diagnosis.domain.DiagnosisStatus;
 import com.kohere.diagnosis.domain.District;
 import com.kohere.diagnosis.domain.Purpose;
 import com.kohere.diagnosis.domain.Region;
@@ -70,10 +69,7 @@ public final class DiagnosisDocsFields {
    */
   public static final List<String> SELECT_TYPE_CODES = List.of("SINGLE", "MULTI", "NUMBER_RANGE");
 
-  /**
-   * ④ 주거 조건 요청({@code codes[]})의 허용 코드 8개. 파생 조건 {@code NO_ARC}는 ⑥ {@code arcStatus} 답에서 서버가 만들어 넣는
-   * 값이라 사용자가 직접 고를 수 없다({@code DiagnosisCondition.userSelectable()}).
-   */
+  /** ④ 주거 조건의 허용 코드 8개. 요청과 응답이 같은 집합이다 — 서버가 파생해 더하는 값은 없다. */
   public static final List<String> SELECTABLE_CONDITION_CODES =
       List.of(
           "MOVE_IN_NOW",
@@ -85,17 +81,17 @@ public final class DiagnosisDocsFields {
           "ADDRESS_REGISTRATION",
           "NO_MAINT_FEE");
 
-  /** 진단 응답의 {@code conditions[]} 허용 코드 9개 — 요청 8개 + 서버 파생 {@code NO_ARC}. */
-  public static final List<String> DIAGNOSIS_CONDITION_CODES = withNoArc();
+  /** 진단 응답의 {@code conditions[]} 허용 코드. 요청 선택지와 같은 8개다 — 서버가 파생해 넣는 값은 없다. */
+  public static final List<String> DIAGNOSIS_CONDITION_CODES = SELECTABLE_CONDITION_CODES;
 
   /** 추천 매물 카드의 주거 유형 코드(listing {@code ListingType}). */
   public static final List<String> LISTING_TYPE_CODES =
       List.of("GOSHIWON", "CO_LIVING", "SHARE_HOUSE", "OTHER");
 
   /** 추천 매물 카드의 조건 배지 코드(listing {@code ConditionTag}) — 진단 조건과 이름이 1:1로 통일돼 있다. */
-  public static final List<String> LISTING_CONDITION_CODES = withNoArc();
+  public static final List<String> LISTING_CONDITION_CODES = SELECTABLE_CONDITION_CODES;
 
-  /** 진단 이력 정렬 허용값({@code DiagnosisService.HISTORY_SORT_KEYS} × 방향). */
+  /** 진단 이력 정렬 허용값({@code DiagnosisQueryService.HISTORY_SORT_KEYS} × 방향). */
   public static final List<String> HISTORY_SORT_VALUES =
       List.of("submittedAt,desc", "submittedAt,asc");
 
@@ -115,12 +111,6 @@ public final class DiagnosisDocsFields {
   /** 게스트 세션 키 에코 헤더(#181). 발급은 {@code /start} 응답이고 소비처는 {@code /next}·추천 조회다. */
   public static final String GUEST_SESSION_HEADER = "X-Guest-Session-Id";
 
-  private static List<String> withNoArc() {
-    List<String> codes = new ArrayList<>(SELECTABLE_CONDITION_CODES);
-    codes.add("NO_ARC");
-    return List.copyOf(codes);
-  }
-
   // ---------------------------------------------------------------------------------------------
   // 오퍼레이션 GET /api/v1/diagnoses/{diagnosisId} — 진단 단건 상세
   // ---------------------------------------------------------------------------------------------
@@ -139,7 +129,7 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 본인 소유 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 본인 소유 진단만 조회된다.
       - 게스트가 v2로 만든 진단은 회원 토큰으로 조회할 수 없다 — `diagnosisId`를 알아도 403이다.
 
       **에러 코드**
@@ -149,7 +139,7 @@ public final class DiagnosisDocsFields {
       | 401 | `UNAUTHENTICATED` | 토큰 없음 또는 위조 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 |
       | 403 | `FORBIDDEN` | 타인 소유 진단 접근 |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
       """;
 
   public static final String[] DETAIL_401 = {"UNAUTHENTICATED", "TOKEN_EXPIRED"};
@@ -161,7 +151,7 @@ public final class DiagnosisDocsFields {
     List<FieldDescriptor> fields = new ArrayList<>();
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.addAll(diagnosisSummaryFields("data."));
-    fields.add(enumField("data.status", DiagnosisStatus.class, "진단 상태 — 확정 진단이므로 `COMPLETED`"));
+    fields.add(codeField("data.status", List.of("COMPLETED"), "진단 상태"));
     fields.add(field("data.submittedAt", JsonFieldType.STRING, "확정 시각(ISO-8601 UTC)"));
     fields.add(errorNull());
     return List.copyOf(fields);
@@ -198,9 +188,7 @@ public final class DiagnosisDocsFields {
             District.class,
             "③ 지역(구) — `purpose=NON_STUDY`일 때만 채워지고 `STUDY`면 `null`이다"),
         codeArrayField(
-            prefix + "conditions",
-            DIAGNOSIS_CONDITION_CODES,
-            "주거 조건 코드 목록 — ④에서 고른 최대 3개 + ⑥ `arcStatus=NO_ARC`일 때 서버가 더하는 `NO_ARC`"),
+            prefix + "conditions", DIAGNOSIS_CONDITION_CODES, "주거 조건 코드 목록 — ④에서 고른 최대 3개"),
         field(prefix + "monthlyRentMin", JsonFieldType.NUMBER, "⑤ 월세 범위 하한(KRW 정수)"),
         field(prefix + "monthlyRentMax", JsonFieldType.NUMBER, "⑤ 월세 범위 상한(KRW 정수)"),
         enumField(prefix + "arcStatus", ArcStatus.class, "⑥ ARC(외국인등록증) 발급 상태(단일 선택)"));
@@ -302,13 +290,12 @@ public final class DiagnosisDocsFields {
 
   /** 예시 응답의 선택지가 테스트 시드라 실제 목록과 다르다는 주의(모든 문항 스니펫 공용). */
   public static final String SEED_NOTE =
-      "예시 응답의 `options[]`는 문서 테스트가 심은 축약 시드라 실제 운영 목록보다 짧다."
-          + " 실제 허용 코드는 위 표와 스키마 탭의 `enum` 목록이 정본이다.";
+      "예시 응답의 `options[]`는 일부만 실은 축약본이라 실제 목록보다 짧다." + " 실제 허용 코드는 위 표와 스키마 탭의 `enum` 목록이 정본이다.";
 
   /** 표시 언어 규칙(문항·라벨 번역 공용). */
   public static final String LANGUAGE_NOTE =
       "표시 문자열(`question`·`options[].label`)만 사용자 표시 언어로 번역되고 `code`는 언어와 무관하게 같다."
-          + " 언어는 `users.lang`(미설정 시 `en`)을 따르며 미지원 언어는 `en`으로 폴백한다.";
+          + " 회원은 계정에 설정한 표시 언어를 따르고(설정하지 않았거나 번역이 없으면 `en`), 토큰 없이 호출하는 게스트는 언제나 `en`이다.";
 
   // ---------------------------------------------------------------------------------------------
   // ---------------------------------------------------------------------------------------------
@@ -336,7 +323,7 @@ public final class DiagnosisDocsFields {
             SELECTABLE_CONDITION_CODES,
             "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 서로 다른 코드 최대 3개."
                 + " 같은 코드를 여러 번 실어도 에러가 아니라 하나로 합쳐진 뒤 개수를 센다."
-                + " 파생 조건 `NO_ARC`는 ⑥에서 서버가 만들므로 여기서 고를 수 없다"),
+                + " `NO_ARC`는 ④ 선택지가 아니라 ⑥ `arcStatus`의 답 코드다 — 여기 실으면 `INVALID_INPUT`이다"),
         optField("min", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 하한(KRW 정수, 0 이상이고 `max` 이하)"),
         optField("max", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 상한(KRW 정수, `min` 이상)"));
   }
@@ -352,12 +339,12 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 토큰의 사용자 본인 이력만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 토큰의 사용자 본인 이력만 조회된다.
 
       **응답 주의사항**
 
-      - 확정(`COMPLETED`) 진단만 나온다. 진행 중(`IN_PROGRESS`)과 v2 폐기 기록(`DISCARDED`)은 빠진다.
-      - 게스트가 v2로 만든 진단은 이 목록의 대상이 아니다.
+      - 확정(`COMPLETED`) 진단만 나온다.
+      - 토큰 없이 게스트로 확정한 진단은 나중에 같은 사람이 로그인해도 이 목록에 나오지 않는다 — 회원 계정으로 옮겨지지 않는다.
 
       **에러 코드**
 
@@ -376,8 +363,7 @@ public final class DiagnosisDocsFields {
     fields.add(field("success", JsonFieldType.BOOLEAN, "성공 여부 — 항상 true"));
     fields.add(field("data.content", JsonFieldType.ARRAY, "확정 진단 목록(현재 페이지). 이력이 없으면 빈 배열"));
     fields.addAll(diagnosisSummaryFields("data.content[]."));
-    fields.add(
-        enumField("data.content[].status", DiagnosisStatus.class, "진단 상태 — 이력에는 `COMPLETED`만 나온다"));
+    fields.add(codeField("data.content[].status", List.of("COMPLETED"), "진단 상태"));
     fields.add(field("data.content[].submittedAt", JsonFieldType.STRING, "확정 시각(ISO-8601 UTC)"));
     fields.addAll(pageFields());
     fields.add(errorNull());
@@ -395,12 +381,13 @@ public final class DiagnosisDocsFields {
 
       **헤더**
 
-      - `Authorization: Bearer <accessToken>` — 상태가 `ACTIVE`인 회원의 토큰(온보딩 완료). 토큰의 사용자 본인 진단만 조회된다.
+      - `Authorization: Bearer <accessToken>` — 상태와 무관하게 허용한다(`PENDING`·`TERMS_AGREED`·`ACTIVE`). 토큰의 사용자 본인 진단만 조회된다.
 
       **응답 주의사항**
 
-      - 확정 이력이 없어도 404가 아니라 200이고 `data.completed=false`다. 클라이언트는 이 한 필드로 분기한다.
-      - 진행 중(`IN_PROGRESS`) 진단은 대상이 아니다 — 확정된 것만 본다.
+      - 확정 이력이 없어도 404가 아니라 200이고 `data.completed=false`다.
+      - `POST /api/v2/diagnoses/start`로 시작한 진단은 확정되기 전까지 여기에 반영되지 않는다 — 그동안은 직전 확정 진단이 그대로 나온다.
+      - 토큰 없이 게스트로 확정한 진단은 나중에 같은 사람이 로그인해도 여기 나오지 않는다 — 회원 계정으로 옮겨지지 않는다.
 
       **에러 코드**
 
@@ -445,7 +432,7 @@ public final class DiagnosisDocsFields {
         optCodeArrayField(
             "data.conditions",
             DIAGNOSIS_CONDITION_CODES,
-            "주거 조건 코드 목록(④ 선택 + ⑥ 파생 `NO_ARC`). `completed=false`면 빈 배열이 아니라 `null`"),
+            "주거 조건 코드 목록(④ 선택). `completed=false`면 빈 배열이 아니라 `null`"),
         optField(
             "data.monthlyRentMin", JsonFieldType.NUMBER, "⑤ 월세 하한(KRW). `completed=false`면 `null`"),
         optField(
@@ -487,13 +474,14 @@ public final class DiagnosisDocsFields {
       """
           + "- "
           + LANGUAGE_NOTE
-          + " 게스트는 `users` 행이 없어 `en` 고정이다."
+          + ""
           + """
 
       """
           + "- "
           + SEED_NOTE
           + """
+
 
       **에러 코드**
 
@@ -576,11 +564,12 @@ public final class DiagnosisDocsFields {
           + SEED_NOTE
           + """
 
+
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `DIAGNOSIS_SESSION_NOT_FOUND` | 진행 중 세션 없이 호출(앱 재시작·터미널 이후 재전송·게스트 키 누락/불일치) → `POST /start`로 복구 |
+      | 400 | `DIAGNOSIS_SESSION_NOT_FOUND` | `POST /api/v2/diagnoses/start` 없이 호출, `COMPLETED`·`RESTART`·`TERMINATED` 이후 재전송, 게스트 키 누락·불일치 → `POST /api/v2/diagnoses/start`로 복구 |
       | 400 | `INVALID_INPUT` | `field` 없음, 현재 문항과 다른 `field`, 미정의 코드, `regionRetry`가 `YES`/`NO` 아님 |
       | 400 | `MALFORMED_REQUEST` | 본문 JSON 해석 불가(검증 이전) |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
@@ -607,7 +596,7 @@ public final class DiagnosisDocsFields {
             "codes",
             SELECTABLE_CONDITION_CODES,
             "다중 선택(`MULTI`) 답의 코드 집합 — ④ `conditions` 전용이며 최대 3개·중복 불가."
-                + " 파생 조건 `NO_ARC`는 ⑥에서 서버가 만들므로 여기서 고를 수 없다"),
+                + " `NO_ARC`는 ④ 선택지가 아니라 ⑥ `arcStatus`의 답 코드다 — 여기 실으면 `INVALID_INPUT`이다"),
         optField("min", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 하한(KRW 정수, 0 이상이고 `max` 이하)"),
         optField("max", JsonFieldType.NUMBER, "⑤ `monthlyRent` 월세 상한(KRW 정수, `min` 이상)"));
   }
@@ -756,7 +745,7 @@ public final class DiagnosisDocsFields {
       | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키 또는 방향 |
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
       | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청(토큰도 게스트 키도 보내지 않음) |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나 폐기 기록 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
       """;
 
   public static final String[] V2_RECOMMENDATIONS_400 = {"INVALID_INPUT"};
@@ -820,7 +809,7 @@ public final class DiagnosisDocsFields {
       |---|---|---|
       | 401 | `TOKEN_EXPIRED` | 액세스 토큰 만료 — 토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`는 발생하지 않는다 |
       | 403 | `FORBIDDEN` | 타인 소유 진단, 게스트↔회원 교차 조회(양방향), 신원 없는 요청 |
-      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 폐기 기록이거나, 아직 확정되지 않음 |
+      | 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않거나, 확정된 진단이 아님 |
 
       `INVALID_INPUT`(400)은 발생하지 않는다 — 쿼리 파라미터를 받지 않는다. 다만 `diagnosisId`에 숫자가 아닌 값이 오면 공통 `MALFORMED_REQUEST`(400)다.
       """;

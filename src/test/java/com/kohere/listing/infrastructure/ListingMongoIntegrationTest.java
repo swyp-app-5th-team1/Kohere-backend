@@ -17,6 +17,7 @@ import com.kohere.listing.application.dto.FavoriteListingResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResponse;
 import com.kohere.listing.application.dto.FavoriteToggleResult;
 import com.kohere.listing.application.dto.ListingDetailResponse;
+import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
@@ -47,6 +48,7 @@ import com.kohere.listing.domain.favorite.FavoriteRepository;
 import com.kohere.listing.domain.nearby.Coordinate;
 import com.kohere.listing.domain.recent.RecentListingRepository;
 import com.kohere.listing.domain.university.UniversityRepository;
+import com.kohere.listing.presentation.dto.ListingMapRequest;
 import com.kohere.listing.presentation.dto.ListingSearchRequest;
 import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
@@ -387,6 +389,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
+                Set.of(),
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -446,6 +449,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -497,6 +501,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
+                Set.of(),
                 ListingSort.PRICE_ASC,
                 null,
                 null,
@@ -569,6 +574,7 @@ class ListingMongoIntegrationTest {
             null,
             Set.of(ListingType.GOSHIWON),
             Set.of(),
+            Set.of(),
             ListingSort.RECOMMENDED,
             null,
             null,
@@ -583,6 +589,7 @@ class ListingMongoIntegrationTest {
             null,
             null,
             Set.of(ListingType.GOSHIWON),
+            Set.of(),
             Set.of(),
             ListingSort.RECOMMENDED,
             null,
@@ -637,6 +644,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.MOVE_IN_NOW),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -681,6 +689,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.ADDRESS_REGISTRATION),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -867,6 +876,86 @@ class ListingMongoIntegrationTest {
         .isInstanceOf(ListingInvalidSortParamException.class);
   }
 
+  /** id를 지정하면 그 매물만 카드로 돌아온다 — 지도 마커에서 카드를 채우는 경로다. */
+  @Test
+  void search_listingIds를_주면_지정한_매물만_반환한다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    PageResponse<ListingSearchResult> result =
+        listingRepository.search(searchByListingIds(Set.of(ListingTestSeeds.SECOND_LISTING_ID)));
+
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().listing().getId())
+        .isEqualTo(ListingTestSeeds.SECOND_LISTING_ID);
+    assertThat(result.page().totalElements()).isEqualTo(1);
+  }
+
+  /** 없는 id는 에러가 아니라 결과에서 빠진다 — 마커가 낡았을 수 있어서다. */
+  @Test
+  void search_없는_listingId는_에러가_아니라_결과에서_빠진다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    PageResponse<ListingSearchResult> result =
+        listingRepository.search(
+            searchByListingIds(Set.of(ListingTestSeeds.LISTING_ID, "68e0000000000000000000ff")));
+
+    assertThat(result.content()).hasSize(1);
+    assertThat(result.content().getFirst().listing().getId())
+        .isEqualTo(ListingTestSeeds.LISTING_ID);
+  }
+
+  /** listingIds가 비면 필터가 없는 것으로 본다 — type·conditions와 같은 규칙이다. */
+  @Test
+  void search_listingIds가_비면_필터가_없는_것으로_본다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    PageResponse<ListingSearchResult> result =
+        listingRepository.search(searchByListingIds(Set.of()));
+
+    assertThat(result.content()).hasSize(2);
+  }
+
+  /**
+   * 지도 마커 조회는 listingIds로 좁혀지지 않는다.
+   *
+   * <p>경계는 저장소가 아니라 서비스다 — 저장소의 criteria 빌더는 목록과 지도가 공유하므로 조건에 id가 실리면 그대로 좁힌다. 지도 요청 DTO에 그 필드가 없고
+   * 조건 빌더가 빈 집합을 넘기는 것이 유일한 방어선이라, 서비스 경로로 확인한다.
+   */
+  @Test
+  void getListingMap_목록_전용_id필터가_지도로_새지_않는다() {
+    ListingTestSeeds.seedListings(mongoTemplate, LISTINGS_COLLECTION);
+
+    ListingMapRequest request = new ListingMapRequest();
+    request.setSwLat(37.40);
+    request.setSwLng(126.80);
+    request.setNeLat(37.60);
+    request.setNeLng(127.10);
+
+    ListingMapResponse response = listingService.getListingMap(request);
+
+    assertThat(response.total()).isEqualTo(2);
+    assertThat(response.markers()).hasSize(2);
+  }
+
+  /** 위 세 테스트가 쓰는 공통 조건 — id 필터 외에는 모두 비운다. */
+  private static ListingSearchCondition searchByListingIds(Set<String> listingIds) {
+    return new ListingSearchCondition(
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        Set.of(),
+        Set.of(),
+        listingIds,
+        ListingSort.RECOMMENDED,
+        null,
+        null,
+        0,
+        20);
+  }
+
   /** 지도 마커 조회는 같은 필터를 적용하되 페이지가 아니라 마커 후보와 전체 개수를 반환한다. */
   @Test
   void searchForMap_지도범위와_필터에_맞는_마커후보를_조회한다() {
@@ -883,6 +972,7 @@ class ListingMongoIntegrationTest {
                 500000,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -927,6 +1017,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY, ConditionTag.PRIVATE_BATH),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,
@@ -1290,6 +1381,7 @@ class ListingMongoIntegrationTest {
                 null,
                 Set.of(ListingType.GOSHIWON),
                 Set.of(ConditionTag.FEMALE_ONLY),
+                Set.of(),
                 ListingSort.RECOMMENDED,
                 null,
                 null,

@@ -360,7 +360,7 @@ class DiagnosisV2DocsTest {
                 queryParameters(recommendationQueryParameters()),
                 responseFields(v2RecommendationFields())));
 
-    // v2-3. 매칭 0건(NO_MATCH) — 에러가 아니라 정상 결과이며, v1 §7과 달리 조정 제안(suggestions)이 없다.
+    // v2-3. 매칭 0건(NO_MATCH) — 에러가 아니라 정상 결과다.
     given(listingRecommendationService.recommendByCriteria(any())).willReturn(emptyPage());
     mockMvc
         .perform(
@@ -697,7 +697,7 @@ class DiagnosisV2DocsTest {
         V2_NEXT_DESCRIPTION,
         V2_NEXT_400);
 
-    // v1과 달리 본문을 뺄 수 없다 — DiagnosisV2Controller.next 의 @RequestBody(required = false) 때문에
+    // 본문을 뺄 수 없다 — DiagnosisV2Controller.next 의 @RequestBody(required = false) 때문에
     // 빈 본문은 예외 없이 request=null 로 들어가 다른 코드가 된다. 깨진 JSON 이 있어야 MALFORMED_REQUEST 다.
     perform(
         post("/api/v2/diagnoses/next")
@@ -959,8 +959,8 @@ class DiagnosisV2DocsTest {
   }
 
   /**
-   * 결정 3의 가드 — <b>v1 진단은 게스트에게 열리지 않는다</b>. {@code permitAll} 매처는 {@code /api/v2/diagnoses/**}
-   * 하나뿐이고 v1 7개는 {@code anyRequest().authenticated()}에 남아 토큰이 필수다. v1에 매처가 조용히 추가되면 여기서 깨진다.
+   * 결정 3의 가드 — <b>v1 진단 조회는 게스트에게 열리지 않는다</b>. {@code permitAll} 매처는 {@code /api/v2/diagnoses/**}
+   * 하나뿐이고 살아남은 조회 3종은 {@code anyRequest().authenticated()}에 남아 토큰이 필수다. v1에 매처가 조용히 추가되면 여기서 깨진다.
    */
   @Test
   void v1DiagnosesStayMemberOnly() throws Exception {
@@ -1140,7 +1140,7 @@ class DiagnosisV2DocsTest {
 
   /**
    * v2 흐름이 지나는 문항 전부를 시드한다 — 정본 6슬롯(③은 university·district 2건)과 ① 지역 0건 예외질문(regionRetry). 흐름이 자동으로
-   * 다음 문항을 내므로 하나라도 빠지면 카탈로그 조회에서 깨진다(v1 스니펫 테스트는 클라가 지정한 step만 조회해 일부만 시드해도 됐다).
+   * 다음 문항을 내므로 하나라도 빠지면 카탈로그 조회에서 깨진다.
    *
    * <p>선택지는 운영 카탈로그보다 짧은 축약 시드다 — 문서에는 실제 허용 코드를 스키마 enum으로 싣고 예시가 시드임을 description에 밝힌다.
    */

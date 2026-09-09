@@ -116,12 +116,14 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 표시 문구의 **언어가 토큰에 따라 달라진다** — 온보딩을 완료한 로그인 사용자는 계정 언어, 그 외(비로그인·온보딩 미완료)는 영어다. 같은 매물이라도 로그인 전후로 문구가 바뀌므로 응답을 캐시한다면 인증 상태를 키에 넣는다.
+      - `listingIds`로 지정한 매물이 **응답에 없을 수 있다** — 매물이 없거나, 공개 상태가 아니거나, 함께 보낸 bbox·`type`에서 걸러졌거나, 조건을 통과한 방이 하나도 없으면 빠진다. `data.content`의 길이가 보낸 id 개수와 같다고 가정하면 안 되고, `data.page.totalElements`도 보낸 개수가 아니라 실제로 통과한 카드 수다.
+      - `listingIds`를 보내도 **응답 순서는 보낸 순서가 아니라 `sort`가 정한다.** 마커와 카드를 짝지으려면 `listingId`로 맞춘다.
 
       **에러 코드**
 
       | status | `error.code` | 발생 조건 |
       |---|---|---|
-      | 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
+      | 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과, `listingIds`가 20개를 넘거나 형식이 올바르지 않음 |
       | 400 | `LISTING_INVALID_BBOX` | bbox 네 좌표가 일부만 있거나 범위·방향이 올바르지 않음 |
       | 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 bbox 네 좌표가 없음 |
       | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보낸 공개 조회 |
@@ -142,6 +144,7 @@ public final class ListingDocsFields {
       **응답 주의사항**
 
       - 가격·이미지·주소가 필요한 바텀시트는 `GET /api/v2/listings`를 **같은 필터로 함께 호출**한다.
+      - 마커 하나를 눌러 그 매물의 카드만 필요하면 `listingId`를 `GET /api/v2/listings`의 `listingIds`에 넘긴다 — 바텀시트 목록의 현재 페이지 밖에 있어도 받을 수 있다. 이 경로는 `listingIds`를 받지 않는다.
 
       **에러 코드**
 
@@ -669,6 +672,11 @@ public final class ListingDocsFields {
               "옵션 필터 칩 코드 — "
                   + codeList(ConditionTag.class)
                   + ". 반복 파라미터나 콤마로 보낼 수 있음. 보낸 조건을 모두 가진 방 타입이 있는 매물만 남고, 응답 roomOffers[]도 그 방 타입만 포함"),
+      parameterWithName("listingIds")
+          .optional()
+          .description(
+              "지정한 매물만 카드로 받을 때 쓰는 `listingId` 목록 — 지도 마커를 눌렀을 때 그 매물의 카드를 채우는 용도다."
+                  + " 반복 파라미터나 콤마로 보낼 수 있고 최대 20개다. 다른 필터와 함께 걸리므로 지정한 매물이라도 조건에서 걸러지면 빠진다"),
       parameterWithName("sort")
           .optional()
           .description(
@@ -1779,7 +1787,8 @@ public final class ListingDocsFields {
             JsonFieldType.ARRAY,
             "카드 썸네일과 상세 갤러리에 사용할 공용 이미지 목록. 카드 대표 이미지는 첫 번째 값 사용"));
     if (distanceDescription != null) {
-      fields.add(field(prefix + ".distanceMeters", JsonFieldType.NUMBER, distanceDescription));
+      fields.add(
+          field(prefix + ".distanceMeters", JsonFieldType.NUMBER, distanceDescription).optional());
     }
     fields.add(
         field(prefix + ".favorited", JsonFieldType.BOOLEAN, "현재 사용자의 하트 상태. true면 채운 하트로 표시"));

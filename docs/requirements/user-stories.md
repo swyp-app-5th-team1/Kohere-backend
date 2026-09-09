@@ -1267,7 +1267,7 @@
 **So that** 내 조건(예산·생활 조건)에 맞는 매물을 한눈에 비교하고 더 볼 수 있다
 
 - 메타: 우선순위 **High**, 관련 NFR — 목록 조회 응답시간 목표(NFR 미정), 무상태 조회로 수평 확장 가능
-- 데이터 관점: 필터는 서버에서 MongoDB 질의 조건으로 평탄화(매물은 MongoDB 저장, ADR-0005), `sort=DISTANCE`는 bbox 네 좌표가 모두 있어야 하며 기준점은 요청 bbox의 중심, `page.totalElements`는 동일 필터 조건으로 산출
+- 데이터 관점: 필터는 서버에서 MongoDB 질의 조건으로 평탄화(매물은 MongoDB 저장, ADR-0005), `sort=DISTANCE`는 bbox 네 좌표가 모두 있어야 하며 기준점은 요청 bbox의 중심, `page.totalElements`는 동일 필터 조건으로 산출, `listingIds`는 다른 필터와 함께 AND로 걸리는 추가 필터이며 지정한 매물이 다른 조건에서 걸러지면 응답에서 빠진다
 
 **AC (Given / When / Then)**
 
@@ -1287,6 +1287,12 @@
   Given 필터 결과가 0건이거나 마지막 페이지를 넘는 `page`가 요청되면
   When 목록을 호출하면
   Then `200 OK`로 `data.content`는 빈 배열, `data.page.hasNext=false`를 반환한다(에러 아님)
+- 시나리오: 지정한 매물만 카드로 조회(지도 마커 → 카드)
+  Given 지도 마커 조회로 받은 `listingId`가 있고
+  When 그 id들을 `listingIds`에 담아(반복 파라미터 또는 콤마, 최대 20개) 마커와 같은 필터로 목록을 호출하면
+  Then `200 OK`로 그 매물의 카드만 반환하며 `roomOffers[]`에는 필터를 통과한 방만 담긴다. 목록의 현재 페이지 밖에 있던 매물도 받을 수 있다
+  And 보낸 id 중 매물이 없거나 `PUBLISHED`가 아니거나 다른 필터에서 걸러진 것은 응답에서 빠지며(에러 아님), 응답 순서는 보낸 순서가 아니라 `sort`를 따른다
+  And `listingIds`가 21개 이상이거나 형식이 올바르지 않으면 `400 Bad Request`, `error.code=INVALID_INPUT`을 반환한다
 - 시나리오: 인증 선택(현재 목록 개인화 범위)
   Given 동일 매물에 대해
   When 비로그인 또는 로그인 사용자가 목록을 호출하면

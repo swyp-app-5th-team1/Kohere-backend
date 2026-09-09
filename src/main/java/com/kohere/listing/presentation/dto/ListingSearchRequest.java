@@ -22,6 +22,15 @@ public class ListingSearchRequest {
   private Integer maxDeposit;
   private Set<ListingType> type;
   private Set<ConditionTag> conditions;
+
+  /**
+   * 지정한 매물만 카드로 받을 때 쓰는 listingId 목록이다(지도 마커 → 카드).
+   *
+   * <p>개수·형식 검증은 {@code ListingService}가 한다 — 이 DTO는 {@code @Valid} 없이 바인딩되므로 Bean Validation
+   * 애너테이션을 붙여도 실행되지 않는다.
+   */
+  private Set<String> listingIds;
+
   private ListingSort sort = ListingSort.RECOMMENDED;
   private int page = 0;
   private int size = 20;

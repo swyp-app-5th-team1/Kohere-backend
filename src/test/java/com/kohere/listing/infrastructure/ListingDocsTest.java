@@ -51,6 +51,7 @@ import static com.kohere.docs.ListingV1DocsFields.emptyMapResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.emptyPageResponseFields;
 import static com.kohere.docs.ListingV1DocsFields.emptyRecentListingsResponseFields;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
@@ -124,6 +125,8 @@ class ListingDocsTest {
 
   /** 문서 예시로 쓰는 v4 시드 매물이다. 고시원(GOSHIWON)이고 ACTIVE 방 타입 2개를 가진다. */
   private static final String LISTING_ID = ListingTestSeeds.LISTING_ID;
+
+  private static final String SECOND_LISTING_ID = ListingTestSeeds.SECOND_LISTING_ID;
 
   private static final String MISSING_LISTING_ID = "6858e20000000000000000ff";
   private static final String LISTINGS_COLLECTION = "listings";
@@ -232,6 +235,27 @@ class ListingDocsTest {
         .andDo(
             document(
                 "listings-list",
+                resourceDetails()
+                    .tag(ApiDocsTags.LISTINGS)
+                    .summary(LISTINGS_LIST_SUMMARY)
+                    .description(LISTINGS_LIST_DESCRIPTION),
+                queryParameters(listQueryParameters()),
+                responseFields(listResponseFields())));
+
+    // 마커 → 카드. 시드 2건의 id 를 콤마로 이어 보낸다 — 저장소에 콤마 형식을 단정하는 테스트가 여기밖에 없다.
+    // bbox·정렬을 빼고 id 만으로 부르는 것이 마커에서 카드를 채울 때의 호출 모양이다.
+    mockMvc
+        .perform(get("/api/v2/listings").param("listingIds", LISTING_ID + "," + SECOND_LISTING_ID))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.page.totalElements").value(2))
+        .andExpect(jsonPath("$.data.content.length()").value(2))
+        .andExpect(
+            jsonPath("$.data.content[*].listingId").value(hasItems(LISTING_ID, SECOND_LISTING_ID)))
+        // bbox 를 안 보내 거리 기준점이 없다 — distanceMeters 가 null 인 유일한 문서 케이스다.
+        .andExpect(jsonPath("$.data.content[0].distanceMeters").value(nullValue()))
+        .andDo(
+            document(
+                "listings-list-by-ids",
                 resourceDetails()
                     .tag(ApiDocsTags.LISTINGS)
                     .summary(LISTINGS_LIST_SUMMARY)
@@ -797,6 +821,14 @@ class ListingDocsTest {
         status().isBadRequest(),
         "INVALID_INPUT",
         "listings-list-invalid-page-size",
+        LISTINGS_LIST_SUMMARY,
+        LISTINGS_LIST_DESCRIPTION);
+
+    perform(
+        get("/api/v2/listings").param("listingIds", "not-an-object-id"),
+        status().isBadRequest(),
+        "INVALID_INPUT",
+        "listings-list-invalid-listing-ids",
         LISTINGS_LIST_SUMMARY,
         LISTINGS_LIST_DESCRIPTION);
 

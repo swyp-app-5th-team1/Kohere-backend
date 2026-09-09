@@ -5,7 +5,8 @@ package com.kohere.diagnosis.domain;
  * {@code COMPLETED}만 노출한다. docs/api/specs/02-diagnosis-recommendation.md (status).
  *
  * <ul>
- *   <li>{@code IN_PROGRESS} — v1의 진행 중 초안(살아 있음, 사용자당 1건). 이력·최근 조회에 안 나온다.
+ *   <li>{@code IN_PROGRESS} — 흐름 세션이 들고 있는 진행 중 초안. 종료 상태로만 {@code diagnoses}에 저장되므로 어떤 조회에도 나오지
+ *       않는다.
  *   <li>{@code COMPLETED} — 6단계를 다 답하고 확정됨({@link Diagnosis#complete}). 이력·최근·추천의 대상.
  *   <li>{@code DISCARDED} — 6단계를 못 채우고 <b>끝난</b> v2 시도({@link Diagnosis#discard}). 수요 분석 전용 기록이라
  *       사용자 노출 경로를 두지 않는다: 목록(이력·최근)은 {@code COMPLETED}만 보므로 자동으로 빠지지만, <b>id로 직접 오는 상세·추천은 소유권만

@@ -37,10 +37,9 @@ import org.springframework.stereotype.Service;
  * field=regionRetry})으로 내려가며, 그 예/아니오 응답에만 클라이언트가 행할 행위를 코드로 알린다(예={@code RESTART} · 아니오={@code
  * TERMINATED}).
  *
- * <p>기존 v1({@link DiagnosisService})은 그대로 두고, 답 적용·조건 매핑·문항 번역·③ 분기는 공유 컴포넌트({@link
- * DiagnosisAnswerApplier}·{@link DiagnosisCriteriaMapper}·{@link DiagnosisQuestionTranslator})를
- * 재사용한다. 진행 상태는 v1의 {@code diagnoses}(IN_PROGRESS)와 분리된 {@link DiagnosisFlowSessionRepository}에 담고,
- * 완료 시에만 {@link DiagnosisRepository}로 정본 진단을 저장한다.
+ * <p>답 적용·조건 매핑·문항 번역·③ 분기는 {@link DiagnosisAnswerApplier}·{@link DiagnosisCriteriaMapper}·{@link
+ * DiagnosisQuestionTranslator}가 맡는다. 진행 상태는 정본 진단 컬렉션과 분리된 {@link DiagnosisFlowSessionRepository}에
+ * 담고, 흐름이 끝날 때만 {@link DiagnosisRepository}로 종료 상태의 진단을 저장한다.
  *
  * <p><b>비회원(게스트)도 이 흐름을 쓴다</b>(#181). 게스트는 임시 {@code userId}를 받지 않고 {@code userId == null}로 오며, 요청
  * 사이의 연속성은 {@code /start}가 발급하고 클라이언트가 {@code X-Guest-Session-Id} 헤더로 에코하는 게스트 세션 키가 잇는다. 신원이 둘로
@@ -145,9 +144,8 @@ public class DiagnosisFlowService {
    * 확정 진단의 추천 매물을 조회한다({@code GET /api/v2/diagnoses/{id}/recommendations}). <b>이 호출이 곧 "매물을 받겠다"는
    * 클라이언트의 결정</b>이며, 시점·페이지·정렬을 클라가 정한다.
    *
-   * <p>v1 §7과 같은 조회지만 0건일 때 조정 제안 문구·액션({@code suggestions})을 붙이지 않는다 — v2는 제안 기능을 쓰지 않으므로 사유만
-   * {@code resultCode}({@code MATCHED}/{@code NO_MATCH})로 알린다. 검증·소유권·조건 매핑은 v1과 공유한다({@link
-   * DiagnosisRecommendationReader}).
+   * <p>0건은 에러가 아니라 정상 결과이며 사유는 {@code resultCode}({@code MATCHED}/{@code NO_MATCH})로 알린다.
+   * 검증·상태·소유권·조건 매핑은 {@link DiagnosisRecommendationReader}가 맡는다.
    *
    * <p>게스트도 닿는 유일한 소유권 검사 지점이다(#181) — 신원 종류가 같고 값이 같을 때만 통과하므로 회원↔게스트 교차 조회는 양방향 모두 403이다.
    *

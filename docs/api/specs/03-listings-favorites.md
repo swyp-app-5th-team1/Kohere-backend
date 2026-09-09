@@ -639,6 +639,7 @@ Query 파라미터:
 | `maxDeposit` | integer(KRW) | 선택 | — | 보증금 최대값 |
 | `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSHIWON,CO_LIVING`) |
 | `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION` 등을 반복 파라미터 또는 콤마로 전송 |
+| `listingIds` | string | 선택 | — | 지정한 매물만 카드로 받을 때 쓰는 `listingId` 목록. 반복 파라미터 또는 콤마로 전송하며 **최대 20개**. 지도 마커를 눌렀을 때 그 매물의 카드를 채우는 용도다 |
 | `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED`는 현재 `favoriteCount desc`, 동률이면 `updatedAt desc`; `PRICE_ASC`는 낮은 월세순; `DISTANCE`는 현재 지도 중심에서 가까운 순 |
 | `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호. 무한스크롤의 다음 페이지 요청에 사용 |
 | `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
@@ -760,13 +761,16 @@ Request Body: 없음
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
 - `contact`는 매물별 담당 연락처(담당자명·지점 대표 전화)이며 세입자에게 그대로 공개한다. 임대인 개인 연락처와는 별개 값이다. `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 응답에 포함하지 않는다.
 - `distanceMeters`가 있으면 거리 라벨로 표시하고, 없으면 숨긴다.
+- `listingIds`를 보내면 그 매물만 카드로 돌아온다. 다른 필터·정렬·페이지의 의미는 그대로이므로, 마커에서 카드를 채울 때는 화면 필터만 함께 보내고 bbox와 `sort`는 생략한다. 값 없이 `listingIds=`만 보내면 필터가 없는 것으로 본다.
+- **보낸 id가 응답에 없을 수 있다.** 그 매물이 없거나, 공개 상태가 아니거나, bbox를 함께 보냈는데 그 밖이거나, `type`으로 걸러졌거나, 조건을 통과한 방이 하나도 없으면 빠진다. `content`의 길이와 보낸 id 개수가 같다고 가정하면 안 되고, `page.totalElements`도 보낸 개수가 아니라 실제로 통과한 카드 수다.
+- **응답 순서는 보낸 id 순서가 아니라 `sort`가 정한다.** 마커와 카드를 짝지어야 하면 `listingId`로 맞춘다.
 - `favoriteCount`는 찜 수 표시값이다. 목록의 `favorited`는 현재 구현상 로그인 여부와 관계없이 항상 `false`이므로, 실제 하트 상태가 필요한 화면은 상세 또는 사용자 전용 목록의 값을 사용해야 한다.
 
 발생 가능한 에러:
 
 | status | code | 시점 |
 | --- | --- | --- |
-| 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과 |
+| 400 | `INVALID_INPUT` | 범위/enum 위반(`minBudget>maxBudget`, 미정의 `conditions`/`sort` 등), `size` 범위 초과, `listingIds` 개수 초과(20개) 또는 형식 위반 |
 | 400 | `MALFORMED_REQUEST` | 타입 불일치(숫자 파라미터에 비숫자 등) |
 | 400 | `LISTING_INVALID_BBOX` | bbox 네 좌표가 일부만 있거나 범위·방향이 올바르지 않음 |
 | 400 | `LISTING_INVALID_SORT_PARAM` | `sort=DISTANCE`인데 bbox 네 좌표가 없음 |
@@ -865,7 +869,7 @@ Request Body: 없음
 
 - `markers[].lat/lng`는 지도 SDK에 넘길 좌표다.
 - `markers[].listingId`는 마커 선택 상태, 목록 카드 선택 상태, 상세 진입을 연결하는 키다.
-- `title`, 가격, 이미지 등 카드 정보는 포함하지 않는다. 마커를 눌렀을 때 카드가 필요하면 같은 `listingId`로 목록 결과에서 찾거나 상세 API를 호출한다.
+- `title`, 가격, 이미지 등 카드 정보는 포함하지 않는다. 마커를 눌렀을 때 카드가 필요하면 그 `listingId`를 `GET /api/v2/listings`의 `listingIds`에 넘긴다 — 목록의 현재 페이지 밖에 있는 매물이어도 카드를 받을 수 있고, `roomOffers[]`에는 함께 보낸 필터를 통과한 방만 담긴다. 다만 목록 응답이라 `favorited`는 항상 `false`이므로 하트를 그려야 하면 상세 API를 부른다.
 - `LISTING_AREA_TOO_LARGE`가 오면 지도를 더 확대하거나 bbox를 좁혀 다시 호출한다.
 
 발생 가능한 에러:

@@ -25,8 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 유지된다.
  *
  * <p>시작은 클라이언트가 주도한다 — {@code /start}는 진행 중 세션이 있어도 버리고 처음부터 시작하며, 세션 없이 온 {@code /next}는 400으로
- * 막는다. 확정 매물 조회 시점도 클라이언트가 정하며, 이 컨트롤러의 v2 전용 엔드포인트({@link #recommendations})를 {@code diagnosisId}로
- * 호출한다 — <b>v1 추천 엔드포인트가 아니다.</b> v1은 회원 전용이라 게스트가 호출하면 401이다.
+ * 막는다. 확정 매물 조회 시점도 클라이언트가 정하며, {@link #recommendations}를 {@code diagnosisId}로 호출한다.
  *
  * <p>입력 바인딩·응답 래핑만 담당하고 로직은 {@link DiagnosisFlowService}에 위임한다.
  *
@@ -75,8 +74,7 @@ public class DiagnosisV2Controller {
   }
 
   /**
-   * 확정 진단의 추천 매물·지도 좌표를 조회한다. 이 호출 자체가 "매물을 받겠다"는 클라이언트의 결정이며, 0건이면 빈 {@code content}가 곧
-   * no-match다(조정 제안 없음 — v1 §7과 다른 점은 그것 하나).
+   * 확정 진단의 추천 매물·지도 좌표를 조회한다. 이 호출 자체가 "매물을 받겠다"는 클라이언트의 결정이며, 0건이면 빈 {@code content}가 곧 no-match다.
    *
    * <p>소유권은 신원 종류가 같고 값이 같을 때만 통과한다 — 게스트는 {@code X-Guest-Session-Id}가 필수이며, 회원↔게스트 교차 조회는 양방향 모두
    * {@code 403 FORBIDDEN}이다.

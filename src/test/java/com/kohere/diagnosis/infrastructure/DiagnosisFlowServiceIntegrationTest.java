@@ -351,7 +351,7 @@ class DiagnosisFlowServiceIntegrationTest {
     assertThat(res.resultCode()).isEqualTo(FlowResultCode.COMPLETED);
     assertThat(res.diagnosisId()).isNotNull();
     assertThat(res.question()).isNull();
-    // 확정 진단은 v1과 동일한 diagnoses 컬렉션에 저장되고, 진행 세션은 삭제된다.
+    // 확정 진단은 정본 diagnoses 컬렉션에 저장되고, 진행 세션은 삭제된다.
     assertThat(diagnosisMongoRepository.findById(res.diagnosisId())).isPresent();
     assertThat(flowSessionMongoRepository.findByUserId(userId)).isEmpty();
   }
@@ -611,16 +611,27 @@ class DiagnosisFlowServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("마커 조회는 미확정 진단을 404로 막는다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
-  void markersRejectUnconfirmedDiagnosis() {
-    // 공개 API로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 준다) — 저장소에 직접 심는다.
+  @DisplayName("추천 페이지 크기는 100을 넘길 수 없다 — 상수가 조용히 갈리는 것을 막는 가드다")
+  void recommendationPageSizeIsCappedAtHundred() {
+    Long diagnosisId = runStudyFlow(710L).diagnosisId();
+
+    assertThatNoException()
+        .isThrownBy(() -> flowService.getRecommendations(710L, null, diagnosisId, 0, 100, null));
+    assertThatThrownBy(() -> flowService.getRecommendations(710L, null, diagnosisId, 0, 101, null))
+        .isInstanceOf(InvalidInputException.class);
+  }
+
+  @Test
+  @DisplayName("미확정 진단은 추천 두 경로 모두 404다 — 조건이 비어 전체 매물로 붕괴하는 것을 막는 게이트다")
+  void unconfirmedDiagnosisIsRejectedByBothRecommendationPaths() {
+    // 심층 방어 — 공개 경로로는 이 상태를 만들 수 없다(확정만이 diagnosisId를 주고, diagnoses에는 종료 상태만 쌓인다).
+    // 게이트가 실제로 걸리는지 보려면 저장소에 직접 심는 수밖에 없다.
     Long draftId = diagnosisRepository.save(Diagnosis.startInProgress(60L)).getId();
 
     assertThatThrownBy(() -> flowService.getRecommendationMarkers(60L, null, draftId))
         .isInstanceOf(DiagnosisNotFoundException.class);
-    // 페이지 조회는 이 게이트가 없다 — v2-3 공개 계약을 이번에 바꾸지 않았다.
-    assertThatNoException()
-        .isThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null));
+    assertThatThrownBy(() -> flowService.getRecommendations(60L, null, draftId, 0, 20, null))
+        .isInstanceOf(DiagnosisNotFoundException.class);
   }
 
   @Test

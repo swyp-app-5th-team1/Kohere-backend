@@ -318,7 +318,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 **서버는 질문과 분기만 주도한다.** 진단을 시작하는 시점도, 확정된 매물을 조회하는 시점도 **클라이언트가 결정**한다 — 확정 응답(`COMPLETED`)에 추천 매물을 인라인으로 싣지 않고 `diagnosisId`만 주며, 클라이언트가 그 식별자로 **v2-3 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`** 를 별도 호출해 매물 목록·지도 좌표를 받는다. **확정 시점에 서버는 매칭 유무조차 확인하지 않는다** — 그러려면 클라이언트가 요청하지도 않은 추천 쿼리를 돌려야 하기 때문이다.
 
 - **서버가 미리 필터링하는 지점은 ① 지역 하나뿐이다.** ① 지역(`region`) 답 직후 매칭 매물이 0건이면 서버가 **"현재 지역에는 매물이 없어요. 다른 지역 방을 찾아보시겠어요?"** 예외질문을 끼워 넣는다. 이 예외질문은 따로 관리하지 않고 **일반 question으로 관리**한다 — 서버 코드에 하드코딩한 합성 문구가 아니라 문항 카탈로그(`diagnosisQuestions`)의 일반 문항(`step: 1`, `field: "regionRetry"`, `select: { type: "SINGLE", max: 1 }`, `options: [{code:"YES"},{code:"NO"}]`)이며, 별도 결과코드가 아니라 일반 **`NEXT_QUESTION`** 으로 내려간다. **그 예/아니오 응답에만** "프론트가 행할 행위"를 코드로 알린다 — 예=`RESTART`(클라이언트가 `POST /start`로 재시도) / 아니오=`TERMINATED`(진단 종료).
-- **6번 질문까지 마친 뒤 매물이 0건인 경우엔 어떤 suggestion도 없다.** 다만 그 사실은 흐름 응답이 아니라 **클라이언트가 추천을 조회한 v2-3 응답의 빈 `content`** 로 드러난다 — no-match를 확정 시점에 결과코드로 미리 주려면 서버가 추천 쿼리를 선행해야 하므로 그렇게 하지 않는다. v1의 조정 제안(`suggestions`·`diagnosisSuggestions` 시드)은 **v1 전용으로 그대로 두고 v2는 참조하지 않는다**(v2-3 응답에는 `suggestions` 필드가 없다).
+- **6번 질문까지 마친 뒤 매물이 0건인 경우엔 어떤 suggestion도 없다.** 다만 그 사실은 흐름 응답이 아니라 **클라이언트가 추천을 조회한 v2-3 응답의 빈 `content`** 로 드러난다 — no-match를 확정 시점에 결과코드로 미리 주려면 서버가 추천 쿼리를 선행해야 하므로 그렇게 하지 않는다. 조정 제안(`suggestions`)은 v1 경로와 함께 제거됐다 — v2-3 응답에 그 필드가 없다.
 - 문항 카탈로그(`diagnosisQuestions`)·번역(사용자 표시 언어 기준, `en` 폴백)·진단 입력 enum·③ 대학/지역 분기 규칙은 위 [진단 입력 enum 정의](#진단-입력-enum-정의)와 [ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)·[ADR-0029](../../adr/0029-diagnosis-i18n-strategy.md)를 따른다. 정본 순서는 `REGION(1) → PURPOSE(2) → UNIVERSITY_OR_DISTRICT(3, purpose로 university|district) → CONDITIONS(4) → MONTHLY_RENT(5) → ARC_STATUS(6)`이며, 이 번호가 응답 `data.question.step`으로 나간다. step 1에는 `region`·`regionRetry` 두 문항이 나란히 있으므로 서버가 낼 문항을 `field`로 지목한다(목록 순서에 기대지 않는다).
 - 진행 상태는 `diagnoses`를 쓰지 않고 **v2 전용 세션**(`diagnosisFlowSessions` 컬렉션: `{ userId, guestSessionId, draft, pendingField }`)에 담는다. 회원 세션은 `userId`가, 게스트 세션은 `guestSessionId`가 채워지며 **정확히 하나만** 채워진다(`userId` UNIQUE 인덱스는 partial로 좁히고 `guestSessionId` partial UNIQUE를 별도로 둔다 — [게스트 접근](#게스트-접근--비회원-진단-issue-181)). 세션은 `POST /start`에서만 생기고 터미널(`COMPLETED`·`RESTART`·`TERMINATED`)에서 삭제된다. 완료 시에만 정본 진단을 만들어 `diagnoses` 컬렉션에 저장한다(이력·최근·상세 조회가 읽는 대상이 이것이다). **① 지역 0건으로 끝난 시도는 버리지 않는다** — 세션을 지우기 전에 부분 답을 `diagnoses`에 `status=DISCARDED`로 남겨 수요 분석("어느 지역을 원했는데 매물이 없었나")에 쓴다(재시도·종료 양쪽). 그 외 이탈은 돌아왔을 때에야 알 수 있어 집계가 편향되므로 기록하지 않는다(`/start`가 이전 세션을 그냥 덮어쓴다). **API로 노출되지 않는다** — 이력·최근·추천 조회는 `COMPLETED`만 본다. 상세는 [ADR-0036](../../adr/0036-diagnosis-v2-server-driven-flow.md).
 - **카탈로그 시드**: `regionRetry` 문항은 정본 시드 [`diagnosis-questions.json`](../../../src/test/resources/fixtures/diagnosis-questions.json)에 다른 문항과 나란히 들어 있다(문항 `_id`는 `field` 값). 적재는 배포가 아니라 운영자 주입이다([migration-policy §8-1](../../database/migration-policy.md#8-1-시드-주입-절차)).
@@ -551,7 +551,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 | --- | --- | --- |
 | 400 | `INVALID_INPUT` | `page`/`size` 범위 위반, 허용되지 않은 `sort` 키·방향 |
 | 403 | `FORBIDDEN` | 타인 소유 진단. 게스트↔회원 교차 조회와 게스트 키 미전송도 여기에 해당한다 |
-| 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음 |
+| 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음. 폐기 기록(`DISCARDED`)과 미확정 진단도 여기에 해당한다 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보냄. **토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`(401)는 이 엔드포인트에서 발생하지 않는다** |
 
 ---
@@ -610,7 +610,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 | status | code | 시점 |
 | --- | --- | --- |
 | 403 | `FORBIDDEN` | 타인 소유 진단. 게스트↔회원 교차 조회와 게스트 키 미전송도 여기에 해당한다 |
-| 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음. 폐기 기록과 미확정 진단도 여기에 해당한다 |
+| 404 | `DIAGNOSIS_NOT_FOUND` | 진단이 존재하지 않음. 폐기 기록(`DISCARDED`)과 미확정 진단도 여기에 해당한다 |
 | 401 | `TOKEN_EXPIRED` | 만료된 access token을 보냄. **토큰 미전송·위조는 게스트로 처리하므로 `UNAUTHENTICATED`(401)는 이 엔드포인트에서 발생하지 않는다** |
 
 > `INVALID_INPUT`(400)은 발생하지 않는다 — 쿼리 파라미터를 받지 않는다. 다만 `{diagnosisId}`에 숫자가 아닌 값이 오면 공통 `MALFORMED_REQUEST`(400)다.

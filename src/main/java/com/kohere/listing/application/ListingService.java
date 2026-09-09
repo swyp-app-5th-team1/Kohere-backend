@@ -30,6 +30,7 @@ import com.kohere.user.api.UserAccountService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,12 @@ public class ListingService {
 
   /** 지도 SDK에 한 번에 넘기는 마커가 너무 많아지지 않도록 둔 서버 방어 상한이다. */
   private static final int MAX_MAP_MARKERS = 500;
+
+  /** 한 번에 id로 집어 올 수 있는 매물 수. 기본 {@code size}와 같은 값이라 페이지 경계에 걸리지 않는다. */
+  private static final int MAX_LISTING_IDS = 20;
+
+  /** 매물 식별자 형식(24자리 16진수). */
+  private static final Pattern LISTING_ID_PATTERN = Pattern.compile("[0-9a-fA-F]{24}");
 
   private static final int MAX_PAGE_SIZE = 100;
   private static final int RECENT_LISTINGS_RESPONSE_LIMIT = 10;
@@ -263,6 +270,7 @@ public class ListingService {
     validateMoneyRange(
         "minDeposit", "maxDeposit", request.getMinDeposit(), request.getMaxDeposit());
     validatePage(request.getPage(), request.getSize());
+    validateListingIds(request.getListingIds());
 
     ListingSearchCondition.BoundingBox viewportBounds =
         buildBounds(request.getSwLat(), request.getSwLng(), request.getNeLat(), request.getNeLng());
@@ -277,6 +285,7 @@ public class ListingService {
         request.getMaxDeposit(),
         request.getType(),
         request.getConditions(),
+        request.getListingIds(),
         request.getSort(),
         centerLat(viewportBounds),
         centerLng(viewportBounds),
@@ -284,7 +293,12 @@ public class ListingService {
         request.getSize());
   }
 
-  /** 지도 마커 조회는 bbox가 필수이며, 목록과 같은 필터를 적용한다. */
+  /**
+   * 지도 마커 조회는 bbox가 필수이며, 목록과 같은 필터를 적용한다.
+   *
+   * <p>{@code listingIds}만은 받지 않는다 — 목록과 저장소 criteria 빌더를 공유하므로 여기서 빈 집합을 명시해 두지 않으면 목록 전용 필터가 지도로
+   * 샌다. 지도 요청 DTO에도 그 필드가 없다.
+   */
   private static ListingSearchCondition buildMapSearchCondition(ListingMapRequest request) {
     validateMoneyRange("minBudget", "maxBudget", request.getMinBudget(), request.getMaxBudget());
     validateMoneyRange(
@@ -304,6 +318,7 @@ public class ListingService {
         request.getMaxDeposit(),
         request.getType(),
         request.getConditions(),
+        Set.of(),
         ListingSort.RECOMMENDED,
         null,
         null,
@@ -385,6 +400,29 @@ public class ListingService {
     }
     if (size < 1 || size > MAX_PAGE_SIZE) {
       throw new InvalidInputException("size", "validation.range", 1, MAX_PAGE_SIZE, size);
+    }
+  }
+
+  /**
+   * id 지정 조회의 개수와 형식을 확인한다.
+   *
+   * <p>상한을 기본 {@code size}와 같은 값으로 둬서 클라이언트가 페이지를 신경 쓰지 않아도 한 번에 받게 한다. 형식이 어긋난 값은 조용히 버리지 않고 거절한다
+   * — 전부 무효일 때 필터가 통째로 사라져 오히려 전체 목록이 나가는 것을 막는다.
+   *
+   * <p>저장소 식별자 타입({@code ObjectId})을 응용 계층으로 올리지 않으려고 형식은 정규식으로 본다.
+   */
+  private static void validateListingIds(Set<String> listingIds) {
+    if (listingIds == null || listingIds.isEmpty()) {
+      return;
+    }
+    if (listingIds.size() > MAX_LISTING_IDS) {
+      throw new InvalidInputException(
+          "listingIds", "validation.maxSelections", MAX_LISTING_IDS, listingIds.size());
+    }
+    for (String listingId : listingIds) {
+      if (listingId == null || !LISTING_ID_PATTERN.matcher(listingId).matches()) {
+        throw new InvalidInputException("listingIds", "validation.notAllowed", listingId);
+      }
     }
   }
 

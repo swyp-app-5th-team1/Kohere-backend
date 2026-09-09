@@ -19,22 +19,11 @@ final class DiagnosisAccessGuard {
   private DiagnosisAccessGuard() {}
 
   /**
-   * 폐기 기록({@code DISCARDED})은 없는 것처럼 취급한다.
+   * 확정({@code COMPLETED}) 진단만 통과시킨다. 폐기 기록도 미완주 초안도 여기서 함께 막힌다.
    *
-   * <p>소유권만으로는 막히지 않는다 — 폐기 기록은 본인 것이고 id가 순차 발급이라 추측 가능하다. 수요 분석용 내부 기록이라 노출 경로를 두지 않는다(ADR-0036
-   * 결정 12).
-   */
-  static void requireNotDiscarded(Diagnosis diagnosis) {
-    if (diagnosis.getStatus() == DiagnosisStatus.DISCARDED) {
-      throw new DiagnosisNotFoundException();
-    }
-  }
-
-  /**
-   * 확정({@code COMPLETED}) 진단만 통과시킨다. {@link #requireNotDiscarded}의 상위집합이지만 둘 다 두는 이유는, 추천 페이지 조회의
-   * 공개 계약(미확정 id로 불러도 200)을 이번에 바꾸지 않기 위해서다 — 그 경로는 폐기만 막는다.
+   * <p>폐기 기록은 소유권만으로 막히지 않는다 — 본인 것이고 id가 순차 발급이라 추측 가능하다. 수요 분석용 내부 기록이라 노출 경로를 두지 않는다.
    *
-   * <p>미확정 초안은 조건이 비어 있어 그대로 매칭에 쓰면 "조건 없는 전체 매물"로 붕괴한다.
+   * <p>미완주 초안은 조건이 비어 있어 그대로 매칭에 쓰면 "조건 없는 전체 매물"로 붕괴한다.
    */
   static void requireCompleted(Diagnosis diagnosis) {
     if (diagnosis.getStatus() != DiagnosisStatus.COMPLETED) {

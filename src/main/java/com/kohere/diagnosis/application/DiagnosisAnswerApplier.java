@@ -14,9 +14,9 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * 단계별 답(field+code/codes/min-max)을 파싱·검증해 진행 중 진단 초안에 적용한다. v1 단계 저장({@code POST /answers})과 v2 서버
- * 주도 흐름({@code POST /api/v2/diagnoses/next})이 공유하는 순수 컴포넌트로, 분기·파생 규칙을 한 곳에 둬 두 흐름의 정합을 유지한다(중복
- * 방지). 잘못된 답은 공통 {@code INVALID_INPUT}(400)으로 막는다.
+ * 단계별 답(field+code/codes/min-max)을 파싱·검증해 진행 중 진단 초안에 적용한다. 서버 주도 흐름({@code POST
+ * /api/v2/diagnoses/next})이 쓰는 순수 컴포넌트로, 분기·파생 규칙을 한 곳에 모아 둔다. 잘못된 답은 공통 {@code
+ * INVALID_INPUT}(400)으로 막는다.
  *
  * <p>docs/api/specs/02-diagnosis-recommendation.md · ADR-0036.
  */
