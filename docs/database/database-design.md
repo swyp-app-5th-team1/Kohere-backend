@@ -626,7 +626,7 @@
 
 | 인덱스 | 대상 | 종류 | 목적 |
 | --- | --- | --- | --- |
-| `listings.location` | `location` | **2dsphere** | bbox 지도 마커 조회·거리순(`$geoWithin`/`$near`, 반경 검색은 별도 API 확정 시 사용, [ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
+| `listings.location` | `location` | **2dsphere** | bbox 지도 마커 조회(`$geoWithin`) — 거리순 정렬·반경 좁힘은 애플리케이션이 하버사인 거리로 계산한다([ADR-0005](../adr/0005-polyglot-persistence.md) D3) |
 | `listings_status_type_rent` | `status, type, roomOffers.pricing.monthlyRent` | 복합/multikey | 공개 매물·유형·방 상품 월세 필터 |
 | `listings_landlord_status_updated` | `landlordId, status, updatedAt desc` | 복합 | 임대인 전용 매물 조회(`GET /api/v2/users/me/listings`) — `landlordId` equality + `status` `$in` + `updatedAt` 최신순 |
 | `listings_status_room_filter_tags` | `status, roomOffers.filterTags` | 복합/multikey | 여성전용·개인욕실·영어 가능 등 방 상품 옵션 필터 |

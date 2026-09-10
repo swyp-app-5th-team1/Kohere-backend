@@ -1518,15 +1518,24 @@ class ListingMongoIntegrationTest {
     assertThat(listing.title()).isEqualTo("Sillim Stay");
     assertThat(listing.type().code()).isEqualTo("GOSHIWON");
     assertThat(listing.type().label()).isEqualTo("Goshiwon");
+    // 시드의 두 활성 방 중 월세 520,000짜리는 상한 500,000을 넘어 매칭에서 빠진다 — 카드 값이
+    // 매칭 방 하나로 좁혀지는지가 이 단정의 핵심이다. 전체 활성 방 기준이면 380,000~520,000이 된다.
     assertThat(listing.monthlyRentMin()).isEqualTo(380000);
-    assertThat(listing.monthlyRentMax()).isEqualTo(520000);
+    assertThat(listing.monthlyRentMax()).isEqualTo(380000);
     assertThat(listing.minDeposit()).isEqualTo(300000);
-    assertThat(listing.maxDeposit()).isEqualTo(500000);
+    assertThat(listing.maxDeposit()).isEqualTo(300000);
     assertThat(listing.lat()).isEqualTo(37.459471);
     assertThat(listing.lng()).isEqualTo(126.951422);
+    assertThat(listing.nearestTransit().type().code()).isEqualTo("SUBWAY");
+    assertThat(listing.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
+    assertThat(listing.nearestTransit().walkMinutes()).isEqualTo(5);
     assertThat(listing.conditions())
         .extracting(condition -> condition.code())
         .contains("FEMALE_ONLY", "ADDRESS_REGISTRATION");
+    // 상한을 넘어 빠진 방의 태그는 배지에 실리지 않는다.
+    assertThat(listing.conditions())
+        .extracting(condition -> condition.code())
+        .doesNotContain("PRIVATE_BATH", "ENGLISH_OK");
     assertThat(listing.conditions())
         .filteredOn(condition -> condition.code().equals("FEMALE_ONLY"))
         .singleElement()

@@ -18,7 +18,7 @@
 - 목록은 **오프셋 기반 페이지네이션**(api-design-guide §4-1: `page` 0-base, `size` 기본 20·최대 100, `sort=field,(asc|desc)`).
 - 모든 엔드포인트는 본인 진단만 접근(소유권 검증). 인증은 `Authorization: Bearer <accessToken>`이며, **진단 조회 3종(§4~§6)은 회원 전용으로 토큰이 필수**다. **비회원(게스트) 진단의 정본 경로는 v2 엔드포인트뿐**이며 거기서만 토큰이 선택이다 — 게스트 신원·세션 키·소유권 규칙은 아래 **[게스트 접근](#게스트-접근--비회원-진단-issue-181)** 절이 정본이다.
 - 입력 검증 실패(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 위반(`monthlyRentMin`/`monthlyRentMax` 음수 또는 `monthlyRentMin > monthlyRentMax`)·페이지 파라미터 범위·잘못된 `sort` 키)는 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인은 별도 검증 코드를 만들지 않는다.
-- 추천 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며 일반 탐색의 `ListingSummaryResponse`와 구조가 다르다. 지도 마커는 추천 요약의 `listingId`·`lat`·`lng`에서 조립하고, `listingId`는 MongoDB ObjectId hex 문자열이다.
+- 추천 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며 일반 탐색의 `ListingSummaryResponse`와 구조가 다르다 — 가격 범위·조건 배지와 함께 가까운 교통수단(`nearestTransit`)을 싣는다. 지도 마커는 추천 요약의 `listingId`·`lat`·`lng`에서 조립하고, `listingId`는 MongoDB ObjectId hex 문자열이다.
 
 ## 게스트 접근 — 비회원 진단 (issue #181)
 
@@ -26,11 +26,11 @@
 
 - **인가**: `SecurityConfig`에 **`/api/v2/diagnoses/**` `permitAll` 매처만 신규 추가**한다. 진단은 현재 전용 매처가 없어 `.anyRequest().authenticated()`로 떨어지므로, 이 줄을 넣지 않으면 게스트 요청이 계속 401이다. **조회 3종(`/api/v1/diagnoses`·`/latest`·`/{diagnosisId}`)에는 `permitAll` 매처를 추가하지 않는다** — 현행대로 `.anyRequest().authenticated()`에 남아 토큰이 없으면 401이다. 게스트용 ROLE은 두지 않는다.
 - **게스트 신원 = 토큰 부재**(`userId` 없음). 서버가 게스트에게 임시 userId나 JWT를 발급하지 않으며, 게스트 진단 문서는 `userId` 대신 `guestSessionId`로 식별된다(진단 문서·세션에는 둘 중 정확히 하나만 채워진다).
-- **언어**: 게스트는 **`en` 고정**이다(사용자 표시 언어 조회를 하지 않는다 — users 행이 없다). `Accept-Language`는 참조하지 않는다. 문항 `question`·옵션 `label`, 추천 카드의 매물명·`type`/`conditions` label이 모두 영어로 내려간다. 회원(온보딩 미완료 토큰 포함)은 기존대로 `users.lang`을 따른다.
+- **언어**: 게스트는 **`en` 고정**이다(사용자 표시 언어 조회를 하지 않는다 — users 행이 없다). `Accept-Language`는 참조하지 않는다. 문항 `question`·옵션 `label`, 추천 카드의 매물명·`type`/`conditions` label·`nearestTransit`의 종류 label과 역명이 모두 영어로 내려간다. 회원(온보딩 미완료 토큰 포함)은 기존대로 `users.lang`을 따른다.
 - **토큰 상태별 처리**(v2 엔드포인트 한정): 토큰 미전송·위조·형식 오류 → **게스트로 처리(2xx)**. 토큰을 보냈는데 **만료**면 게스트로 강등하지 않고 **401 `TOKEN_EXPIRED`** 를 그대로 반환한다(재발급이 필요한 회원이지 게스트가 아니다). 따라서 **v2 엔드포인트에서만** 401 `UNAUTHENTICATED`가 발생하지 않는다. **조회 3종은 토큰이 없거나 위조면 그대로 401 `UNAUTHENTICATED`** 다.
 - **온보딩 미완료 토큰**(`ROLE_ONBOARDING`)도 v2를 호출할 수 있다(의도적 수용). 단 신원이 있으므로 언어는 `users.lang`을 따르고 소유권도 `userId` 기준이다. **진단에서는 이것이 새로 생긴 허용이 아니다** — 진단은 전용 매처 없이 `.anyRequest().authenticated()`로 떨어져 있었고 `authenticated()`가 `ROLE_ONBOARDING`도 통과시키므로 #181 이전에도 모두 호출할 수 있었다(`403 AUTH_ONBOARDING_REQUIRED`는 원래 이 경로에서 나오지 않았다). 회원 전용으로 남는 조회 3종도 계속 `ROLE_ONBOARDING` 토큰을 통과시킨다. 매처를 `hasRole("USER")`에서 바꾸는 퀴즈([06](./06-gamification.md))·생활 팁([08](./08-life-tips.md))과 다른 점이다.
 - **임대인**: 진단에는 원래 세입자/임대인 역할 게이트가 없어 임대인도 그대로 이용한다 — 게스트 개방으로 달라지는 것이 없다.
-- **추천 응답 계약은 그대로다.** 추천 조회는 `listing`의 공개 query(`recommendByCriteria`)를 호출하는데 이 인터페이스가 애초에 신원을 받지 않으므로 **`listing` 모듈 변경이 0건**이고, v2-3 `content`·`markers`·`page`·`resultCode`의 형태·의미가 회원/게스트 동일하다. 차이는 label 언어가 `en`이라는 것뿐이다.
+- **추천 응답 계약은 회원/게스트가 같다.** 추천 조회는 `listing`의 공개 query(`recommendByCriteria`)를 호출하는데 **이 인터페이스가 신원을 받지 않으므로**, v2-3 `content`·`markers`·`page`·`resultCode`의 형태·의미가 회원/게스트 동일하다. 차이는 label 언어가 `en`이라는 것뿐이다.
 
 ### 게스트 세션 키 (`X-Guest-Session-Id`)
 
@@ -481,9 +481,9 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 > 흐름 응답(`FlowResultCode`)에 `NO_MATCH`가 **없는** 것과 헷갈리지 않도록: 흐름은 아직 추천을 조회하기 **전**이라 0건인지 모르고(알려면 클라가 요청하지 않은 쿼리를 서버가 돌려야 한다), 여기는 조회를 마친 **뒤**라 안다. 그래서 no-match는 이 응답의 결과코드로만 표현된다.
 
 - **인증**: 선택(게스트 허용). 본인 소유 진단만 — 타인 `403 FORBIDDEN`, 미존재 `404 DIAGNOSIS_NOT_FOUND`. 게스트는 `X-Guest-Session-Id`가 **필수**이며 소유는 신원 종류·값이 모두 일치할 때만 인정된다(게스트↔회원 교차 조회는 양방향 모두 403 — [게스트 접근](#게스트-접근--비회원-진단-issue-181)의 소유권 규칙 표).
-- **응답 계약은 회원/게스트 동일**: 추천은 `listing` 공개 query를 부르는데 그 인터페이스가 신원을 받지 않아 `listing` 모듈 변경이 0건이다. `resultCode`·`content`·`markers`·`page`의 형태·의미가 같고, 게스트는 label 언어만 `en`이다.
-- **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다.
-- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.includedUniversityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 펼칠 멤버가 없어 대신 목록 전체를 `excludedUniversityCodes`로 넘겨 여집합 매칭)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 현재 매칭된 방 상품만이 아니라 해당 매물의 전체 ACTIVE `roomOffers`를 기준으로 계산한다. `conditions`에는 ACTIVE 방 상품 태그 합집합이 담긴다.
+- **응답 계약은 회원/게스트 동일**: 추천은 `listing` 공개 query를 부르는데 그 인터페이스가 신원을 받지 않는다. `resultCode`·`content`·`markers`·`page`의 형태·의미가 같고, 게스트는 label 언어만 `en`이다.
+- **페이지네이션**: 오프셋 기반(매물 목록, api-design-guide §4-1). 지도 마커(`markers`)는 응답 매물의 `listingId`·`lat`·`lng` 좌표를 함께 제공하며, 클러스터링은 프론트 지도 SDK가 처리한다. `sort=price`는 진단 조건을 통과한 방의 최저 월세, 곧 카드에 표시되는 `monthlyRentMin`과 같은 값을 기준으로 정렬한다. `price` 정렬은 방향 접미사(`,asc`/`,desc`)와 무관하게 항상 오름차순이다.
+- **모듈 간 협력(diagnosis → listing)**: 추천은 즉시 결과가 필요하므로 이벤트가 아니라 **동기 공개 query 호출**로 실현한다([ADR-0002](../../adr/0002-inter-module-communication-via-events.md) Decision 5). `diagnosis`가 진단 조건을 `RecommendationCriteria`(지역·월세 범위·`conditions` + 대학/지역(③) 등) 값객체로 묶어 `listing`의 공개 query(`recommendByCriteria`)를 동기 호출하고, `RecommendedListingView` 페이지를 수신해 위 응답과 좌표를 조립한다(엔티티 비공유, 공개 DTO/포트로만). 계약 영향: (1) **대학** — `RecommendationCriteria.includedUniversityCodes`는 선택된 그룹을 펼친 **소속 대학 코드 집합 `Set<String>`**(member codes)이다. 진단이 `UniversityGroup`→member 펼침을 소유(`ETC`는 펼칠 멤버가 없어 대신 목록 전체를 `excludedUniversityCodes`로 넘겨 여집합 매칭)하고, `listing`은 이 집합으로 `nearbyUniversityCodes`를 `$in`(ANY member) 매칭한다. (2) **월세** — `RecommendationCriteria`는 `monthlyRentMin`/`monthlyRentMax`(각 nullable, null/미지정=해당 경계 무제한)를 싣고, `listing`은 각 경계가 있을 때 같은 ACTIVE `roomOffers[]` 원소의 `pricing.monthlyRent`에 하한·상한을 적용한다([ADR-0028](../../adr/0028-diagnosis-questions-catalog-store.md)). (3) **ARC** — `RecommendationCriteria`는 ⑥ `arcStatus`를 그대로 싣고, `listing`은 `NO_ARC`를 매물 루트 `arcRequired=NOT_REQUIRED`로 해석한다. `ARC_ISSUED`이면 ARC 필터를 적용하지 않는다. 응답의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 진단 조건(월세 범위·주거 조건 태그)을 통과한 ACTIVE `roomOffers`만을 기준으로 계산한다 — `conditions`에는 그 방 상품들의 태그 합집합이 담긴다. 조건에 맞는 방이 있어 매칭된 매물이어도 조건에 맞지 않는 방의 가격·태그는 카드에 실리지 않는다. 이 좁힘은 표시 값에만 적용되고 매칭되는 매물 집합은 바꾸지 않는다 — 매물을 고르는 조건이 그대로여서 같은 진단은 여전히 같은 매물 집합에 매칭되며, 이 응답의 `markers`도 그대로 이 페이지에 실린 매물을 가리킨다.
 
 #### Path · Query
 
@@ -492,9 +492,9 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 | `diagnosisId` | 필수 | — | `COMPLETED` 응답으로 받은 확정 진단 식별자 |
 | `page` | 선택 | `0` | 0-base 페이지 번호 |
 | `size` | 선택 | `20` | 페이지 크기(1~100) |
-| `sort` | 선택 | `recommended,desc` | `recommended`·`price`·`distance` + `,asc`/`,desc` |
+| `sort` | 선택 | `recommended,desc` | `recommended`·`price` + `,asc`/`,desc` |
 
-> **현재 정렬 구현 제약:** 요청 검증은 위 세 키와 `asc`/`desc`를 허용하지만, 저장소는 `price*`를 월세 오름차순으로만 처리하고 나머지(`recommended`, `distance`)는 `favoriteCount desc, updatedAt desc` 기본 정렬로 처리한다. 따라서 `price,desc` 방향은 반영되지 않고 `distance` 거리 계산도 아직 구현되지 않았다.
+> **정렬 키:** `recommended`·`price` 둘뿐이다. `recommended`는 찜 수 내림차순 + 최근 수정 내림차순(`favoriteCount desc, updatedAt desc`)의 기본 정렬이고, `price`는 진단 조건을 통과한 방의 최저 월세 오름차순 — 카드의 `monthlyRentMin`과 같은 값 — 이다. 방향 접미사는 `,asc`/`,desc`만 받으며, 두 키 모두에서 정렬 결과를 바꾸지 않는다. 그 밖의 방향 문자열과 키 `distance`는 허용 값이 아니다 — 보내면 `400 INVALID_INPUT`(`errors[0].field`가 `sort`)이다.
 
 #### 성공 Response — 200 OK (공통 래퍼)
 
@@ -510,11 +510,16 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
         "title": "Sinchon Co-living House A",
         "type": { "code": "CO_LIVING", "label": "Co-living" },
         "monthlyRentMin": 550000,
-        "monthlyRentMax": 700000,
+        "monthlyRentMax": 590000,
         "minDeposit": 1000000,
-        "maxDeposit": 1500000,
+        "maxDeposit": 1000000,
         "lat": 37.555134,
         "lng": 126.936893,
+        "nearestTransit": {
+          "type": { "code": "SUBWAY", "label": "Subway" },
+          "name": "Sinchon Sta.",
+          "walkMinutes": 5
+        },
         "conditions": [
           { "code": "FEMALE_ONLY", "label": "Female Only" },
           { "code": "PRIVATE_BATH", "label": "Private Bath" }
@@ -529,7 +534,9 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 }
 ```
 
-> 추천 카드의 매물명·type/conditions label은 진단 사용자가 계정에서 선택한 표시 언어가 적용된다(게스트는 `en` 고정). 프론트는 label을 표시하고 code를 필터 요청·비교에 사용한다([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md)).
+> 추천 카드의 매물명·type/conditions label·`nearestTransit`의 종류 label과 역명은 진단 사용자가 계정에서 선택한 표시 언어가 적용된다(게스트는 `en` 고정). 프론트는 label을 표시하고 code를 필터 요청·비교에 사용한다([ADR-0037](../../adr/0037-listing-localization-and-code-catalog.md)).
+
+> `nearestTransit`은 카드에 표시할 가까운 교통수단이다 — 종류(`type`의 code/label)·이름(`name`)·도보 소요 시간(`walkMinutes`, 분)을 싣는다. `name`은 카드용 축약 표기여서 영어 지하철역은 `Sinchon Sta.` 형태로 줄여 내려간다 — 매물 목록 카드와 같은 규칙이며, 정식 명칭(`Sinchon Station`)을 그대로 주는 매물 상세(`GET /api/v2/listings/{listingId}`)와 다르다.
 
 ```jsonc
 // 매칭 0건 — NO_MATCH(조정 제안 문구·액션 없음, 에러 아님)
@@ -558,7 +565,7 @@ v2 진단은 **여러 요청에 걸친 대화**이므로 게스트도 요청 사
 
 ### v2-4. GET `/api/v2/diagnoses/{diagnosisId}/recommendations/map` — 진단 추천 전체 지도 마커
 
-확정 진단의 추천 매물을 **페이지 없이 마커만** 반환한다. 지도 화면이 조건에 맞는 매물 전체를 한 번에 찍기 위한 경로이며, 매칭 조건은 v2-3과 **완전히 동일**하다(같은 진단이면 같은 매물 집합이다).
+확정 진단의 추천 매물을 **페이지 없이 마커만** 반환한다. 지도 화면이 조건에 맞는 매물 전체를 한 번에 찍기 위한 경로이며, 매칭 조건은 v2-3과 **완전히 동일**하다(같은 진단이면 매칭되는 매물이 같다 — 다만 v2-3은 한 페이지에 `size`만큼만 싣고 이 경로는 상한까지 전부 싣는다).
 
 응답은 매물 지도 조회(`GET /api/v2/listings/map`)와 **같은 모양**(`markers` + `total`)이다 — 경로 끝의 `/map`이 "마커 전용 표현"을 뜻한다는 규칙을 두 화면이 공유한다.
 

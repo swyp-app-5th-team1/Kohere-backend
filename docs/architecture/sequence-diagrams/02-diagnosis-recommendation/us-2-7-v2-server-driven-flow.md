@@ -187,7 +187,7 @@ sequenceDiagram
             Note over DIAG,USER: getLanguage 호출 없음 — lang=en 고정<br/>이 호출은 공유 DiagnosisRecommendationReader가 매 추천 요청마다 타므로<br/>분기는 그 공유 코드에 들어가지만, 조회 3종은 회원 전용이라<br/>실제로 게스트 분기를 타는 것은 v2 요청뿐이다
         end
         DIAG->>LIST: recommendByCriteria(전체 진단 조건, page/size, lang) 동기 호출
-        Note over DIAG,LIST: 추천 경로는 신원을 받지 않는다 — RecommendationCriteria에<br/>userId가 없고 favorite·recentListing 쓰기도 0건<br/>→ listing 모듈 코드 변경 0건
+        Note over DIAG,LIST: 추천 경로는 신원을 받지 않는다 — RecommendationCriteria에<br/>userId가 없고 favorite·recentListing 쓰기도 0건<br/>→ 게스트를 받기 위한 listing 모듈 변경 0건
         LIST-->>DIAG: 매칭 매물 요약 + 지도 좌표
         alt 매칭 있음
             DIAG-->>C: 200 OK, content[]·markers[]·page

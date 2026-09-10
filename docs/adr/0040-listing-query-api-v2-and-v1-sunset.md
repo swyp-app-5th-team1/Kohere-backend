@@ -10,11 +10,13 @@
 
 ## Status
 
-Proposed · **Amended(2026-08-15)**
+Proposed · **Amended(2026-08-15)** · **Amended(추천 카드에 `nearestTransit` 추가, 2026-09-10)**
 
 > **Amended — 키워드 검색이 대상에서 빠졌다.** [ADR-0043](./0043-remove-seeded-poi-keyword-search.md)이 `GET /listings/search`를 **v1·v2 양쪽에서 제거**했다. 클라이언트가 호출하지 않는 것이 확인됐고, US-3-3은 이미 네이버 장소 검색(`GET /api/v1/listings/places`)으로 갈아탔기 때문이다. 아래 본문의 **"6종"은 이제 5종**이며, v1 스텁도 키워드 검색을 뺀 나머지만 남는다. 이력을 남기기 위해 본문은 작성 시점 그대로 두고 해당 줄에만 표시한다.
 >
 > **범위는 매물 조회 계열뿐이다.** 진단 추천(`GET /diagnoses/{id}/recommendations`)은 이 결정의 대상이 **아니다** — 추천 응답 `RecommendedListingView`는 v4 개편 전후로 **구조가 바뀌지 않았고**(`git diff 04913ea..HEAD`에 변경 없음), 바뀐 것은 값뿐이다(`conditions`에서 `NO_ARC` 배지가 빠졌다 — [ADR-0039](./0039-listing-schema-v4-registration-form.md)). 추천은 이미 v1·v2 양쪽에 있고([ADR-0036](./0036-diagnosis-v2-server-driven-flow.md) 결정 10) 앱은 v2를 쓴다. 진단 컨트롤러·진단 문서는 이 ADR로 바뀌지 않는다.
+
+> **Amended — 추천 카드가 `nearestTransit`을 싣는다.** 위 「범위는 매물 조회 계열뿐이다」가 근거로 든 「`RecommendedListingView`의 구조가 바뀌지 않았다」는 **작성 시점의 사실**이다. 지금 추천 카드는 가까운 교통수단(`nearestTransit` — 종류·이름·도보 분)을 함께 싣고, 가격 범위·조건 태그는 진단 조건을 통과한 ACTIVE 방 상품만을 기준으로 집계한다 — 정본은 [진단·추천 스펙](../api/specs/02-diagnosis-recommendation.md)이다. **이 ADR의 범위는 그대로다** — 매물 조회 v1 종료·v2 이관과 무관한 진단 쪽 변경이며, 필드가 늘어나는 것은 하위 호환을 깨지 않아 추천은 계속 v2 한 벌로 간다. 이력을 남기기 위해 본문과 위 Amended는 작성 시점 그대로 둔다.
 
 ## Context
 

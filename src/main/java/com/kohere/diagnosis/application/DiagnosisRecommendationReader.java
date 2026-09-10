@@ -25,8 +25,13 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class DiagnosisRecommendationReader {
 
-  /** 추천 정렬 허용 키(스펙 §7). */
-  private static final Set<String> SORT_KEYS = Set.of("recommended", "price", "distance");
+  /**
+   * 추천 정렬 허용 키다.
+   *
+   * <p>거리순은 없다 — 진단에는 거리를 잴 기준 지점이 없다. 허용 목록에 두면 저장소가 조용히 기본 정렬로 떨어뜨려 클라이언트가 거리순을 받았다고 믿게 되므로, 받지
+   * 않고 {@code 400 INVALID_INPUT}으로 돌려준다.
+   */
+  private static final Set<String> SORT_KEYS = Set.of("recommended", "price");
 
   /** 마커 조회가 조건 매퍼에 넘기는 자리 채우기 — 이 경로는 페이지를 나누지 않는다. */
   private static final int IGNORED_PAGE = 0;

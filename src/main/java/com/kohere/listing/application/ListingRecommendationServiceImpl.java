@@ -6,9 +6,9 @@ import com.kohere.listing.api.RecommendationCriteria;
 import com.kohere.listing.api.RecommendedListingMarkersView;
 import com.kohere.listing.api.RecommendedListingView;
 import com.kohere.listing.domain.ConditionTag;
-import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingMapSearchResult;
 import com.kohere.listing.domain.ListingRecommendationCondition;
+import com.kohere.listing.domain.ListingRecommendationResult;
 import com.kohere.listing.domain.ListingRepository;
 import java.util.Collections;
 import java.util.Set;
@@ -52,12 +52,12 @@ public class ListingRecommendationServiceImpl implements ListingRecommendationSe
   public PageResponse<RecommendedListingView> recommendByCriteria(
       RecommendationCriteria criteria, String language) {
     ListingLocalizationContext localization = listingLocalizationService.contextFor(language);
-    PageResponse<Listing> listings =
+    PageResponse<ListingRecommendationResult> listings =
         listingRepository.recommend(
             toCondition(criteria), criteria.page(), criteria.size(), criteria.sort());
     return PageResponse.of(
         listings.content().stream()
-            .map(listing -> ListingResponseMapper.toRecommendedView(listing, localization))
+            .map(result -> ListingResponseMapper.toRecommendedView(result, localization))
             .toList(),
         listings.page());
   }

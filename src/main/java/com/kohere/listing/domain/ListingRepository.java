@@ -65,8 +65,11 @@ public interface ListingRepository {
    * <p>대학은 diagnosis의 그룹 코드가 아니라 그룹에서 펼친 개별 대학 코드 집합으로 받는다. 빈 집합이면 대학 조건을 생략하고, 값이 있으면 Listing 루트의
    * {@code nearbyUniversityCodes}와 ANY 매칭한다. 월세 하한/상한은 같은 활성 roomOffer가 조건 태그와 함께 모두 만족해야 하므로 저장소
    * 구현에서 {@code roomOffers} 배열의 단일 원소 기준으로 검사한다.
+   *
+   * <p>반환값은 매물만이 아니라 <b>그 매물 안에서 조건을 통과한 방 상품</b>을 함께 싣는다. 카드의 가격 범위·조건 배지와 가격순 정렬이 모두 그 목록만 보게 해,
+   * 조건에 맞지 않는 방의 가격이 카드나 정렬에 새지 않게 한다.
    */
-  PageResponse<Listing> recommend(
+  PageResponse<ListingRecommendationResult> recommend(
       ListingRecommendationCondition condition, int page, int size, String sort);
 
   /**

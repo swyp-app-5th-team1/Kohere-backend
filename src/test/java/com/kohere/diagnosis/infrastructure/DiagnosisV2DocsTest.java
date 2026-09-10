@@ -335,14 +335,18 @@ class DiagnosisV2DocsTest {
         .andExpect(jsonPath("$.data.content[0].type.code").value("CO_LIVING"))
         .andExpect(jsonPath("$.data.content[0].type.label").value("Co-living"))
         .andExpect(jsonPath("$.data.content[0].monthlyRentMin").value(550000))
-        .andExpect(jsonPath("$.data.content[0].monthlyRentMax").value(700000))
+        .andExpect(jsonPath("$.data.content[0].monthlyRentMax").value(590000))
         .andExpect(jsonPath("$.data.content[0].minDeposit").value(1_000_000))
-        .andExpect(jsonPath("$.data.content[0].maxDeposit").value(1_500_000))
+        .andExpect(jsonPath("$.data.content[0].maxDeposit").value(1_000_000))
         .andExpect(
             jsonPath("$.data.content[0].thumbnailUrl")
                 .value("https://cdn.kohere.app/listings/5001/thumb.jpg"))
         .andExpect(jsonPath("$.data.content[0].lat").value(37.555134))
         .andExpect(jsonPath("$.data.content[0].lng").value(126.936893))
+        .andExpect(jsonPath("$.data.content[0].nearestTransit.type.code").value("SUBWAY"))
+        .andExpect(jsonPath("$.data.content[0].nearestTransit.type.label").value("Subway"))
+        .andExpect(jsonPath("$.data.content[0].nearestTransit.name").value("Sinchon Sta."))
+        .andExpect(jsonPath("$.data.content[0].nearestTransit.walkMinutes").value(5))
         .andExpect(jsonPath("$.data.content[0].conditions[0].code").value("FEMALE_ONLY"))
         .andExpect(jsonPath("$.data.content[0].conditions[0].label").value("Female Only"))
         .andExpect(jsonPath("$.data.content[0].conditions[1].code").value("PRIVATE_BATH"))
@@ -1244,12 +1248,14 @@ class DiagnosisV2DocsTest {
           "Sinchon Co-living House A",
           new ListingCodeLabelView("CO_LIVING", "Co-living"),
           550000,
-          700000,
+          590000,
           1_000_000,
-          1_500_000,
+          1_000_000,
           "https://cdn.kohere.app/listings/5001/thumb.jpg",
           37.555134,
           126.936893,
+          new RecommendedListingView.NearestTransitView(
+              new ListingCodeLabelView("SUBWAY", "Subway"), "Sinchon Sta.", 5),
           List.of(
               new ListingCodeLabelView("FEMALE_ONLY", "Female Only"),
               new ListingCodeLabelView("PRIVATE_BATH", "Private Bath")));

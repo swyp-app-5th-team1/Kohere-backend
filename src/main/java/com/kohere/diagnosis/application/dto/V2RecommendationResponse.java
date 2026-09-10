@@ -26,9 +26,11 @@ public record V2RecommendationResponse(
     PageInfo page) {
 
   /**
-   * 추천 매물 요약(listing 공개 뷰에서 매핑). {@code type}/{@code conditions}는 code/label이다. 월세는 매물의 활성 방 상품 범위를
-   * {@code monthlyRentMin}/{@code monthlyRentMax} 두 필드로 노출하고, 보증금도 같은 방식으로 {@code
-   * minDeposit}/{@code maxDeposit} 범위를 노출한다. {@code conditions}는 추천 카드 조건 배지에 사용할 매물 단위 조건 목록이다.
+   * 추천 매물 요약(listing 공개 뷰에서 매핑). {@code type}·{@code conditions}·{@code nearestTransit.type}은
+   * code/label이다.
+   *
+   * <p>월세와 보증금은 범위를 두 필드로 노출하며, 그 범위와 {@code conditions}는 모두 <b>진단 조건을 통과한 방 상품만</b>을 기준으로 집계한 값이다
+   * — 조건에 맞지 않는 방의 가격·태그는 카드에 실리지 않는다.
    */
   public record RecommendedListing(
       String listingId,
@@ -41,10 +43,25 @@ public record V2RecommendationResponse(
       String thumbnailUrl,
       double lat,
       double lng,
+      NearestTransit nearestTransit,
       List<CodeLabel> conditions) {}
+
+  /**
+   * 카드에 표시할 가까운 교통수단.
+   *
+   * <p>{@code name}은 카드용 축약 표기다 — 표시 언어가 영어인 지하철역만 {@code Sinchon Sta.} 형태로 줄어들며, 정식 명칭은 매물 상세 조회가
+   * 준다.
+   */
+  public record NearestTransit(CodeLabel type, String name, int walkMinutes) {}
 
   /** 프론트는 label을 표시하고 code를 필터 요청과 내부 비교에 사용한다. */
   public record CodeLabel(String code, String label) {}
+
+  /** listing 공개 뷰의 교통수단을 응답 타입으로 옮긴다. */
+  private static NearestTransit toNearestTransit(RecommendedListingView.NearestTransitView view) {
+    return new NearestTransit(
+        new CodeLabel(view.type().code(), view.type().label()), view.name(), view.walkMinutes());
+  }
 
   /** listing 공개 추천 결과를 응답으로 매핑한다(사유는 코드로·제안은 없음). */
   public static V2RecommendationResponse from(PageResponse<RecommendedListingView> result) {
@@ -63,6 +80,7 @@ public record V2RecommendationResponse(
                         v.thumbnailUrl(),
                         v.lat(),
                         v.lng(),
+                        toNearestTransit(v.nearestTransit()),
                         v.conditions().stream()
                             .map(value -> new CodeLabel(value.code(), value.label()))
                             .toList()))

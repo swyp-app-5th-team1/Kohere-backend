@@ -12,6 +12,7 @@ import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingResponse;
 import com.kohere.listing.domain.ConditionTag;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingRecommendationResult;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.LocalizedText;
 import com.kohere.listing.domain.catalog.ListingCatalogCategory;
@@ -79,27 +80,45 @@ final class ListingResponseMapper {
   /**
    * diagnosis 모듈에 전달할 추천 매물 published view를 만든다.
    *
-   * <p>현재 추천 published API는 아직 code/label 구조를 사용하지 않으므로 기본 영어 문구와 기존 raw code 계약을 유지한다. listing
-   * HTTP API의 다국어 응답과 별개의 모듈 간 계약이다.
+   * <p>가격 범위와 조건 배지는 매물의 활성 방 전부가 아니라 <b>{@code result}가 들고 온 매칭 방만</b>을 기준으로 집계한다 — 진단 예산 밖의 방 가격이
+   * 카드에 새지 않게 하는 지점이다. 매물 목록 카드가 {@code ListingSearchResult}로 하는 것과 같은 규칙이다.
+   *
+   * <p>제목·type·conditions·역명에는 호출자가 넘긴 표시 언어가 적용된다.
    */
   static RecommendedListingView toRecommendedView(
-      Listing listing, ListingLocalizationContext localization) {
-    List<Listing.RoomOffer> activeOffers = activeRoomOffers(listing);
+      ListingRecommendationResult result, ListingLocalizationContext localization) {
+    Listing listing = result.listing();
+    List<Listing.RoomOffer> matchedOffers = result.roomOffers();
     return new RecommendedListingView(
         listing.getId(),
         localization.text(listing.getTitle()),
         toPublishedCodeLabel(
             localization.codeLabel(ListingCatalogCategory.LISTING_TYPE, listing.getType())),
-        minMonthlyRent(activeOffers),
-        maxMonthlyRent(activeOffers),
-        minDeposit(activeOffers),
-        maxDeposit(activeOffers),
+        minMonthlyRent(matchedOffers),
+        maxMonthlyRent(matchedOffers),
+        minDeposit(matchedOffers),
+        maxDeposit(matchedOffers),
         thumbnailUrl(listing),
         listing.getLocation().latitude(),
         listing.getLocation().longitude(),
-        conditionResponses(listing, localization).stream()
+        toPublishedNearestTransit(listing, localization),
+        conditionResponses(matchedOffers, localization).stream()
             .map(ListingResponseMapper::toPublishedCodeLabel)
             .toList());
+  }
+
+  /**
+   * 추천 카드용 교통수단 published view를 만든다.
+   *
+   * <p>역명 표기는 매물 목록 카드와 같은 축약 규칙을 쓴다 — {@link #toNearestTransit}를 그대로 재사용해 표시 언어 해석 경로가 갈리지 않게 한다.
+   * 여기서 {@code resolve}를 직접 부르면 같은 카드에서 제목만 사용자 언어가 되고 역명은 영어로 남는다.
+   */
+  private static RecommendedListingView.NearestTransitView toPublishedNearestTransit(
+      Listing listing, ListingLocalizationContext localization) {
+    ListingDetailResponse.NearestTransitResponse transit =
+        toNearestTransit(listing, localization, TransitNameStyle.ABBREVIATED);
+    return new RecommendedListingView.NearestTransitView(
+        toPublishedCodeLabel(transit.type()), transit.name(), transit.walkMinutes());
   }
 
   /** application 응답 code/label을 모듈 간 공개 타입으로 복사한다. */
@@ -392,11 +411,23 @@ final class ListingResponseMapper {
         roomOffer.roomImageUrls());
   }
 
-  /** 매물 카드·상세 조건 합집합을 프론트가 사용할 code/label 목록으로 바꾼다. */
+  /** 매물 카드·상세 조건 합집합을 프론트가 사용할 code/label 목록으로 바꾼다. 활성 방 상품 전체를 본다. */
   private static List<CodeLabelResponse> conditionResponses(
       Listing listing, ListingLocalizationContext localization) {
     return enumCodeLabels(
         listingConditions(listing), ListingCatalogCategory.CONDITION_TAG, localization);
+  }
+
+  /**
+   * 지정한 방 상품들의 조건 합집합을 code/label 목록으로 바꾼다.
+   *
+   * <p><b>추천 카드 전용이다.</b> 목록·상세·찜·최근 본 매물은 매물 단위 오버로드를 그대로 쓴다 — 그쪽 배지는 활성 방 전체의 합집합이라는 것이 확정된 규칙이고,
+   * 두 파생 규칙이 공존한다.
+   */
+  private static List<CodeLabelResponse> conditionResponses(
+      List<Listing.RoomOffer> roomOffers, ListingLocalizationContext localization) {
+    return enumCodeLabels(
+        roomOfferConditions(roomOffers), ListingCatalogCategory.CONDITION_TAG, localization);
   }
 
   /** enum 코드 집합을 enum 선언 순서가 유지되는 안정적인 code/label 목록으로 바꾼다. */
@@ -417,15 +448,18 @@ final class ListingResponseMapper {
   }
 
   /**
-   * ACTIVE 방 상품의 filterTags 합집합과 매물 정책에서 파생되는 NO_ARC 조건을 만든다.
+   * 활성 방 상품의 filterTags 합집합이다.
    *
    * <p>이 메서드는 저장 값을 바꾸지 않고 응답에서만 매물 단위 조건을 계산한다.
    */
   private static Set<ConditionTag> listingConditions(Listing listing) {
+    return roomOfferConditions(activeRoomOffers(listing));
+  }
+
+  /** 지정한 방 상품들의 filterTags 합집합이다. enum 선언 순서가 유지되도록 EnumSet에 모은다. */
+  private static Set<ConditionTag> roomOfferConditions(List<Listing.RoomOffer> roomOffers) {
     EnumSet<ConditionTag> conditions = EnumSet.noneOf(ConditionTag.class);
-    activeRoomOffers(listing).stream()
-        .map(Listing.RoomOffer::filterTags)
-        .forEach(conditions::addAll);
+    roomOffers.stream().map(Listing.RoomOffer::filterTags).forEach(conditions::addAll);
     return Collections.unmodifiableSet(conditions);
   }
 

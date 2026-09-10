@@ -998,9 +998,9 @@
 외국인 사용자가 6단계 진단(① 지역 / ② 입국 목적(유학 여부) / ③ 대학 그룹·지역 선택 / ④ 주거 환경 조건 / ⑤ 월세 범위(최소-최대) / ⑥ ARC 발급 여부)에 답하면, 서버는 조건에 맞는 매물 리스트와 지도용 좌표를 추천한다. 진단 문항과 선택지는 앱이 하드코딩하지 않고 백엔드가 제공하며, 사용자 표시 언어로 번역되어 내려간다(US-2-7). 진단은 확정 시 1건의 진단 레코드로 영속화되며, 사용자는 자신의 진단 이력·완료 여부를 조회하고 재진단(`POST /api/v2/diagnoses/start` 재호출)할 수 있다 — 재진단은 기존 진단을 덮어쓰지 않고 새 레코드를 만들어 이력이 보존된다.
 
 - 진단 입력은 서버에서 다시 검증한다(클라이언트 검증을 신뢰하지 않는다): `region` 1택, `purpose` 1택(필수, 단일 enum `Purpose`: `STUDY`|`NON_STUDY`), **입국 목적별 대학 그룹·지역 선택**(두 필드로 분리한다 — `university`(필드 키는 `university` 유지, 타입은 6 그룹 enum `UniversityGroup`: `HUFS_KHU_KOREA`·`SKKU_SUNGSHIN`·`SNU_CAU_SOONGSIL`·`HONGIK_YONSEI_EWHA`·`KONKUK_SEJONG_HYU`·`ETC`; 단일 선택. 각 그룹은 개별 대학 코드로 멤버십을 갖는다 — `HUFS_KHU_KOREA`→{`HUFS`,`KHU`,`KOREA`}, `SKKU_SUNGSHIN`→{`SKKU`,`SUNGSHIN`}, `SNU_CAU_SOONGSIL`→{`SNU`,`CAU`,`SOONGSIL`}, `HONGIK_YONSEI_EWHA`→{`HONGIK`,`YONSEI`,`EWHA`}, `KONKUK_SEJONG_HYU`→{`KONKUK`,`SEJONG`,`HYU`}, `ETC`→{}(펼칠 멤버 없음, 대신 목록 14곳 전체를 제외 조건으로 넘겨 여집합(`$nin`) 매칭 — 목록에 든 대학 근처 매물은 빠진다). 멤버 개별 대학 코드는 매물의 `nearbyUniversityCodes` 저장값과 동일하다 — 매물 저장은 바뀌지 않는다.), `district`(enum `District`: `GURO_GU`·`YEONGDEUNGPO_GU`·`GEUMCHEON_GU`·`GWANAK_GU`·`DONGDAEMUN_GU`·`ETC`); 조건부 필수 — 입국 목적이 `STUDY`면 `university` 필수·`district` 없음, `NON_STUDY`면 `district` 필수·`university` 없음. 위반은 공통 `INVALID_INPUT`(400)+`errors[]`로 표현. 결정 근거는 [ADR-0028](../adr/0028-diagnosis-questions-catalog-store.md)), `conditions`(enum `DiagnosisCondition`, listing `ConditionTag` 이름 통일: `MOVE_IN_NOW`·`FEMALE_ONLY`·`PRIVATE_BATH`·`ENGLISH_OK`·`ADDRESS_REGISTRATION`·`NO_MAINT_FEE`·`MEALS_INCLUDED`·`DOUBLE_ROOM`) 최대 3개(4개 이상이면 검증 실패), `monthlyRentMin`·`monthlyRentMax`(월세 범위, 각 0 이상 정수·필수, `monthlyRentMin` ≤ `monthlyRentMax`), `arcStatus`(enum `ArcStatus`: `ARC_ISSUED`|`NO_ARC`, 1택 필수). ⑥ `arcStatus`는 파생 조건을 만들지 않고 매물 루트 `arcRequired`(`ArcRequirement`)로 직접 필터한다 — `NO_ARC`(ARC 미발급)이면 `arcRequired=NOT_REQUIRED`인 매물만 매칭하고, `ARC_ISSUED`면 이 필터를 적용하지 않는다([ADR-0039](../adr/0039-listing-schema-v4-registration-form.md)). `DiagnosisCondition`에 `NO_ARC`는 없으며, 최대 3개 제한은 사용자가 ④에서 고른 `conditions`에만 적용된다.
-- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 매물 카탈로그 `CITY`에도 시드된 값이라 구조적으로 막혀 있지 않고 **해당 지역 매물이 아직 없을 뿐**이므로, 결과 매물이 0건일 수 있고 이때 조정 제안을 반환한다.
-- 추천 결과의 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며, 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다.
-- 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 7개는 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
+- MVP 매물 데이터는 **서울 기준**이다. `BUSAN`/`GYEONGGI`는 매물 카탈로그 `CITY`에도 시드된 값이라 구조적으로 막혀 있지 않고 **해당 지역 매물이 아직 없을 뿐**이므로, 결과 매물이 0건일 수 있다 — 이때는 빈 목록과 `NO_MATCH` 결과 코드를 반환하며 조정 제안 필드는 없다.
+- 추천 결과의 매물 요약은 listing 모듈의 공개 DTO `RecommendedListingView`를 사용하며, 일반 탐색의 `ListingSummaryResponse`와는 필드 구성이 다르다. 카드에는 가까운 교통수단 `nearestTransit`(종류 code/label·이름·도보 소요 분)이 함께 실리고, 이름은 매물 목록 카드와 같은 축약 규칙을 따른다 — 표시 언어가 `en`이고 지하철역 이름이 `Station`으로 끝날 때만 `Sinchon Sta.`처럼 줄여 싣는다.
+- 진단·결과는 본인만 접근 가능하다(소유권 검증) — **회원은 `userId`가, 비회원(게스트)은 게스트 세션 키가 일치할 때만 통과하며, 신원 종류가 다르면(한쪽이 비어 있으면) 무조건 거절**한다(진단 id가 전역 순차 채번이라 소유권 검사가 유일한 방어선이다). **게스트 진단은 v2 경로에서만 만들어지고 조회되므로 게스트 쪽 판정도 v2 한정**이며, v1 진단 조회 3종은 회원 전용이라 토큰 없는 요청이 애초에 닿지 못한다. 모든 시각은 UTC ISO-8601, 금액은 KRW 정수, enum은 UPPER_SNAKE.
 - 입력 검증 위반(필수값 누락·enum 불일치·조건 개수 초과·월세 범위 음수 또는 `monthlyRentMin` > `monthlyRentMax`·페이지 파라미터 범위)은 모두 공통 코드 `INVALID_INPUT`(400) + `errors[]`로 표현한다(error-response-guide §3·§4). 진단 도메인에서 별도 검증 코드를 만들지 않는다.
 
 > **비회원(게스트) 접근 기준(#181)**: 진단은 **v2 서버 주도 흐름에 한해 로그인하지 않아도 이용할 수 있다**(애플 심사 대응 — 개인화 활동에서 제외 가능한 기능은 로그인 없이 쓸 수 있어야 한다). [`SecurityConfig`](../../src/main/java/com/kohere/common/security/SecurityConfig.java)에 신규 등록하는 **`permitAll` 매처는 `/api/v2/diagnoses/**` 하나뿐**이며, **진단 조회 3종(`GET /api/v1/diagnoses`·`/latest`·`/{diagnosisId}`)은 회원 전용으로 유지**한다 — 그 경로에는 매처를 추가하지 않고 현행대로 `anyRequest().authenticated()`에 남겨 **토큰을 필수로 둔다**. 두 버전 모두 현재 전용 매처가 없어 인증으로 떨어지므로 v2 줄은 **새로 넣어야** 하고, 빠뜨리면 게스트 진단이 계속 401이다. **인가를 여는 수단은 `permitAll`이며, 토큰 없는 요청에 `ROLE_GUEST` 인증을 주입해 `hasAnyRole("USER","GUEST")`로 여는 방식은 쓰지 않는다** — 이유는 둘이다. (a) `SecurityConfig`의 기본값이 `anyRequest().authenticated()`라, 게스트 인증이 주입되면 **명시적으로 열지 않은 엔드포인트까지**(채팅·커뮤니티 등) 함께 게스트에게 열린다. (b) 모든 요청이 "인증됨"이 되어 보호 자원 접근이 **401이 아니라 403**으로 바뀌는데, 그러면 클라이언트가 401을 신호로 거는 **토큰 재발급 플로우가 전역적으로 침묵한다.** `permitAll`은 열기로 한 경로만 정확히 연다. 따라서 **게스트 진단 흐름은 `POST /api/v2/diagnoses/start` → `POST /api/v2/diagnoses/next` → `GET /api/v2/diagnoses/{diagnosisId}/recommendations` 셋으로 닫히며**(US-2-7), 비로그인 상태로 조회 3종을 호출하면 그대로 `401`이다. 게스트 신원은 임시 `userId`를 발급하지 않고 **`userId` 부재(`null`)** 로 표현하며, 대화·소유권 연속성은 **`X-Guest-Session-Id`**(값 형식 `anonymous<uuid>`) 헤더로 잇는다(US-2-7) — 서버가 키를 발급하는 지점은 **`POST /api/v2/diagnoses/start` 하나**이고 소비처는 `/next`와 v2 추천 조회이며, 세션 키를 요구하는 것은 **v2 진단뿐**이다(퀴즈·생활팁은 저장이 없어 요구하지 않는다). 게스트의 표시 언어는 **`en` 고정**이며 `user` 공개 query `getLanguage`를 **호출하지 않는다**(`users` 행이 없어 호출 자체가 `404 USER_NOT_FOUND`가 된다 — US-2-7). 진단은 원래 세입자·임대인 공통이라 역할 게이트는 없던 대로 없다. **토큰을 보냈는데 만료된 요청은 게스트로 강등하지 않고 `401 TOKEN_EXPIRED`를 유지**하고(재발급 유도), 토큰 미전송·위조 토큰만 게스트로 처리한다(`permitAll`인 v2 경로 이야기이며, 조회 3종은 원래 401이다). **진단은 인가 범위가 넓어지지 않는다** — 진단에는 `hasRole("USER")` 매처가 없어 온보딩 미완료(PENDING/TERMS_AGREED) 토큰이 #181 이전에도 이미 통과했고, 그 토큰은 `users` 행이 있으므로 언어도 `users.lang`을 따른다(의도적 수용 — 매처를 실제로 넓히는 것은 퀴즈·생활 팁뿐이다). 게스트 진단 결과를 로그인 후 계정으로 **이관하지 않는다**(스키마만 열어 둔다). 게스트 진단 데이터의 **TTL은 도입 여부와 수치가 모두 (결정 필요)** 다 — 현재 코드에는 TTL 인덱스가 **하나도 없어**(회원 진단도 영구 보존) 게스트 때문에 새로 도입할지 자체가 미정이며, 도입하지 않고 회원과 동일하게 영구 보존하는 것도 선택지다.
@@ -1013,25 +1013,32 @@
 
 - **우선순위**: High
 - **관련 NFR**: 성능(추천 쿼리·좌표 집계 응답시간 목표, 확인 필요 — NFR 문서 미확정), 보안(본인 진단만 조회)
-- **백엔드 관점**: 확정된 진단 조건으로 매물을 매칭 → 추천 전용 DTO(`RecommendedListingView`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84)를 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 반환한다. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100)이다. 요청은 추천/가격/거리 정렬 키와 방향을 검증하지만 현재 저장소는 `price*`만 월세 오름차순으로 처리하고 `recommended`·`distance`는 찜 수/수정일 기본 정렬을 사용하며 방향도 완전히 반영하지 않는다. **0건이면 빈 `content`와 `resultCode=NO_MATCH`를 준다**(에러 아님) — 조정 제안 문구·액션은 주지 않는다. 회원·비회원 모두 호출하며 게스트는 `X-Guest-Session-Id`로 소유를 증명하고 라벨 언어는 `en` 고정이다.
+- **백엔드 관점**: 확정된 진단 조건으로 매물을 매칭 → 추천 전용 DTO(`RecommendedListingView`) 목록 + 지도 마커 좌표(`lat`/`lng`, WGS84)를 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 반환한다. 목록은 **오프셋 기반 페이지네이션**(`page`/`size`, 기본 size 20, 최대 100)이다. 카드의 `monthlyRentMin/Max`·`minDeposit/maxDeposit`·`conditions`는 진단 조건(월세 범위·주거 조건 태그)을 통과한 ACTIVE `roomOffers`만을 기준으로 계산하며 `conditions`에는 그 방 상품들의 태그 합집합이 담긴다 — 이 좁힘은 표시 값에만 적용되고 매칭되는 매물 집합은 바꾸지 않는다. 정렬 키는 `recommended`·`price` 둘뿐이다. `recommended`는 찜 수 내림차순 + 최근 수정 내림차순(`favoriteCount desc, updatedAt desc`)의 기본 정렬이고, `price`는 진단 조건을 통과한 방의 최저 월세 오름차순 — 카드의 `monthlyRentMin`과 같은 값 — 이다. 방향 접미사(`,asc`/`,desc`)는 두 키 모두에서 무시된다. `distance`는 허용 값이 아니다 — 추천 경로에는 거리를 잴 기준 좌표가 없으므로 보내면 `400 INVALID_INPUT`(`errors[0].field`가 `sort`)이다. **0건이면 빈 `content`와 `resultCode=NO_MATCH`를 준다**(에러 아님) — 조정 제안 문구·액션은 주지 않는다. 회원·비회원 모두 호출하며 게스트는 `X-Guest-Session-Id`로 소유를 증명하고 라벨 언어는 `en` 고정이다.
 
 **AC (Given / When / Then)**
 
 - 시나리오: 정상 조회 (결과 있음)
 
   - **Given** 본인이 소유한 `diagnosisId`가 있고 서울 기준 매칭 매물이 존재한다
-  - **When** `GET /api/v1/diagnoses/{diagnosisId}/recommendations?page=0&size=20&sort=recommended,desc`를 호출한다
-  - **Then** `200 OK`와 함께 `data.content[]`(매물 요약), `data.markers[]`(lat/lng), `data.page`(오프셋 메타), `data.suggestions=null`을 반환한다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations?page=0&size=20&sort=recommended,desc`를 호출한다
+  - **Then** `200 OK`와 함께 `data.content[]`(매물 요약), `data.markers[]`(lat/lng), `data.page`(오프셋 메타)를 반환하고, 각 카드는 `nearestTransit`(종류·이름·도보 소요 분)을 함께 싣는다
+- 시나리오: 카드 가격·조건 배지는 진단 조건을 통과한 방만 반영한다
+
+  - **Given** 한 매물에 진단 조건(예: 월세 상한 60만·`PRIVATE_BATH`)을 통과한 방 상품과 통과하지 못한 방 상품이 각각 하나씩 있다
+  - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
+  - **Then** 그 매물 카드의 `monthlyRentMin`·`monthlyRentMax`는 통과한 방의 월세와 같고 통과하지 못한 방의 가격은 실리지 않는다 — `minDeposit`/`maxDeposit`·`conditions`도 같은 방만을 기준으로 계산한다
+  - **And** 매칭되는 **매물 집합**은 그대로다 — 조건에 맞는 방이 하나라도 있으면 그 매물은 목록과 마커에 실린다
 - 시나리오: 경계 — 0건 (부산/경기 또는 좁은 조건)
 
   - **Given** `region=BUSAN`처럼 MVP 데이터가 없거나 조건이 너무 좁아 매칭이 0건이다
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
-  - **Then** `200 OK`(에러 아님)와 함께 `data.content=[]`, `data.markers=[]`, `data.suggestions`(완화 가능한 조건/예산/키워드 제안 목록)을 반환한다
+  - **Then** `200 OK`(에러 아님)와 함께 `data.content=[]`, `data.markers=[]`, `data.resultCode=NO_MATCH`를 반환한다 — 조정 제안 필드는 없다
 - 시나리오: 인증 — 회원·비회원 모두 호출한다
 
-  - **Given** `Authorization` 헤더 없이 요청한다(게스트 세션 키를 실어도 마찬가지다)
+  - **Given** 게스트가 확정한 진단의 세션 키를 `X-Guest-Session-Id` 헤더에 싣고 `Authorization` 헤더 없이 요청한다
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
-  - **Then** `401`과 `error.code=UNAUTHENTICATED`를 반환한다 — v1에는 `permitAll` 매처를 추가하지 않는다. 게스트는 대신 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다(US-2-7)
+  - **Then** `200 OK`와 추천 매물·마커를 반환한다 — 이 경로는 `permitAll`이라 토큰을 요구하지 않고, 게스트는 세션 키로 소유를 증명한다(US-2-7). 라벨 언어는 `en` 고정이다
+  - **And** 세션 키 없이 같은 진단을 호출하면 `401`이 아니라 소유권 위반으로 `403 FORBIDDEN`이다 — 신원 종류가 같고 값이 같을 때만 통과한다
 - 시나리오: 인가 실패 — 타인의 진단 결과 접근
 
   - **Given** 다른 사용자가 소유한 `diagnosisId`로 요청한다 — 다른 회원의 진단, 그리고 신원 종류가 엇갈리는 경우(회원 토큰으로 **게스트**가 v2에서 만든 진단을)
@@ -1044,7 +1051,7 @@
   - **Then** `404 Not Found`와 `error.code=DIAGNOSIS_NOT_FOUND`를 반환한다
 - 시나리오: 입력 검증 실패 — 페이지 파라미터 범위 초과
 
-  - **Given** `size=500`(최대 100 초과) 또는 정의되지 않은 `sort` 키를 보낸다
+  - **Given** `size=500`(최대 100 초과) 또는 허용되지 않은 `sort` 키(`distance` 등)를 보낸다
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations`를 호출한다
   - **Then** `400 Bad Request`와 `error.code=INVALID_INPUT`을 반환한다(허용되지 않은 `sort` 키를 무시하지 않고 거부 — api-design-guide §5)
 - 시나리오: 지도 전체 마커 — 페이지 없이 조건에 맞는 매물 전부
@@ -1052,7 +1059,7 @@
   - **Given** 확정 진단의 조건에 맞는 매물이 페이지 크기(20)보다 많다
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations/map`을 호출한다(쿼리 파라미터 없음)
   - **Then** `200 OK`와 `markers[]`(`listingId`/`lat`/`lng`)·`total`을 반환한다 — 페이지 메타도 매물 카드 정보도 없다
-  - **And** 같은 진단을 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 조회했을 때와 **같은 매물 집합**이다(매칭 조건이 동일하다)
+  - **And** 같은 진단을 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 조회할 때와 **매칭 조건이 같다** — 다만 목록은 한 페이지에 `size`만큼만 싣고 이 경로는 상한까지 전부 싣는다
 - 시나리오: 상한 초과 — 잘라서 주고 에러로 만들지 않는다
 
   - **Given** 조건에 맞는 매물이 서버 상한(500건)을 넘는다
@@ -1155,7 +1162,7 @@
 
   - **Given** ①~⑥ 단계 답이 모두 채워지도록 마지막(⑥ ARC) 답(`{ "field": "arcStatus", "code": "ARC_ISSUED" }`)을 보낸다(빌더 완성)
   - **When** 그 답을 `POST /api/v2/diagnoses/next`로 보낸다
-  - **Then** 서버가 별도 확정 요청 없이 진단을 `IN_PROGRESS → COMPLETED`로 자동 확정해 저장하고, 매칭 매물이 존재하면 `data.resultCode=COMPLETED`와 `data.diagnosisId`만 반환한다(추천 매물을 함께 싣지 않는다 — 앱이 시점을 정해 `GET /api/v1/diagnoses/{diagnosisId}/recommendations`로 별도 요청한다)
+  - **Then** 서버가 별도 확정 요청 없이 진단을 `IN_PROGRESS → COMPLETED`로 자동 확정해 저장하고, 매칭 매물이 존재하면 `data.resultCode=COMPLETED`와 `data.diagnosisId`만 반환한다(추천 매물을 함께 싣지 않는다 — 앱이 시점을 정해 `GET /api/v2/diagnoses/{diagnosisId}/recommendations`로 별도 요청한다)
 - 시나리오: 최종 매칭 0건 — 확정은 COMPLETED, 0건은 추천 조회에서 드러남
 
   - **Given** 6단계까지 다 채웠으나 전체 조건에 맞는 매물이 0건이다
@@ -1182,7 +1189,7 @@
 
   - **Given** 확정으로 `diagnosisId`를 받은 사용자가 진단 결과 화면에 진입한다
   - **When** `GET /api/v2/diagnoses/{diagnosisId}/recommendations?page=0&size=20`을 호출한다
-  - **Then** `200 OK`와 추천 매물(`content`)·지도 좌표(`markers`)·페이지 메타(`page`)를 반환한다(v1 §7과 같은 계약이되 `suggestions`는 없다)
+  - **Then** `200 OK`와 추천 매물(`content`)·지도 좌표(`markers`)·페이지 메타(`page`)를 반환한다(US-2-2와 같은 계약이며 조정 제안 필드는 없다)
   - **And** 타인 소유 진단이면 `403 FORBIDDEN`, 없는 진단이면 `404 DIAGNOSIS_NOT_FOUND`다
 - 시나리오: 비회원(게스트) 시작 — 토큰 없이 `/start`, 서버가 세션 키 발급
 

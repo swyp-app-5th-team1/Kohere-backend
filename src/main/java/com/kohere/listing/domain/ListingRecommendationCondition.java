@@ -36,4 +36,29 @@ public record ListingRecommendationCondition(
     excludedUniversityCodes =
         excludedUniversityCodes == null ? Set.of() : Set.copyOf(excludedUniversityCodes);
   }
+
+  /** roomOffers.filterTags에 저장되는 조건이다. 진단 조건과 저장 태그가 1:1이라 그대로 반환한다. */
+  public Set<ConditionTag> roomOfferConditions() {
+    return conditions;
+  }
+
+  /**
+   * 방 상품 하나가 진단 조건을 만족하는지 판정한다.
+   *
+   * <p><b>저장소가 만드는 {@code $elemMatch}와 반드시 같은 술어여야 한다.</b> Mongo는 "조건을 만족하는 방이 하나라도 있는 매물"을 고르고, 이
+   * 메서드는 그 매물 안에서 실제로 만족한 방을 추린다. 둘이 어긋나면 매칭 방이 0개가 되어 카드 집계가 폴백으로 떨어진다. 그래서 양쪽이 {@link
+   * #roomOfferConditions()}와 월세 경계라는 <b>같은 값</b>을 읽는다.
+   */
+  public boolean matches(Listing.RoomOffer roomOffer) {
+    if (roomOffer.status() != Listing.RoomOfferStatus.ACTIVE) {
+      return false;
+    }
+    if (monthlyRentMin != null && roomOffer.pricing().monthlyRent() < monthlyRentMin) {
+      return false;
+    }
+    if (monthlyRentMax != null && roomOffer.pricing().monthlyRent() > monthlyRentMax) {
+      return false;
+    }
+    return roomOffer.filterTags().containsAll(conditions);
+  }
 }

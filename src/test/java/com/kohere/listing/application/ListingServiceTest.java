@@ -21,6 +21,7 @@ import com.kohere.listing.domain.ContractDifficulty;
 import com.kohere.listing.domain.KitchenFacility;
 import com.kohere.listing.domain.LaundryFacility;
 import com.kohere.listing.domain.Listing;
+import com.kohere.listing.domain.ListingRecommendationResult;
 import com.kohere.listing.domain.ListingRepository;
 import com.kohere.listing.domain.ListingSearchResult;
 import com.kohere.listing.domain.ListingType;
@@ -243,13 +244,64 @@ class ListingServiceTest {
     assertThat(response.refundPolicy()).isEqualTo("입주 7일 전 전액 환불");
   }
 
-  /** 진단 추천 view도 목록/상세와 같은 매물 단위 conditions 계산 규칙을 사용한다. */
+  /**
+   * 추천 카드의 가격 범위와 조건 배지는 매칭된 방만 본다.
+   *
+   * <p>시드의 두 ACTIVE 방은 가격도 태그도 겹치지 않는다 — 매칭 방을 하나만 넘겼는데 다른 방의 값이 새면 이 단정이 잡는다.
+   */
   @Test
-  void toRecommendedView_conditions는_ACTIVE방_전체_합집합을_반환한다() {
+  void toRecommendedView_집계는_매칭된_방만_기준으로_한다() {
     ListingLocalizationContext localization =
         new ListingLocalizationService(ListingServiceTest::catalogEntries).contextFor("en");
+    Listing listing = sampleListing();
+    Listing.RoomOffer matched = secondActiveRoomOffer();
+
     RecommendedListingView response =
-        ListingResponseMapper.toRecommendedView(sampleListing(), localization);
+        ListingResponseMapper.toRecommendedView(
+            new ListingRecommendationResult(listing, List.of(matched)), localization);
+
+    assertThat(response.monthlyRentMin()).isEqualTo(450000);
+    assertThat(response.monthlyRentMax()).isEqualTo(450000);
+    assertThat(response.minDeposit()).isEqualTo(500000);
+    assertThat(response.maxDeposit()).isEqualTo(500000);
+    assertThat(response.conditions())
+        .extracting(condition -> condition.code())
+        .containsExactlyInAnyOrder("PRIVATE_BATH", "NO_MAINT_FEE");
+    assertThat(response.conditions())
+        .extracting(condition -> condition.code())
+        .doesNotContain("FEMALE_ONLY", "ADDRESS_REGISTRATION", "MOVE_IN_NOW");
+  }
+
+  /** 추천 카드의 역명은 목록 카드와 같은 축약 표기다. 상세만 정식 명칭을 준다. */
+  @Test
+  void toRecommendedView_역명은_카드용_축약_표기다() {
+    ListingLocalizationContext localization =
+        new ListingLocalizationService(ListingServiceTest::catalogEntries).contextFor("en");
+
+    RecommendedListingView response =
+        ListingResponseMapper.toRecommendedView(
+            new ListingRecommendationResult(sampleListing(), List.of(sampleRoomOffer())),
+            localization);
+
+    assertThat(response.nearestTransit().type().code()).isEqualTo("SUBWAY");
+    assertThat(response.nearestTransit().name()).isEqualTo("Seoul Nat'l Univ. Sta.");
+    assertThat(response.nearestTransit().walkMinutes()).isEqualTo(5);
+  }
+
+  /**
+   * 목록 카드의 조건 배지는 ACTIVE 방 <b>전체</b> 합집합을 유지한다.
+   *
+   * <p>추천 카드만 매칭 방으로 좁아졌으므로 두 파생 규칙이 공존한다. 이 단정이 깨지면 공용 헬퍼를 잘못 건드린 것이다.
+   */
+  @Test
+  void toSummary_conditions는_ACTIVE방_전체_합집합을_반환한다() {
+    ListingLocalizationContext localization =
+        new ListingLocalizationService(ListingServiceTest::catalogEntries).contextFor("en");
+    Listing listing = sampleListing();
+
+    ListingSummaryResponse response =
+        ListingResponseMapper.toSummary(
+            new ListingSearchResult(listing, List.of(sampleRoomOffer())), null, localization);
 
     assertThat(response.conditions())
         .extracting(condition -> condition.code())

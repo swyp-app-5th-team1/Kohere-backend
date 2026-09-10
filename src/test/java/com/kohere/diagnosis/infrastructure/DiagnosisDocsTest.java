@@ -543,6 +543,8 @@ class DiagnosisDocsTest {
         "https://cdn.kohere.app/listings/5001/thumb.jpg",
         37.555134,
         126.936893,
+        new RecommendedListingView.NearestTransitView(
+            new ListingCodeLabelView("BUS", "Bus"), "Stub Stop", 1),
         List.of(new ListingCodeLabelView("FEMALE_ONLY", "Female Only")));
   }
 

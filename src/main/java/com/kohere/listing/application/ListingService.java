@@ -9,6 +9,7 @@ import com.kohere.listing.application.dto.ListingDetailResponse;
 import com.kohere.listing.application.dto.ListingMapResponse;
 import com.kohere.listing.application.dto.ListingSummaryResponse;
 import com.kohere.listing.application.dto.RecentListingsResponse;
+import com.kohere.listing.domain.GeoDistance;
 import com.kohere.listing.domain.Listing;
 import com.kohere.listing.domain.ListingAreaTooLargeException;
 import com.kohere.listing.domain.ListingInvalidBboxException;
@@ -63,7 +64,6 @@ public class ListingService {
   private static final int MAX_PAGE_SIZE = 100;
   private static final int RECENT_LISTINGS_RESPONSE_LIMIT = 10;
   private static final int RECENT_LISTINGS_STORAGE_LIMIT = 30;
-  private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
   private final ListingRepository listingRepository;
   private final FavoriteRepository favoriteRepository;
@@ -449,14 +449,12 @@ public class ListingService {
     if (!condition.hasCenter()) {
       return null;
     }
-    double lat1 = Math.toRadians(condition.centerLat());
-    double lat2 = Math.toRadians(listing.getLocation().latitude());
-    double latDelta = lat2 - lat1;
-    double lngDelta = Math.toRadians(listing.getLocation().longitude() - condition.centerLng());
-    double a =
-        Math.sin(latDelta / 2.0) * Math.sin(latDelta / 2.0)
-            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lngDelta / 2.0) * Math.sin(lngDelta / 2.0);
-    double c = 2.0 * Math.atan2(Math.sqrt(a), Math.sqrt(1.0 - a));
-    return (int) Math.round(EARTH_RADIUS_METERS * c);
+    return (int)
+        Math.round(
+            GeoDistance.meters(
+                condition.centerLat(),
+                condition.centerLng(),
+                listing.getLocation().latitude(),
+                listing.getLocation().longitude()));
   }
 }

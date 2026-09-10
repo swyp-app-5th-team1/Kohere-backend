@@ -112,6 +112,12 @@ GET {{baseUrl}}/api/v2/listings?page=0&size=20
 GET {{baseUrl}}/api/v2/listings?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON&conditions=FEMALE_ONLY&conditions=ADDRESS_REGISTRATION&maxBudget=500000&maxDeposit=500000&sort=PRICE_ASC&page=0&size=20
 Authorization: Bearer {{tenantLogin.response.body.$.data.accessToken}}
 
+### 4b. 거리순 정렬 — 카드에 표시된 distanceMeters 와 순서가 일치한다
+#    확인: content[].distanceMeters 가 위에서 아래로 오름차순이다.
+#          정렬 기준과 표시 값이 같은 하버사인 거리라 어긋날 수 없다.
+#          bbox 를 동서로 길게 잡아야 재현된다 — 남북으로만 길면 옛 근사식도 같은 순서를 낸다.
+GET {{baseUrl}}/api/v2/listings?swLat=37.44&swLng=126.88&neLat=37.48&neLng=127.02&sort=DISTANCE&page=0&size=20
+
 ### 5. 지도 마커 — 좌표만 내려준다(카드는 6번 또는 상세에서 가져간다)
 GET {{baseUrl}}/api/v2/listings/map?swLat={{swLat}}&swLng={{swLng}}&neLat={{neLat}}&neLng={{neLng}}&type=GOSHIWON
 

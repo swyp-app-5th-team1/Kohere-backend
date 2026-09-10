@@ -91,19 +91,16 @@ public final class DiagnosisDocsFields {
   /** 추천 매물 카드의 조건 배지 코드(listing {@code ConditionTag}) — 진단 조건과 이름이 1:1로 통일돼 있다. */
   public static final List<String> LISTING_CONDITION_CODES = SELECTABLE_CONDITION_CODES;
 
+  /** 추천 매물 카드의 교통수단 종류 코드(listing {@code Listing.TransitType}). */
+  public static final List<String> LISTING_TRANSIT_TYPE_CODES = List.of("SUBWAY");
+
   /** 진단 이력 정렬 허용값({@code DiagnosisQueryService.HISTORY_SORT_KEYS} × 방향). */
   public static final List<String> HISTORY_SORT_VALUES =
       List.of("submittedAt,desc", "submittedAt,asc");
 
   /** 추천 정렬 허용값({@code DiagnosisRecommendationReader.SORT_KEYS} × 방향). */
   public static final List<String> RECOMMENDATION_SORT_VALUES =
-      List.of(
-          "recommended,desc",
-          "recommended,asc",
-          "price,asc",
-          "price,desc",
-          "distance,asc",
-          "distance,desc");
+      List.of("recommended,desc", "recommended,asc", "price,asc", "price,desc");
 
   /** {@code POST /start}는 언제나 ① 지역 질문 하나만 낸다 — 다른 결과코드로 갈 수 없다. */
   public static final List<String> START_RESULT_CODES = List.of("NEXT_QUESTION");
@@ -216,18 +213,44 @@ public final class DiagnosisDocsFields {
         optCodeField(
             "data.content[].type.code", LISTING_TYPE_CODES, "주거 유형의 언어 무관 서버 코드. 필터 재요청에 쓴다"),
         optField("data.content[].type.label", JsonFieldType.STRING, "주거 유형 표시명(사용자 언어). 화면에 쓴다"),
-        optField("data.content[].monthlyRentMin", JsonFieldType.NUMBER, "매물 월세 범위 하한(KRW 정수)"),
-        optField("data.content[].monthlyRentMax", JsonFieldType.NUMBER, "매물 월세 범위 상한(KRW 정수)"),
-        optField("data.content[].minDeposit", JsonFieldType.NUMBER, "매물 보증금 범위 하한(KRW 정수)"),
-        optField("data.content[].maxDeposit", JsonFieldType.NUMBER, "매물 보증금 범위 상한(KRW 정수)"),
+        optField(
+            "data.content[].monthlyRentMin",
+            JsonFieldType.NUMBER,
+            "월세 범위 하한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
+        optField(
+            "data.content[].monthlyRentMax",
+            JsonFieldType.NUMBER,
+            "월세 범위 상한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
+        optField(
+            "data.content[].minDeposit",
+            JsonFieldType.NUMBER,
+            "보증금 범위 하한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
+        optField(
+            "data.content[].maxDeposit",
+            JsonFieldType.NUMBER,
+            "보증금 범위 상한(KRW 정수). 진단 조건에 맞는 방 상품만 반영한다"),
         optField(
             "data.content[].thumbnailUrl", JsonFieldType.STRING, "썸네일 URL. 등록된 이미지가 없으면 `null`"),
         optField("data.content[].lat", JsonFieldType.NUMBER, "매물 위도(WGS84)"),
         optField("data.content[].lng", JsonFieldType.NUMBER, "매물 경도(WGS84)"),
+        optField("data.content[].nearestTransit", JsonFieldType.OBJECT, "가까운 교통수단"),
+        optCodeField(
+            "data.content[].nearestTransit.type.code",
+            LISTING_TRANSIT_TYPE_CODES,
+            "교통수단 종류의 언어 무관 서버 코드"),
+        optField(
+            "data.content[].nearestTransit.type.label",
+            JsonFieldType.STRING,
+            "교통수단 종류 표시명(사용자 언어)"),
+        optField(
+            "data.content[].nearestTransit.name",
+            JsonFieldType.STRING,
+            "역·정류장 이름(사용자 언어). 카드용 축약 표기라 표시 언어가 `en`이고 이름이 `Station`으로 끝나는 지하철역만 `Sinchon Sta.`처럼 줄여 내려간다 — 정식 명칭은 `GET /api/v2/listings/{listingId}`가 준다"),
+        optField("data.content[].nearestTransit.walkMinutes", JsonFieldType.NUMBER, "도보 소요 시간(분)"),
         optField(
             "data.content[].conditions",
             JsonFieldType.ARRAY,
-            "카드 조건 배지 목록. `label`을 표시하고 `code`는 필터 재요청에 쓴다"),
+            "카드 조건 배지 목록. 진단 조건에 맞는 방 상품의 태그만 담긴다. `label`을 표시하고 `code`는 필터 재요청에 쓴다"),
         optCodeField(
             "data.content[].conditions[].code", LISTING_CONDITION_CODES, "조건의 언어 무관 서버 코드"),
         optField("data.content[].conditions[].label", JsonFieldType.STRING, "조건 배지 표시 문구(사용자 언어)"),
@@ -258,7 +281,7 @@ public final class DiagnosisDocsFields {
       optCodeParam(
           "sort",
           RECOMMENDATION_SORT_VALUES,
-          "정렬 — `키,방향` 한 문자열. 허용 키는 `recommended`·`price`·`distance`, 방향은 `asc`·`desc`(기본 `recommended,desc`)")
+          "정렬 — `키,방향` 한 문자열. `recommended`는 찜 수·최근 수정 내림차순이고 `price`는 진단 조건에 맞는 방 상품의 최저 월세 오름차순이다. 방향 접미사는 두 키 모두에서 정렬 결과를 바꾸지 않는다(기본 `recommended,desc`)")
     };
   }
 

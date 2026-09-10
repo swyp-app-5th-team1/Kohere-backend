@@ -92,7 +92,7 @@
 - **`GET /api/v1/listings/places`·`/addresses`·`/stations`(+`/stations/nearby`)만 예외**로 살아 있다. 외부 API(네이버 지역 검색 · NCP Geocoding · 카카오 로컬)만 호출하고 매물 데이터를 쓰지 않아 v4 개편의 영향을 받지 않았기 때문이다. 라우팅상 리터럴 `places`·`addresses`·`stations` 세그먼트가 `{listingId}` 템플릿보다 먼저 매칭되므로 상세 스텁의 404와 충돌하지 않는다.
 - **Swagger에서 v1 오퍼레이션은 `deprecated` 배지로 구분된다.** OpenAPI `deprecated: true`가 실려 Swagger UI가 취소선과 배지를 붙인다. summary에는 버전 표기를 두지 않는다 — 경로가 이미 `/api/v1`을 보여준다.
 - **제거 시점은 정하지 않았다.** 구버전 앱 사용 비중을 보고 별도로 결정하며, 그때까지 v1 스텁은 위 표대로 유지된다.
-- 진단 추천(`GET /api/v2/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 v4 개편 전후로 바뀌지 않았으므로 실데이터를 그대로 반환한다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
+- 진단 추천(`GET /api/v2/diagnoses/{id}/recommendations`)은 **이 종료 대상이 아니다** — 추천 응답 구조는 조회 계열의 v4 개편에 묶여 있지 않으므로 실데이터를 그대로 반환한다. 카드가 싣는 필드는 추천 스펙이 따로 정하며 `nearestTransit`(종류·이름·도보 소요 시간)도 여기에 포함된다([ADR-0040](../../adr/0040-listing-query-api-v2-and-v1-sunset.md) Status · [02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 
 ## 상세
 
@@ -601,7 +601,7 @@ Request Body:
 - `status`는 `PENDING`이며 **코드 문자열 그대로** 내려간다. 임대인·관리자만 읽는 관리 상태라 카탈로그 번역 대상이 아니다.
 - **`location`은 요청의 `address.lat`·`address.lng`를 그대로 옮긴 값이고, `nearbyUniversityCodes`는 그 좌표에서 서버가 파생한 값이다.** 좌표는 주소 검색이 준 것을 되돌려 받은 것이고, 대학은 반경 2km 안에 있는 것을 모두 담는다 — 위 예시의 신촌 좌표는 `YONSEI`·`EWHA`·`HONGIK` 셋이 모두 도보권이라 셋 다 들어간다([ADR-0045](../../adr/0045-nearby-university-mapping-from-seeded-coordinates.md)).
 - `address.city`·`address.district`는 서버가 도로명 주소에서 파싱한 값이라 요청에 없던 필드가 응답에 나타난다. `address.fullAddress`는 입력값 그대로이고, 요청의 `lat`·`lng`는 `address` 안이 아니라 **최상위 `location`** 으로 옮겨 간다(상세 조회와 같은 구조).
-- 상위 `conditions`는 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다.
+- 상위 `conditions`는 **ACTIVE 방 타입 전체**의 `roomOffers[].filterTags` 합집합이다. 등록 요청에는 없고 서버가 계산한다. 목록·상세·찜·최근 조회의 `conditions`도 같은 규칙이며, 진단 추천 카드만 진단 조건을 통과한 방의 태그 합집합으로 범위를 좁힌다([02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 - `contact`(담당자명·지점 대표 전화)는 **세입자에게 그대로 공개**하는 매물별 담당 연락처이므로 응답에 포함한다. 반면 `businessRegistrationNumber`와 임대인 설문 3종(`preferredNationalities`·`contractDifficulties`·`serviceFeedback`)은 저장은 하되 **응답에 포함하지 않는다**([ADR-0039](../../adr/0039-listing-schema-v4-registration-form.md)).
 - `{code,label}`의 `label` 언어는 요청자 계정의 표시 언어를 따른다. 임대인은 `lang="ko"`로 고정이라 위 예시처럼 한국어 라벨이 내려간다.
 - 등록된 매물은 `PENDING`이라 목록·지도·검색·상세·찜 어디에도 나오지 않는다. 공개 전환(`PENDING → PUBLISHED`/`REJECTED`)은 [관리자 매물 심사](#관리자-매물-심사)가, 등록 뒤 내용을 고치는 것은 [임대인 매물 관리](#임대인-매물-관리)의 `PUT /api/v2/listings/{listingId}`가 담당한다. 재고 관리는 **후속 작업**이다.
@@ -640,7 +640,7 @@ Query 파라미터:
 | `type` | `ListingType` | 선택 | — | 매물 유형 필터 칩. 다중 값 콤마 구분(`GOSHIWON,CO_LIVING`) |
 | `conditions` | `ConditionTag[]` | 선택 | — | 옵션 필터 칩. `MOVE_IN_NOW`, `FEMALE_ONLY`, `PRIVATE_BATH`, `ADDRESS_REGISTRATION` 등을 반복 파라미터 또는 콤마로 전송 |
 | `listingIds` | string | 선택 | — | 지정한 매물만 카드로 받을 때 쓰는 `listingId` 목록. 반복 파라미터 또는 콤마로 전송하며 **최대 20개**. 지도 마커를 눌렀을 때 그 매물의 카드를 채우는 용도다 |
-| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED`는 현재 `favoriteCount desc`, 동률이면 `updatedAt desc`; `PRICE_ASC`는 낮은 월세순; `DISTANCE`는 현재 지도 중심에서 가까운 순 |
+| `sort` | `ListingSort` | 선택 | `RECOMMENDED` | 정렬 방식. `RECOMMENDED`는 현재 `favoriteCount desc`, 동률이면 `updatedAt desc`; `PRICE_ASC`는 낮은 월세순; `DISTANCE`는 현재 지도 중심에서 가까운 순 — 응답 `distanceMeters`와 **같은 하버사인 거리**를 기준으로 정렬하므로 카드에 표시된 거리와 나열 순서가 일치하며, 거리가 같으면 `listingId` 오름차순이다 |
 | `page` | integer | 선택 | 0 | 0부터 시작하는 페이지 번호. 무한스크롤의 다음 페이지 요청에 사용 |
 | `size` | integer | 선택 | 20 | 한 번에 가져올 매물 수(최대 100) |
 
@@ -677,7 +677,7 @@ Request Body: 없음
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
-          "name": "Sinchon Station",
+          "name": "Sinchon Sta.",
           "walkMinutes": 5
         },
         "nearbyFacilities": [
@@ -753,9 +753,10 @@ Request Body: 없음
 ```
 
 - 카드 제목은 `title`, 대표 이미지는 `imageUrls[0]`, 주소는 `address.fullAddress`, 교통 배지는 `nearestTransit.name`과 `nearestTransit.walkMinutes`를 사용한다.
+- `nearestTransit.name`은 표시 언어가 `en`이고 `nearestTransit.type`이 `SUBWAY`이며 이름이 ` Station`으로 끝나는 경우에 한해 카드 응답(매물 리스트·내 찜한 매물·최근 본 매물)에서 `Sinchon Sta.`처럼 축약 표기로 내려가고, 매물 상세는 언제나 정식 명칭(`Sinchon Station`)을 준다.
 - 가격/보증금/관리비는 `roomOffers[].pricing`에서 읽는다. 여러 방 타입이 있으면 프론트에서 최저~최고 범위를 계산해 카드에 표시한다.
 - 계약기간은 방 타입마다 다를 수 있으므로 `roomOffers[].contract.minStayMonths/maxStayMonths`를 사용한다.
-- 조건 배지/Property Details features는 상위 `conditions`의 `label`을 표시한다. 이 값은 공개 가능한 ACTIVE 방 타입들의 `roomOffers[].filterTags` 합집합이다. 필터 요청에는 `code`를 보낸다.
+- 조건 배지/Property Details features는 상위 `conditions`의 `label`을 표시한다. 이 값은 공개 가능한 **ACTIVE 방 타입 전체**의 `roomOffers[].filterTags` 합집합이며, 아래 `roomOffers[]`가 필터로 좁아져도 함께 좁아지지 않는다. 필터 요청에는 `code`를 보낸다. 진단 추천 카드의 `conditions`만 규칙이 다르다 — 그쪽은 진단 조건을 통과한 방의 태그 합집합이다([02-diagnosis-recommendation](./02-diagnosis-recommendation.md)).
 - 필터가 있으면 `roomOffers[]`에는 조건을 통과한 방 타입만 들어온다. 필터가 없으면 노출 가능한 ACTIVE 방 타입 전체가 들어온다.
 - 방 타입별 세부 조건 배지가 필요하면 각 `roomOffers[].filterTags`를 사용한다.
 - 난방 방식은 `building.heatingSystem`이 아니라 `facilities.heatingSystem[]`에서 읽는다.
@@ -1128,7 +1129,7 @@ Request Body: 없음
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
-          "name": "Sinchon Station",
+          "name": "Sinchon Sta.",
           "walkMinutes": 5
         },
         "nearbyFacilities": [{ "code": "CONVENIENCE_STORE", "label": "Convenience Store" }],
@@ -1240,7 +1241,7 @@ Request Body: 없음
         },
         "nearestTransit": {
           "type": { "code": "SUBWAY", "label": "Subway" },
-          "name": "Hongik Univ. Station",
+          "name": "Hongik Univ. Sta.",
           "walkMinutes": 8
         },
         "nearbyFacilities": [{ "code": "CONVENIENCE_STORE", "label": "Convenience Store" }],

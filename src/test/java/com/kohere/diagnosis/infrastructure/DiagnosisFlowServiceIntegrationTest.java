@@ -1,6 +1,7 @@
 package com.kohere.diagnosis.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -676,6 +677,29 @@ class DiagnosisFlowServiceIntegrationTest {
   }
 
   @Test
+  @DisplayName("거리순 정렬은 허용 값이 아니라 INVALID_INPUT이고, 나머지 두 키는 그대로 통과한다")
+  void distanceSortIsRejectedWhileOtherKeysPass() {
+    DiagnosisFlowResponse completed = runStudyFlow(37L);
+    Long diagnosisId = completed.diagnosisId();
+
+    // 진단에는 거리를 잴 기준 지점이 없다. 허용 목록에 남겨 두면 저장소가 조용히 기본 정렬로 떨어뜨려
+    // 클라이언트가 거리순을 받았다고 믿는다 — 그래서 받지 않고 거절한다.
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(37L, null, diagnosisId, 0, 20, "distance,asc"))
+        .isInstanceOf(InvalidInputException.class);
+    assertThatThrownBy(
+            () -> flowService.getRecommendations(37L, null, diagnosisId, 0, 20, "distance"))
+        .isInstanceOf(InvalidInputException.class);
+
+    // 한 단어를 지우다 옆 값을 날리지 않았는지 함께 확인한다.
+    assertThatCode(
+            () -> flowService.getRecommendations(37L, null, diagnosisId, 0, 20, "recommended,desc"))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> flowService.getRecommendations(37L, null, diagnosisId, 0, 20, "price,asc"))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
   @DisplayName("⑥ ARC 미발급(NO_ARC)은 conditions를 건드리지 않고 arcStatus로만 전달된다")
   void arcNoArcPassesArcStatusToCriteriaWithoutTouchingConditions() {
     flowService.start(31L);
@@ -850,6 +874,8 @@ class DiagnosisFlowServiceIntegrationTest {
         "http://img",
         37.5,
         126.9,
+        new RecommendedListingView.NearestTransitView(
+            new ListingCodeLabelView("SUBWAY", "Subway"), "Cozy Sta.", 3),
         List.of(new ListingCodeLabelView("FEMALE_ONLY", "Female Only")));
   }
 

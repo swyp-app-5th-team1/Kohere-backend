@@ -63,7 +63,7 @@
 | [0037](./0037-listing-localization-and-code-catalog.md) | 매물 고유 문구는 listings에 임베드하고 공통 코드는 listingCatalog에서 번역한다 | Accepted | 2026-07-17 |
 | [0038](./0038-application-logging-and-cloudwatch.md) | 로그는 다섯 가지 용도가 요구하는 것만 남긴다 | Proposed | 2026-07-21 |
 | [0039](./0039-listing-schema-v4-registration-form.md) | 매물 스키마를 등록 폼 기준 v4로 재정의하고 마이그레이션 체인을 baseline으로 리셋한다 | Proposed · Amended(2026-08-16) | 2026-08-12 |
-| [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed | 2026-08-13 |
+| [0040](./0040-listing-query-api-v2-and-v1-sunset.md) | 매물 조회를 /api/v2로 옮기고 v1은 빈 결과로 종료한다 | Proposed · Amended(2026-08-15, 2026-09-10) | 2026-08-13 |
 | [0041](./0041-listing-image-upload-to-s3.md) | 매물 사진을 한 장씩 올려 받고 등록에서 확정한다 | Proposed | 2026-08-14 |
 | [0042](./0042-road-address-search-with-ncp-geocoding.md) | 도로명 주소는 NCP Geocoding으로 검색하고, 등록이 그 좌표를 받는다 | Proposed | 2026-08-14 |
 | [0043](./0043-remove-seeded-poi-keyword-search.md) | 시드 POI 키워드 검색을 종료하고 `searchPlaces`를 버린다 | Proposed | 2026-08-15 |

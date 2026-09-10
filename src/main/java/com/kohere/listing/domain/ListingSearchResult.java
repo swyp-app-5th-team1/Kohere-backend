@@ -13,7 +13,8 @@ import java.util.Objects;
  * @param listing 화면 카드 1개가 나타내는 건물/숙소 매물
  * @param roomOffers 목록 카드의 범위 값 계산에 사용할, 검색 조건을 통과한 활성 방 상품 목록
  */
-public record ListingSearchResult(Listing listing, List<Listing.RoomOffer> roomOffers) {
+public record ListingSearchResult(Listing listing, List<Listing.RoomOffer> roomOffers)
+    implements MatchedRoomOffers {
 
   /** 목록 카드는 매물 정보와 최소 1개 이상의 매칭 방 상품이 함께 있어야 만들 수 있다. */
   public ListingSearchResult {
